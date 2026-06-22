@@ -89,7 +89,7 @@ pub fn prescan(input: []const u8) ?Encoding {
                         }
                     },
                     .Content => {
-                        const enc = extract_from_meta(attr.value);
+                        const enc = extractFromMeta(attr.value);
                         if (enc != null) {
                             charset = enc;
                             enc_from_content_attr = true;
@@ -227,7 +227,68 @@ pub fn extractXmlDeclEncoding(str: []const u8) ?Encoding {
 }
 
 // https://html.spec.whatwg.org/#extracting-character-encodings-from-meta-elements
-fn extract_from_meta(str: []const u8) ?[]const u8 {
-    _ = str;
-    return null;
+fn extractFromMeta(str: []const u8) ?[]const u8 {
+    var position = 0;
+
+    while (1) {
+        var index = -1;
+        for (position..str.len - 6) |i| {
+            if (std.ascii.toLower(str[i] == 'c') and
+                std.ascii.toLower(str[i + 1] == 'h') and
+                std.ascii.toLower(str[i + 2] == 'a') and
+                std.ascii.toLower(str[i + 3] == 'r') and
+                std.ascii.toLower(str[i + 4] == 's') and
+                std.ascii.toLower(str[i + 5] == 'e') and
+                std.ascii.toLower(str[i + 6] == 't'))
+            {
+                index = i;
+                break;
+            }
+        }
+
+        if (index == -1) {
+            return null;
+        }
+
+        const sub_position = index + 7;
+        while (sub_position < str.len() and ascii.isHtmlSpace(str[sub_position])) {
+            sub_position += 1;
+        }
+        if (sub_position >= str.len() or str[sub_position] != '=') {
+            position = index + 7;
+            continue;
+        }
+
+        sub_position += 1;
+        while (sub_position < str.len() and ascii.isHtmlSpace(str[sub_position])) {
+            position = sub_position;
+            break;
+        }
+    }
+    if (position >= str.len) {
+        return null;
+    }
+    if (str[position] == '"' or str[position] == '\'') {
+        const quote = str[position];
+        const end_pos = position + 1;
+        while (end_pos < str.len and str[end_pos] != quote) {
+            end_pos += 1;
+        }
+        if (end_pos < str.len) {
+            const label = str[position + 1 .. end_pos];
+            return nameToEncoding(label);
+        }
+        return null;
+    }
+
+    var end_pos = position;
+    while (end_pos < str.len) {
+        const c = str[end_pos];
+        if (ascii.isHtmlSpace(c) or c == ';') {
+            break;
+        }
+        end_pos += 1;
+    }
+    const label = str[position..end_pos];
+    return nameToEncoding(label);
 }

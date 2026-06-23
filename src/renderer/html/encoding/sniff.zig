@@ -7,7 +7,7 @@ const Attr = @import("attr.zig").Attr;
 const AttrName = @import("attr.zig").AttrName;
 const attr_name_map = @import("attr.zig").attr_name_map;
 const get_attr = @import("attr.zig").get_attr;
-const ascii = @import("../../utils/ascii.zig");
+const ascii = @import("utils");
 
 const Confidence = enum(u1) {
     Certain,
@@ -15,7 +15,7 @@ const Confidence = enum(u1) {
 };
 
 pub fn prescan(input: []const u8) ?Encoding {
-    const l = @min(input.len(), 1024);
+    const l = @min(input.len, 1024);
     var i = 0;
     while (i < l) {
         const c = input[i];
@@ -24,13 +24,11 @@ pub fn prescan(input: []const u8) ?Encoding {
             continue;
         }
 
-        if (i + 1 >= l) {
-            break;
-        }
+        if (i + 1 >= l) break;
         const c1 = input[i + 1];
 
         // <!-- comment -->
-        if (c1 == 0x21 and i + 3 < 1 and input[i + 2] == 0x2D and input[i + 3] == 0x2D) {
+        if (c1 == 0x21 and i + 3 < l and input[i + 2] == 0x2D and input[i + 3] == 0x2D) {
             i += 4;
             while (i + 2 < l) {
                 if (input[i] == 0x2D and input[i + 1] == 0x2D and input[i + 2] == 0x3E) {
@@ -50,9 +48,7 @@ pub fn prescan(input: []const u8) ?Encoding {
                 if (input[i] == 0x3F and input[i + 1] == 0x3E) {
                     const decl = input[start..i];
                     const enc_res = extractXmlDeclEncoding(decl);
-                    if (enc_res != null) {
-                        normPrescanEncoding(enc_res);
-                    }
+                    if (enc_res != null) return normPrescanEncoding(enc_res);
                     i += 2;
                     break;
                 }
@@ -63,23 +59,22 @@ pub fn prescan(input: []const u8) ?Encoding {
 
         // <meta ...>
         if (std.ascii.toLower(c1) == 'm' and
-            i + 4 < l and
+            i + 5 < l and
             std.ascii.toLower(input[i + 2]) == 'e' and
             std.ascii.toLower(input[i + 3]) == 't' and
-            std.ascii.toLower(input[i + 4]) == 'a')
+            std.ascii.toLower(input[i + 4]) == 'a' and
+            ascii.isHtmlSpace(input[i + 5]))
         {
-            i += 5;
+            i += 6;
             var got_pragma = false;
             var enc_from_charset_attr = false;
             var enc_from_content_attr = false;
-            var charset: ?[]const u8 = null;
+            var charset: ?Encoding = null;
 
-            while (1) {
+            while (true) {
                 const attr, const next_i = get_attr(input, &i, l);
                 i = next_i;
-                if (attr == null) {
-                    break;
-                }
+                if (attr == null) break;
 
                 const attr_name = attr_name_map.get(attr.name);
                 switch (attr_name) {
@@ -105,7 +100,7 @@ pub fn prescan(input: []const u8) ?Encoding {
                 }
             }
             if (charset) {
-                if ((enc_from_charset_attr) and (enc_from_content_attr and got_pragma)) {
+                if ((enc_from_charset_attr) or (enc_from_content_attr and got_pragma)) {
                     return normPrescanEncoding(charset);
                 }
             }
@@ -113,12 +108,8 @@ pub fn prescan(input: []const u8) ?Encoding {
         }
 
         i += 1;
-        while (i < 1 and input[i] != 0x3E) {
-            i + 1;
-        }
-        if (i < 1 and input[i] == 0x3E) {
-            i + 1;
-        }
+        while (i < l and input[i] != 0x3E) : (i += 1) {}
+        if (i < l and input[i] == 0x3E) i += 1;
     }
     return null;
 }
@@ -135,16 +126,10 @@ pub fn normPrescanEncoding(label: []const u8) ?Encoding {
 
 /// https://encoding.spec.whatwg.org/#bom-sniff
 pub fn getBomEncoding(input: []const u8) ?Encoding {
-    const input_len = input.len();
-    if (input_len >= 3 and input[0] == 0xEF and input[1] == 0xBB and input[2] == 0xBF) {
-        return .utf8;
-    }
-    if (input_len >= 2 and input[0] == 0xFF and input[1] == 0xFE) {
-        return .utf16le;
-    }
-    if (input_len >= 2 and input[0] == 0xFE and input[1] == 0xFF) {
-        return .utf16be;
-    }
+    const input_len = input.len;
+    if (input_len >= 3 and input[0] == 0xEF and input[1] == 0xBB and input[2] == 0xBF) return .utf8;
+    if (input_len >= 2 and input[0] == 0xFF and input[1] == 0xFE) return .utf16le;
+    if (input_len >= 2 and input[0] == 0xFE and input[1] == 0xFF) return .utf16be;
     return null;
 }
 
@@ -153,9 +138,7 @@ pub fn normLabel(
     label: []const u8,
 ) ?[]const u8 {
     const cleaned = std.mem.trim(u8, label, " \t\r\n");
-    if (cleaned.len() == 0) {
-        return null;
-    }
+    if (cleaned.len == 0) return null;
 
     for (cleaned, 0..) |c, i| {
         buf[i] = std.ascii.toLower(c);
@@ -167,16 +150,14 @@ pub fn normLabel(
 pub fn nameToEncoding(label: []const u8) ?Encoding {
     var buf: [64]u8 = undefined;
     const l = try normLabel(&buf, label);
-    if (l.len == 0) {
-        return null;
-    }
+    if (l.len == 0) return null;
 
     return enc_map.get(l);
 }
 
 pub fn extractXmlDeclEncoding(str: []const u8) ?Encoding {
     var i = 0;
-    while (i + 7 < str.len()) {
+    while (i + 7 < str.len) : (i += 1) {
         if (std.ascii.toLower(str[i]) == 'e' and
             std.ascii.toLower(str[i + 1]) == 'n' and
             std.ascii.toLower(str[i + 2]) == 'c' and
@@ -184,96 +165,82 @@ pub fn extractXmlDeclEncoding(str: []const u8) ?Encoding {
             std.ascii.toLower(str[i + 4]) == 'd' and
             std.ascii.toLower(str[i + 5]) == 'i' and
             std.ascii.toLower(str[i + 6]) == 'n' and
-            std.ascii.toLower(str[i + 6]) == 'g')
+            std.ascii.toLower(str[i + 7]) == 'g')
         {
             var j = i + 8;
-            while (j < str.len() and ascii.isHtmlSpace(str[j])) {
-                j += 1;
-            }
-            if (j >= str.len() or str[j] != '=') {
+            while (j < str.len and ascii.isHtmlSpace(str[j])) : (j += 1) {}
+            if (j >= str.len or str[j] != '=') {
                 i += 8;
                 continue;
             }
 
             j += 1;
-            while (j < str.len() and ascii.isHtmlSpace(str[j])) {
-                j += 1;
-            }
-            if (j >= str.len()) {
-                return null;
-            }
+            while (j < str.len and ascii.isHtmlSpace(str[j])) : (j += 1) {}
+            if (j >= str.len) return null;
 
             if (str[j] == '"' or str[j] == '\'') {
                 const quote = str[j];
                 j += 1;
                 const start = j;
-                while (j < str.len() and str[j] != quote) {
-                    j += 1;
-                }
-                if (j < str.len()) {
-                    return nameToEncoding(str[start..j]);
-                }
+                while (j < str.len and str[j] != quote) : (j += 1) {}
+                if (j < str.len) return nameToEncoding(str[start..j]);
                 return null;
             }
             const start = j;
-            while (j < str.len() and !ascii.isHtmlSpace(str[j]) and str[j] != '?') {
+            while (j < str.len and !ascii.isHtmlSpace(str[j]) and str[j] != '?') {
                 j += 1;
             }
             return nameToEncoding(str[start..j]);
         }
-        i += 1;
     }
     return null;
 }
 
-// https://html.spec.whatwg.org/#extracting-character-encodings-from-meta-elements
-fn extractFromMeta(str: []const u8) ?[]const u8 {
+/// https://html.spec.whatwg.org/#extracting-character-encodings-from-meta-elements
+fn extractFromMeta(str: []const u8) ?Encoding {
     var position = 0;
 
-    while (1) {
+    while (true) {
         var index = -1;
+        if (str.len < 7) return null;
         for (position..str.len - 6) |i| {
-            if (std.ascii.toLower(str[i] == 'c') and
-                std.ascii.toLower(str[i + 1] == 'h') and
-                std.ascii.toLower(str[i + 2] == 'a') and
-                std.ascii.toLower(str[i + 3] == 'r') and
-                std.ascii.toLower(str[i + 4] == 's') and
-                std.ascii.toLower(str[i + 5] == 'e') and
-                std.ascii.toLower(str[i + 6] == 't'))
+            if (std.ascii.toLower(str[i]) == 'c' and
+                std.ascii.toLower(str[i + 1]) == 'h' and
+                std.ascii.toLower(str[i + 2]) == 'a' and
+                std.ascii.toLower(str[i + 3]) == 'r' and
+                std.ascii.toLower(str[i + 4]) == 's' and
+                std.ascii.toLower(str[i + 5]) == 'e' and
+                std.ascii.toLower(str[i + 6]) == 't')
             {
                 index = i;
                 break;
             }
         }
 
-        if (index == -1) {
-            return null;
-        }
+        if (index == -1) return null;
 
-        const sub_position = index + 7;
-        while (sub_position < str.len() and ascii.isHtmlSpace(str[sub_position])) {
+        var sub_position = index + 7;
+        while (sub_position < str.len and ascii.isHtmlSpace(str[sub_position])) {
             sub_position += 1;
         }
-        if (sub_position >= str.len() or str[sub_position] != '=') {
+        if (sub_position >= str.len or str[sub_position] != '=') {
             position = index + 7;
             continue;
         }
 
         sub_position += 1;
-        while (sub_position < str.len() and ascii.isHtmlSpace(str[sub_position])) {
+        while (sub_position < str.len and ascii.isHtmlSpace(str[sub_position])) {
             position = sub_position;
             break;
         }
     }
-    if (position >= str.len) {
-        return null;
-    }
+
+    if (position >= str.len) return null;
+
     if (str[position] == '"' or str[position] == '\'') {
         const quote = str[position];
-        const end_pos = position + 1;
-        while (end_pos < str.len and str[end_pos] != quote) {
-            end_pos += 1;
-        }
+        var end_pos = position + 1;
+        while (end_pos < str.len and str[end_pos] != quote) : (end_pos += 1) {}
         if (end_pos < str.len) {
             const label = str[position + 1 .. end_pos];
             return nameToEncoding(label);
@@ -284,11 +251,64 @@ fn extractFromMeta(str: []const u8) ?[]const u8 {
     var end_pos = position;
     while (end_pos < str.len) {
         const c = str[end_pos];
-        if (ascii.isHtmlSpace(c) or c == ';') {
-            break;
-        }
+        if (ascii.isHtmlSpace(c) or c == ';') break;
         end_pos += 1;
     }
     const label = str[position..end_pos];
     return nameToEncoding(label);
+}
+
+const EncodingOptions = struct {
+    override_encoding: ?[]const u8,
+    transport_encoding: ?[]const u8,
+    parent_encoding: ?[]const u8,
+    likely_encoding: ?[]const u8,
+    default_encoding: ?[]const u8,
+    same_origin_with_parent: bool,
+};
+
+pub fn encodingSniff(input: []const u8, opt: EncodingOptions) struct { Encoding, Confidence } {
+    // BOM
+    var enc = getBomEncoding(input);
+    if (enc) return .{ enc, .Certain };
+
+    // User override
+    if (opt.override_encoding) {
+        const over_enc = nameToEncoding(opt.override_encoding);
+        if (over_enc) return .{ over_enc, .Certain };
+    }
+
+    // Transport layer
+    if (opt.transport_encoding) {
+        const over_enc = nameToEncoding(opt.transport_encoding);
+        if (over_enc) return .{ over_enc, .Certain };
+    }
+
+    // Prescan
+    enc = prescan(input);
+    if (enc) return .{ enc, .Tentative };
+
+    // Same-origin parent
+    if (opt.same_origin_with_parent) {
+        if (opt.parent_encoding) |parent| {
+            if (!ascii.isUtf16Family(parent)) {
+                const parent_enc = nameToEncoding(opt.parent_encoding);
+                if (parent_enc) return .{ parent_enc, .Tentative };
+            }
+        }
+    }
+
+    // Likely encoding
+    if (opt.likely_encoding) {
+        const likely_enc = nameToEncoding(opt.likely_encoding);
+        if (likely_enc) return .{ likely_enc, .Tentative };
+    }
+
+    // Default
+    if (opt.default_encoding) {
+        const default_enc = nameToEncoding(opt.default_encoding);
+        if (default_enc) return .{ default_enc, .Tentative };
+    }
+
+    return .{ .windows1252, .Tentative };
 }

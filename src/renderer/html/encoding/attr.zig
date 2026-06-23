@@ -12,7 +12,7 @@ pub const Attr = struct {
     value: []const u8,
 };
 
-pub const attr_name_map = std.StaticStringMap().initComptime(.{
+pub const attr_name_map = std.StaticStringMap(AttrName).initComptime(.{
     .{ "http-equiv", .HttpEquiv },
     .{ "content", .Content },
     .{ "charset", .Charset },

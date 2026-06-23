@@ -44,7 +44,7 @@ pub const Encoding = enum {
 };
 
 /// https://encoding.spec.whatwg.org/#names-and-labels
-const enc_map = std.StaticStringMap(Encoding).initComptime(.{
+pub const enc_map = std.StaticStringMap(Encoding).initComptime(.{
     // UTF-8
     .{ "unicode-1-1-utf-8", .utf8 },
     .{ "unicode11utf8", .utf8 },

@@ -22,6 +22,12 @@ pub fn build(b: *std.Build) void {
     });
     exe_module.addImport("ascii", ascii_module);
 
+    const strale = b.dependency("strale", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    exe_module.addImport("strale", strale.module("strale"));
+
     const exe = b.addExecutable(.{ .name = "main", .root_module = exe_module });
 
     // test
@@ -31,6 +37,7 @@ pub fn build(b: *std.Build) void {
             .target = b.resolveTargetQuery(t),
         });
         test_module.addImport("ascii", ascii_module);
+        test_module.addImport("strale", strale.module("strale"));
 
         const unit_tests = b.addTest(.{ .name = "tests", .root_module = test_module });
 

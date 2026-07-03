@@ -2,6 +2,9 @@
     .name = .arix,
     .version = "0.0.1",
     .minimum_zig_version = "0.16.0",
+    .dependencies = .{
+        .strale = .{ .url = "https://github.com/Arcelyth/strale/archive/refs/heads/main.tar.gz", .hash = "strale-0.0.1-MSMDXJVNAQAeCA5tjlRwxcT6Fwkok29ZuGSFtyBoCp_X", },
+    },
     .paths = .{""},
     .fingerprint = 0x1f4adaa4fcbee823,
 }

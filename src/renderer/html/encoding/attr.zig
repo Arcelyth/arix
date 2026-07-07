@@ -1,5 +1,5 @@
 const std = @import("std");
-const ascii = @import("ascii");
+const ascii = @import("utils").ascii;
 
 pub const AttrName = enum(u2) {
     HttpEquiv,

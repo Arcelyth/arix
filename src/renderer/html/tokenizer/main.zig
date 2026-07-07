@@ -6,3 +6,7 @@ pub const Tokenizer = @import("Tokenizer.zig");
 test {
     @import("std").testing.refAllDecls(@This());
 }
+
+comptime {
+    _ = @import("tokenizer_test.zig");
+}

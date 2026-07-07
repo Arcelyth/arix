@@ -10,8 +10,8 @@ pub fn build(b: *std.Build) void {
 
     const test_step = b.step("test", "Run all tests");
 
-    const ascii_module = b.addModule("ascii", .{
-        .root_source_file = b.path("src/renderer/utils/ascii.zig"),
+    const utils_module = b.addModule("utils", .{
+        .root_source_file = b.path("src/renderer/utils/main.zig"),
     });
 
     // executable
@@ -20,7 +20,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    exe_module.addImport("ascii", ascii_module);
+    exe_module.addImport("utils", utils_module);
 
     const strale = b.dependency("strale", .{
         .target = target,
@@ -36,7 +36,7 @@ pub fn build(b: *std.Build) void {
             .root_source_file = b.path("src/tests.zig"),
             .target = b.resolveTargetQuery(t),
         });
-        test_module.addImport("ascii", ascii_module);
+        test_module.addImport("utils", utils_module);
         test_module.addImport("strale", strale.module("strale"));
 
         const unit_tests = b.addTest(.{ .name = "tests", .root_module = test_module });

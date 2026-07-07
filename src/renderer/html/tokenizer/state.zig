@@ -1,6 +1,6 @@
 const std = @import("std");
 
-const TokenizerState = enum {
+pub const TokenizerState = enum {
     Data,
     RCDATA,
     RAWTEXT,
@@ -72,7 +72,13 @@ const TokenizerState = enum {
     CDATASection,
     CDATASectionBracket,
     CDATASectionEnd,
-    CharacterReference,
+    //    CharacterReference with return state
+    CharacterReferenceInData,
+    CharacterReferenceInRCDATA,
+    CharacterReferenceInAttributeValueDoubleQuoted,
+    CharacterReferenceInAttributeValueSingleQuoted,
+    CharacterReferenceInAttributeValueUnquoted,
+
     NamedCharacterReference,
     AmbiguousAmpersand,
     NumericCharacterReference,

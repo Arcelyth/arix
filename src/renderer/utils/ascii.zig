@@ -7,6 +7,8 @@ pub inline fn isHtmlSpace(c: u8) bool {
     };
 }
 
-pub fn isUtf16Family(enc: []const u8) bool {
+pub inline fn isUtf16Family(enc: []const u8) bool {
     return std.ascii.eqlIgnoreCase(enc, "UTF-16LE") or std.ascii.eqlIgnoreCase(enc, "UTF-16BE");
 }
+
+

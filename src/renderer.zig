@@ -1,0 +1,12 @@
+pub const sniff_test = @import("renderer/html/encoding/sniff_test.zig");
+pub const attr_test = @import("renderer/html/encoding/attr_test.zig");
+pub const attr = @import("renderer/html/encoding/attr.zig");
+pub const encoding = @import("renderer/html/encoding/encoding.zig");
+pub const sniff = @import("renderer/html/encoding/sniff.zig");
+
+pub const tokenizer_test = @import("renderer/html/tokenizer/tokenizer_test.zig");
+pub const Tokenizer = @import("renderer/html/tokenizer/Tokenizer.zig");
+
+test {
+    @import("std").testing.refAllDecls(@This());
+}

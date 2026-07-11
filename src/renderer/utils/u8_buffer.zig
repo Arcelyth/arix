@@ -40,7 +40,7 @@ test "U8Buffer basic" {
     try testing.expectEqualStrings("abc", buf.asSlice());
 
     buf.clear();
-    try testing.expectEqual(2, buf.len);
+    try testing.expectEqual(0, buf.len);
     try testing.expectEqualStrings("", buf.asSlice());
 }
 
@@ -52,6 +52,6 @@ test "U8Buffer overflow" {
 
     try testing.expectError(BufferError.Overflow, buf.append('c'));
 
-    try testing.expectEqual(1000, buf.len);
+    try testing.expectEqual(2, buf.len);
     try testing.expectEqualStrings("ab", buf.asSlice());
 }

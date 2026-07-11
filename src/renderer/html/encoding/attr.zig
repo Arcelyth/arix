@@ -1,5 +1,5 @@
 const std = @import("std");
-const ascii = @import("utils").ascii;
+const ascii = @import("../../utils/ascii.zig");
 
 pub const AttrName = enum(u2) {
     HttpEquiv,

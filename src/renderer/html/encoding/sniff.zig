@@ -7,7 +7,7 @@ const Attr = @import("attr.zig").Attr;
 const AttrName = @import("attr.zig").AttrName;
 const attr_name_map = @import("attr.zig").attr_name_map;
 const get_attr = @import("attr.zig").get_attr;
-const ascii = @import("utils").ascii;
+const ascii = @import("../../utils/ascii.zig");
 
 pub const Confidence = enum(u1) {
     Certain,

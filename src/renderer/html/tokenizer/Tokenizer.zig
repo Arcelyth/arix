@@ -6,7 +6,7 @@ const StraleUtf8 = strale.StraleUtf8;
 const t_error = @import("error.zig");
 const TokenizerErrorProc = t_error.TokenizerErrorProc;
 const TokenizerError = t_error.TokenizerError;
-const u8_buffer = @import("utils").u8_buffer;
+const u8_buffer = @import("../../utils/u8_buffer.zig");
 
 const Self = @This();
 allocator: std.mem.Allocator,

@@ -16,7 +16,7 @@ test "Tokenizer Runnable Test" {
 
     try input.pushBackSlice("Hello");
 
-    try tok.step(&input);
+    try tok.step_E(&input);
 
     try testing.expectEqual(.Data, tok.state);
 }

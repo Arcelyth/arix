@@ -16,14 +16,14 @@ state: TokenizerState,
 pause_flag: bool,
 at_eof: bool,
 
-current_tag_name: ?StraleUtf8Global,
+current_tag_name: StraleUtf8Global,
 current_tag_kind: token.TagKind,
 current_tag_self_closing: bool,
 
-current_comment: ?StraleUtf8Global,
+current_comment: StraleUtf8Global,
 
-current_attribute_name: ?StraleUtf8Global,
-current_attribute_value: ?StraleUtf8Global,
+current_attribute_name: StraleUtf8Global,
+current_attribute_value: StraleUtf8Global,
 
 current_doctype: token.Doctype,
 
@@ -36,10 +36,10 @@ pub fn init(alloc: std.mem.Allocator, on_error: ?TokenizerErrorProc) Self {
         .state = .Data,
         .pause_flag = false,
         .at_eof = false,
-        .current_tag_name = null,
+        .current_tag_name = StraleUtf8Global.initEmpty(),
         .current_tag_kind = .StartTag,
         .current_tag_self_closing = false,
-        .current_comment = null,
+        .current_comment = StraleUtf8Global.initEmpty(),
         .current_attribute_name = StraleUtf8Global.initEmpty(),
         .current_attribute_value = StraleUtf8Global.initEmpty(),
         .current_doctype = token.Doctype.init(),
@@ -61,33 +61,15 @@ pub fn emitChar(self: *Self, ch: u21) void {
     _ = ch;
 }
 
-pub inline fn tagNameClear(self: *Self) void {
-    if (self.current_tag_name) |*n| {
-        n.*.clear();
-    }
-}
-
-pub inline fn tagNamePush_E(self: *Self, ch: u21) !void {
-    if (self.current_tag_name) |*n| {
-        try n.*.push(ch);
-    }
-}
-
-pub inline fn commentClear(self: *Self) void {
-    if (self.current_comment) |*c| {
-        c.*.clear();
-    }
-}
-
 pub fn discardTag(self: *Self) void {
-    self.tagNameClear();
+    self.current_tag_name.clear();
     self.current_tag_self_closing = false;
 }
 
 pub fn createTag_E(self: *Self, tag_kind: token.TagKind, ch: u21) !void {
     self.discardTag();
     self.current_tag_kind = tag_kind;
-    try self.tagNamePush_E(ch);
+    try self.current_tag_name.push(ch);
 }
 
 pub inline fn setStateAndAdvance(self: *Self, state: TokenizerState, input: *BufferDeque(.utf8, .not_atomic, false)) void {
@@ -104,7 +86,7 @@ pub fn createComment(self: *Self) void {
     _ = self;
 }
 
-pub fn step(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void {
+pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void {
     var ch: u21 = undefined;
     while (true) {
         const is_eof = if (input.peekChar()) |c| blk: {
@@ -212,7 +194,7 @@ pub fn step(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void {
                     '/' => self.setStateAndAdvance(.EndTagOpen, input),
                     '?' => {
                         if (self.on_error) |err_cb| err_cb(.UnexpectedQuestionMarkInsteadOfTagName, ch);
-                        self.commentClear();
+                        self.current_comment.clear();
                         // Since reconsume, no advance here.
                         self.state = .BogusComment;
                     },
@@ -250,13 +232,18 @@ pub fn step(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void {
                             self.setStateAndAdvance(.TagName, input);
                         } else {
                             if (self.on_error) |err_cb| err_cb(.InvalidFirstCharacterOfTagName, ch);
-                            self.commentClear();
+                            self.current_comment.clear();
                             self.state = .BogusComment;
                         }
                     },
                 }
             },
 
+
+            // https://html.spec.whatwg.org/multipage/parsing.html#tag-name-state
+            .TagName => {
+
+            },
             else => {
                 break;
             },

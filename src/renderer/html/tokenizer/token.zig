@@ -4,11 +4,11 @@ const strale = @import("strale");
 const StraleUtf8Global = strale.StraleUtf8Global;
 
 pub const Doctype = struct {
-    name: ?StraleUtf8Global,
+    name: StraleUtf8Global,
     // public identifier
-    public_id: ?StraleUtf8Global,
+    public_id: StraleUtf8Global,
     // system identifier
-    system_id: ?StraleUtf8Global,
+    system_id: StraleUtf8Global,
     force_quirks: bool,
 
     pub fn init() Doctype {

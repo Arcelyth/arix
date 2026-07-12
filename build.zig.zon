@@ -4,8 +4,8 @@
     .minimum_zig_version = "0.16.0",
     .dependencies = .{
         .strale = .{
-            .url = "https://github.com/Arcelyth/strale/archive/refs/heads/main.tar.gz",
-            .hash = "strale-0.0.1-MSMDXD5PAQC2R2tyKis4gixjOReDwbKje-s3TTbCr2SM",
+            .url = "https://github.com/Arcelyth/strale/archive/main.tar.gz",
+            .hash = "strale-0.0.1-MSMDXAKjAQATOUlcc09nCaWN9_jR7_kP54yU7XOQzaV9",
         },
     },
     .paths = .{""},

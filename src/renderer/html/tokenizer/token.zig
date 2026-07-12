@@ -1,56 +1,32 @@
 const std = @import("std");
+const u8_buffer = @import("../../utils/u8_buffer.zig");
+const strale = @import("strale");
+const StraleUtf8Global = strale.StraleUtf8Global;
 
-const Attribute = struct {
-    name: []const u8,
-    value: []const u8,
-};
-
-const DoctypeToken = struct {
-    name: ?[]const u8,
+pub const Doctype = struct {
+    name: ?StraleUtf8Global,
     // public identifier
-    public_ident: ?[]const u8,
+    public_id: ?StraleUtf8Global,
     // system identifier
-    sys_ident: ?[]const u8,
+    system_id: ?StraleUtf8Global,
     force_quirks: bool,
+
+    pub fn init() Doctype {
+        return Doctype {
+            .name = StraleUtf8Global.initEmpty(),
+            .public_id = StraleUtf8Global.initEmpty(),
+            .system_id = StraleUtf8Global.initEmpty(),
+            .force_quirks = false,
+        };
+    } 
+
+    pub fn deinit() void {
+
+        // TODO
+    }
 };
 
-const StartToken = struct {
-    tag_name: []const u8,    
-    self_closing: bool, 
-    attrs: []Attribute,
+pub const TagKind = enum {
+    StartTag,
+    EndTag,
 };
-
-const EndToken = struct {
-    tag_name: []const u8,    
-    self_closing: bool, 
-    attrs: []Attribute,
-};
-
-const CommentToken = struct {
-    data: []const u8,
-};
-
-const CharacterToken = struct {
-    data: u8,
-};
-
-const TokenTag = enum {
-    DoctypeToken,    
-    StartToken,
-    EndToken,
-    CommentToken,
-    CharacterToken,
-    EofToken,
-};
-
-const Token = union(TokenTag) {
-    DoctypeToken: DoctypeToken,
-    StartToken: StartToken,
-    EndToken: EndToken,
-    CommentToken: CommentToken,
-    CharacterToken: CharacterToken,
-    EofToken,
-};
-
-
-

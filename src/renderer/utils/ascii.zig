@@ -11,4 +11,6 @@ pub inline fn isUtf16Family(enc: []const u8) bool {
     return std.ascii.eqlIgnoreCase(enc, "UTF-16LE") or std.ascii.eqlIgnoreCase(enc, "UTF-16BE");
 }
 
-
+pub inline fn isAsciiAlpha(c: u21) bool {
+    return (c >= 'A' and c <= 'Z') or (c >= 'a' and c <= 'z'); 
+}

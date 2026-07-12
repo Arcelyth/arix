@@ -11,12 +11,12 @@ test "Tokenizer Runnable Test" {
     var tok = Tokenizer.init(allocator, null);
     defer tok.deinit();
 
-    var input = try BufferDeque(.utf8, .not_atomic).init(allocator);
+    var input = try BufferDeque(.utf8, .not_atomic, false).init(allocator);
     defer input.deinit();
 
     try input.pushBackSlice("Hello");
 
-    tok.step(&input);
+    try tok.step(&input);
 
     try testing.expectEqual(.Data, tok.state);
 }

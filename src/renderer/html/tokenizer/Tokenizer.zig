@@ -2,21 +2,33 @@ const std = @import("std");
 const TokenizerState = @import("state.zig").TokenizerState;
 const strale = @import("strale");
 const BufferDeque = strale.BufferDeque;
-const StraleUtf8 = strale.StraleUtf8;
+const StraleUtf8Global = strale.StraleUtf8Global;
 const t_error = @import("error.zig");
 const TokenizerErrorProc = t_error.TokenizerErrorProc;
 const TokenizerError = t_error.TokenizerError;
 const u8_buffer = @import("../../utils/u8_buffer.zig");
+const ascii = @import("../../utils/ascii.zig");
+const token = @import("token.zig");
 
 const Self = @This();
 allocator: std.mem.Allocator,
 state: TokenizerState,
 pause_flag: bool,
 at_eof: bool,
-current_tag_name: ?StraleUtf8,
-temporary_buffer: u8_buffer.U8Buffer(32), 
-on_error: ?TokenizerErrorProc,
 
+current_tag_name: ?StraleUtf8Global,
+current_tag_kind: token.TagKind,
+current_tag_self_closing: bool,
+
+current_comment: ?StraleUtf8Global,
+
+current_attribute_name: ?StraleUtf8Global,
+current_attribute_value: ?StraleUtf8Global,
+
+current_doctype: token.Doctype,
+
+temporary_buffer: StraleUtf8Global,
+on_error: ?TokenizerErrorProc,
 
 pub fn init(alloc: std.mem.Allocator, on_error: ?TokenizerErrorProc) Self {
     return Self{
@@ -25,7 +37,13 @@ pub fn init(alloc: std.mem.Allocator, on_error: ?TokenizerErrorProc) Self {
         .pause_flag = false,
         .at_eof = false,
         .current_tag_name = null,
-        .temporary_buffer = u8_buffer.U8Buffer(32){},
+        .current_tag_kind = .StartTag,
+        .current_tag_self_closing = false,
+        .current_comment = null,
+        .current_attribute_name = StraleUtf8Global.initEmpty(),
+        .current_attribute_value = StraleUtf8Global.initEmpty(),
+        .current_doctype = token.Doctype.init(),
+        .temporary_buffer = StraleUtf8Global.initEmpty(),
         .on_error = on_error,
     };
 }
@@ -43,29 +61,59 @@ pub fn emitChar(self: *Self, ch: u21) void {
     _ = ch;
 }
 
-pub inline fn setStateAndAdvance(self: *Self, state: TokenizerState, input: *BufferDeque(.utf8, .not_atomic)) void {
+pub inline fn tagNameClear(self: *Self) void {
+    if (self.current_tag_name) |*n| {
+        n.*.clear();
+    }
+}
+
+pub inline fn tagNamePush_E(self: *Self, ch: u21) !void {
+    if (self.current_tag_name) |*n| {
+        try n.*.push(ch);
+    }
+}
+
+pub inline fn commentClear(self: *Self) void {
+    if (self.current_comment) |*c| {
+        c.*.clear();
+    }
+}
+
+pub fn discardTag(self: *Self) void {
+    self.tagNameClear();
+    self.current_tag_self_closing = false;
+}
+
+pub fn createTag_E(self: *Self, tag_kind: token.TagKind, ch: u21) !void {
+    self.discardTag();
+    self.current_tag_kind = tag_kind;
+    try self.tagNamePush_E(ch);
+}
+
+pub inline fn setStateAndAdvance(self: *Self, state: TokenizerState, input: *BufferDeque(.utf8, .not_atomic, false)) void {
     self.state = state;
     _ = input.nextChar();
 }
 
+pub inline fn emitCharAndNext(self: *Self, ch: u21, input: *BufferDeque(.utf8, .not_atomic, false)) void {
+    self.emitChar(ch);
+    _ = input.nextChar();
+}
+
 pub fn createComment(self: *Self) void {
-    _ = self; 
+    _ = self;
 }
 
-pub fn reconsume(self: *Self) void {
-    _ = self; 
-}
-
-pub fn step(self: *Self, input: *BufferDeque(.utf8, .not_atomic)) void {
+pub fn step(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void {
     var ch: u21 = undefined;
     while (true) {
-        const is_eof = if (input.peekChar()) |c| blk:{
+        const is_eof = if (input.peekChar()) |c| blk: {
             ch = c;
             break :blk false;
         } else true;
 
         switch (self.state) {
-            
+
             // https://html.spec.whatwg.org/multipage/parsing.html#data-state
             .Data => {
                 if (is_eof) {
@@ -79,7 +127,7 @@ pub fn step(self: *Self, input: *BufferDeque(.utf8, .not_atomic)) void {
                         if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
                         self.emitChar('\u{FFFD}');
                     },
-                    else => self.emitChar(ch),
+                    else => self.emitCharAndNext(ch, input),
                 }
             },
 
@@ -97,7 +145,7 @@ pub fn step(self: *Self, input: *BufferDeque(.utf8, .not_atomic)) void {
                         if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
                         self.emitChar('\u{FFFD}');
                     },
-                    else => self.emitChar(ch),
+                    else => self.emitCharAndNext(ch, input),
                 }
             },
 
@@ -114,7 +162,7 @@ pub fn step(self: *Self, input: *BufferDeque(.utf8, .not_atomic)) void {
                         if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
                         self.emitChar('\u{FFFD}');
                     },
-                    else => self.emitChar(ch),
+                    else => self.emitCharAndNext(ch, input),
                 }
             },
 
@@ -131,7 +179,7 @@ pub fn step(self: *Self, input: *BufferDeque(.utf8, .not_atomic)) void {
                         if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
                         self.emitChar('\u{FFFD}');
                     },
-                    else => self.emitChar(ch),
+                    else => self.emitCharAndNext(ch, input),
                 }
             },
 
@@ -147,7 +195,7 @@ pub fn step(self: *Self, input: *BufferDeque(.utf8, .not_atomic)) void {
                         if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
                         self.emitChar('\u{FFFD}');
                     },
-                    else => self.emitChar(ch),
+                    else => self.emitCharAndNext(ch, input),
                 }
             },
 
@@ -164,23 +212,56 @@ pub fn step(self: *Self, input: *BufferDeque(.utf8, .not_atomic)) void {
                     '/' => self.setStateAndAdvance(.EndTagOpen, input),
                     '?' => {
                         if (self.on_error) |err_cb| err_cb(.UnexpectedQuestionMarkInsteadOfTagName, ch);
-                        self.create_comment();
+                        self.commentClear();
+                        // Since reconsume, no advance here.
                         self.state = .BogusComment;
-//                        reconsume();
                     },
                     else => {
-// TODO
-                    }
+                        if (ascii.isAsciiAlpha(ch)) {
+                            try self.createTag_E(.StartTag, ch);
+                            // Since already pushed current char into tag_name, use advance instead of reconsume.
+                            self.setStateAndAdvance(.TagName, input);
+                        } else {
+                            if (self.on_error) |err_cb| err_cb(.InvalidFirstCharacterOfTagName, ch);
+                            self.emitChar('<');
+                            self.state = .Data;
+                        }
+                    },
                 }
             },
 
-            else => {},
+            // https://html.spec.whatwg.org/multipage/parsing.html#end-tag-open-state
+            .EndTagOpen => {
+                if (is_eof) {
+                    if (self.on_error) |err_cb| err_cb(.EofBeforeTagName, ch);
+                    self.emitChar('<');
+                    self.emitChar('/');
+                    self.emitEof();
+                    return;
+                }
+                switch (ch) {
+                    '>' => {
+                        if (self.on_error) |err_cb| err_cb(.MissingEndTagName, ch);
+                        self.state = .Data;
+                    },
+                    else => {
+                        if (ascii.isAsciiAlpha(ch)) {
+                            try self.createTag_E(.EndTag, ch);
+                            self.setStateAndAdvance(.TagName, input);
+                        } else {
+                            if (self.on_error) |err_cb| err_cb(.InvalidFirstCharacterOfTagName, ch);
+                            self.commentClear();
+                            self.state = .BogusComment;
+                        }
+                    },
+                }
+            },
+
+            else => {
+                break;
+            },
         }
-
-        _ = input.nextChar();
     }
-
-    self.emitEof();
 }
 
 pub fn create_comment(self: *Self) void {

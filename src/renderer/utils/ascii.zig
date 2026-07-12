@@ -18,3 +18,7 @@ pub inline fn isAsciiAlpha(c: u21) bool {
 pub inline fn isAsciiUpperAlpha(c: u21) bool {
     return c >= 'A' and c <= 'Z';
 }
+
+pub inline fn isAsciiLowerAlpha(c: u21) bool {
+    return c >= 'a' and c <= 'z';
+}

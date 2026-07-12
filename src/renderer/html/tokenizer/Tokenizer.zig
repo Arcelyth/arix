@@ -27,6 +27,7 @@ current_attribute_value: StraleUtf8Global,
 
 current_doctype: token.Doctype,
 
+last_start_tag_name: ?StraleUtf8Global,
 temporary_buffer: StraleUtf8Global,
 on_error: ?TokenizerErrorProc,
 
@@ -43,6 +44,7 @@ pub fn init(alloc: std.mem.Allocator, on_error: ?TokenizerErrorProc) Self {
         .current_attribute_name = StraleUtf8Global.initEmpty(),
         .current_attribute_value = StraleUtf8Global.initEmpty(),
         .current_doctype = token.Doctype.init(),
+        .last_start_tag_name = null,
         .temporary_buffer = StraleUtf8Global.initEmpty(),
         .on_error = on_error,
     };
@@ -62,6 +64,10 @@ pub fn emitChar(self: *Self, ch: u21) void {
 }
 
 pub fn emitCurrentTag(self: *Self) void {
+    _ = self;
+}
+
+pub fn emitTempBuffer(self: *Self) void {
     _ = self;
 }
 
@@ -88,6 +94,12 @@ pub inline fn emitCharAndNext(self: *Self, ch: u21, input: *BufferDeque(.utf8, .
 
 pub fn createComment(self: *Self) void {
     _ = self;
+}
+
+pub fn isAppropriateEndTag(self: *const Self) bool {
+    return if (self.last_start_tag_name) |*name| blk: {
+        break :blk self.current_tag_kind == .EndTag and self.current_tag_name.cmp(name);
+    } else false;
 }
 
 pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void {
@@ -273,13 +285,66 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void
             },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#rcdata-less-than-sign-state
-            .RCDATALessThanSign => {},
+            .RCDATALessThanSign => {
+                switch (ch) {
+                    '/' => {
+                        self.temporary_buffer.clear();
+                        self.setStateAndAdvance(.RCDATAEndTagName, input);
+                    },
+                    else => {
+                        self.emitChar('<');
+                        self.state = .RCDATA;
+                    },
+                }
+                if (is_eof) return;
+            },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#rcdata-end-tag-open-state
-            .RCDATAEndTagOpen => {},
+            .RCDATAEndTagOpen => {
+                if (ascii.isAsciiAlpha(ch)) {
+                    try self.createTag_E(.EndTag, ch);
+                    self.setStateAndAdvance(.RCDATAEndTagName, input);
+                } else {
+                    self.emitChar('<');
+                    self.emitChar('/');
+                    self.state = .RCDATA;
+                }
+                if (is_eof) return;
+            },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#rcdata-end-tag-name-state
-            .RCDATAEndTagName => {},
+            .RCDATAEndTagName => {
+                if (self.isAppropriateEndTag()) {
+                    switch (ch) {
+                        '\t', '\n', '\x0C', ' ' => {
+                            self.setStateAndAdvance(.BeforeAttributeName, input);
+                        },
+                        '/' => {
+                            self.setStateAndAdvance(.SelfClosingStartTag, input);
+                        },
+                        '>' => {
+                            self.setStateAndAdvance(.Data, input);
+                            self.emitCurrentTag();
+                        },
+                        else => {}
+                    }
+                } else {
+                    if (ascii.isAsciiUpperAlpha(ch)) {
+                        try self.current_tag_name.push(ch + 0x0020);
+                        try self.temporary_buffer.push(ch);
+                        _ = input.nextChar();
+                    } else if (ascii.isAsciiLowerAlpha(ch)) {
+                        try self.current_tag_name.push(ch);
+                        try self.temporary_buffer.push(ch);
+                        _ = input.nextChar();
+                    } else {
+                        self.emitChar('<');
+                        self.emitChar('/');
+                        self.emitTempBuffer();
+                        self.state = .RCDATA;
+                    }
+                }
+            },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#rawtext-less-than-sign-state
             .RAWTEXTLessThanSign => {},
@@ -497,8 +562,4 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void
             .NumericCharacterReferenceEnd => {},
         }
     }
-}
-
-pub fn create_comment(self: *Self) void {
-    _ = self;
 }

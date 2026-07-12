@@ -61,6 +61,10 @@ pub fn emitChar(self: *Self, ch: u21) void {
     _ = ch;
 }
 
+pub fn emitCurrentTag(self: *Self) void {
+    _ = self;
+}
+
 pub fn discardTag(self: *Self) void {
     self.current_tag_name.clear();
     self.current_tag_self_closing = false;
@@ -107,7 +111,7 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void
                     '<' => self.setStateAndAdvance(.TagOpen, input),
                     0x0000 => {
                         if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
-                        self.emitChar('\u{FFFD}');
+                        self.emitCharAndNext('\u{FFFD}', input);
                     },
                     else => self.emitCharAndNext(ch, input),
                 }
@@ -125,7 +129,7 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void
                     '<' => self.setStateAndAdvance(.RCDATALessThanSign, input),
                     0x0000 => {
                         if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
-                        self.emitChar('\u{FFFD}');
+                        self.emitCharAndNext('\u{FFFD}', input);
                     },
                     else => self.emitCharAndNext(ch, input),
                 }
@@ -142,7 +146,7 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void
                     '<' => self.setStateAndAdvance(.RAWTEXTLessThanSign, input),
                     0x0000 => {
                         if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
-                        self.emitChar('\u{FFFD}');
+                        self.emitCharAndNext('\u{FFFD}', input);
                     },
                     else => self.emitCharAndNext(ch, input),
                 }
@@ -159,7 +163,7 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void
                     '<' => self.setStateAndAdvance(.ScriptDataLessThanSign, input),
                     0x0000 => {
                         if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
-                        self.emitChar('\u{FFFD}');
+                        self.emitCharAndNext('\u{FFFD}', input);
                     },
                     else => self.emitCharAndNext(ch, input),
                 }
@@ -175,7 +179,7 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void
                 switch (ch) {
                     0x0000 => {
                         if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
-                        self.emitChar('\u{FFFD}');
+                        self.emitCharAndNext('\u{FFFD}', input);
                     },
                     else => self.emitCharAndNext(ch, input),
                 }
@@ -239,10 +243,33 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void
                 }
             },
 
-
             // https://html.spec.whatwg.org/multipage/parsing.html#tag-name-state
             .TagName => {
-
+                if (is_eof) {
+                    if (self.on_error) |err_cb| err_cb(.EofInTag, ch);
+                    self.emitEof();
+                    return;
+                }
+                switch (ch) {
+                    '\t', '\n', '\x0C', ' ' => self.setStateAndAdvance(.BeforeAttributeName, input),
+                    '/' => self.setStateAndAdvance(.SelfClosingStartTag, input),
+                    '>' => {
+                        self.setStateAndAdvance(.Data, input);
+                        self.emitCurrentTag();
+                    },
+                    0x0000 => {
+                        if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
+                        try self.current_tag_name.push('\u{FFFD}');
+                        _ = input.nextChar();
+                    },
+                    else => {
+                        if (ascii.isAsciiUpperAlpha(ch))
+                            try self.current_tag_name.push(ch + 0x0020)
+                        else
+                            try self.current_tag_name.push(ch);
+                        _ = input.nextChar();
+                    },
+                }
             },
             else => {
                 break;

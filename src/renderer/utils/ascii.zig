@@ -14,3 +14,7 @@ pub inline fn isUtf16Family(enc: []const u8) bool {
 pub inline fn isAsciiAlpha(c: u21) bool {
     return (c >= 'A' and c <= 'Z') or (c >= 'a' and c <= 'z'); 
 }
+
+pub inline fn isAsciiUpperAlpha(c: u21) bool {
+    return c >= 'A' and c <= 'Z';
+}

@@ -76,6 +76,10 @@ pub fn emitTempBuffer(self: *Self) void {
     _ = self;
 }
 
+pub fn emitCurrentComment(self: *Self) void {
+    _ = self;
+}
+
 pub fn discardTag(self: *Self) void {
     self.current_tag_name.clear();
     self.current_tag_self_closing = false;
@@ -852,8 +856,8 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void
                     return;
                 }
                 switch (ch) {
-                    '\t', '\n', '\x0C', ' ' => self.state = .AfterAttributeName,
-                    '=' => self.setStateAndAdvance(.BeforeAttributeName, input),
+                    '\t', '\n', '\x0C', ' ', '/', '>' => self.state = .AfterAttributeName,
+                    '=' => self.setStateAndAdvance(.BeforeAttributeValue, input),
                     0x0000 => {
                         if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
                         try self.current_attribute_name.push('\u{FFFD}');
@@ -870,6 +874,7 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void
                         } else {
                             try self.current_attribute_name.push(ch);
                         }
+                        _ = input.nextChar();
                     },
                 }
             },
@@ -974,7 +979,7 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void
                 }
                 switch (ch) {
                     '\t', '\n', '\x0C', ' ' => self.setStateAndAdvance(.BeforeAttributeName, input),
-                    '&' => self.setStateAndAdvance(.AttributeValueUnquoted, input),
+                    '&' => self.setStateAndAdvance(.CharacterReferenceInAttributeValueUnquoted, input),
                     '>' => {
                         self.setStateAndAdvance(.Data, input);
                         self.emitCurrentTag();
@@ -1018,43 +1023,238 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void
             },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#self-closing-start-tag-state
-            .SelfClosingStartTag => {},
+            .SelfClosingStartTag => {
+                if (is_eof) {
+                    if (self.on_error) |err_cb| err_cb(.EofInTag, ch);
+                    self.emitEof();
+                    return;
+                }
+                switch (ch) {
+                    '>' => {
+                        self.current_tag_self_closing = true;
+                        self.setStateAndAdvance(.Data, input);
+                        self.emitCurrentTag();
+                    },
+                    else => {
+                        if (self.on_error) |err_cb| err_cb(.UnexpectedSolidusInTag, ch);
+                        self.state = .BeforeAttributeName;
+                    },
+                }
+            },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#bogus-comment-state
-            .BogusComment => {},
+            .BogusComment => {
+                if (is_eof) {
+                    self.emitCurrentComment();
+                    self.emitEof();
+                    return;
+                }
+                switch (ch) {
+                    '>' => {
+                        self.setStateAndAdvance(.Data, input);
+                        self.emitCurrentComment();
+                    },
+                    0x0000 => {
+                        if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
+                        try self.current_comment.push('\u{FFFD}');
+                        _ = input.nextChar();
+                    },
+                    else => {
+                        try self.current_comment.push(ch);
+                        _ = input.nextChar();
+                    },
+                }
+            },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#markup-declaration-open-state
-            .MarkupDeclarationOpen => {},
+            .MarkupDeclarationOpen => {
+                // TODO
+            },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#comment-start-state
-            .CommentStart => {},
+            .CommentStart => {
+                if (is_eof) {
+                    self.state = .Comment;
+                    return;
+                }
+                switch (ch) {
+                    '-' => self.setStateAndAdvance(.CommentStartDash, input),
+                    '>' => {
+                        if (self.on_error) |err_cb| err_cb(.AbruptClosingOfEmptyComment, ch);
+                        self.setStateAndAdvance(.Data, input);
+                        self.emitCurrentComment();
+                    },
+                    else => self.state = .Comment,
+                }
+            },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#comment-start-dash-state
-            .CommentStartDash => {},
+            .CommentStartDash => {
+                if (is_eof) {
+                    if (self.on_error) |err_cb| err_cb(.EofInComment, ch);
+                    self.emitCurrentComment();
+                    self.emitEof();
+                    return;
+                }
+                switch (ch) {
+                    '-' => self.setStateAndAdvance(.CommentEnd, input),
+                    '>' => {
+                        if (self.on_error) |err_cb| err_cb(.AbruptClosingOfEmptyComment, ch);
+                        self.setStateAndAdvance(.Data, input);
+                        self.emitCurrentComment();
+                    },
+                    else => {
+                        try self.current_comment.push('-');
+                        self.state = .Comment;
+                    },
+                }
+            },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#comment-state
-            .Comment => {},
+            .Comment => {
+                if (is_eof) {
+                    if (self.on_error) |err_cb| err_cb(.EofInComment, ch);
+                    self.emitCurrentComment();
+                    self.emitEof();
+                    return;
+                }
+                switch (ch) {
+                    '<' => {
+                        try self.current_comment.push('<');
+                        self.setStateAndAdvance(.CommentLessThanSign, input);
+                    },
+                    '-' => self.setStateAndAdvance(.CommentEndDash, input),
+                    0x0000 => {
+                        if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
+                        try self.current_comment.push('\u{FFFD}');
+                        _ = input.nextChar();
+                    },
+                    else => {
+                        try self.current_comment.push(ch);
+                        _ = input.nextChar();
+                    },
+                }
+            },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#comment-less-than-sign-state
-            .CommentLessThanSign => {},
+            .CommentLessThanSign => {
+                if (is_eof) {
+                    self.state = .Comment;
+                    return;
+                }
+                switch (ch) {
+                    '!' => {
+                        try self.current_comment.push('!');
+                        self.setStateAndAdvance(.CommentLessThanSignBang, input);
+                    },
+                    '<' => {
+                        try self.current_comment.push('<');
+                        _ = input.nextChar();
+                    },
+                    else => self.state = .Comment,
+                }
+            },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#comment-less-than-sign-bang-state
-            .CommentLessThanSignBang => {},
+            .CommentLessThanSignBang => {
+                switch (ch) {
+                    '-' => self.setStateAndAdvance(.CommentLessThanSignBangDash, input),
+                    else => self.state = .Comment,
+                }
+                if (is_eof) return;
+            },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#comment-less-than-sign-bang-dash-state
-            .CommentLessThanSignBangDash => {},
+            .CommentLessThanSignBangDash => {
+                if (is_eof) {
+                    self.state = .CommentEndDash;
+                    return;
+                }
+                switch (ch) {
+                    '-' => self.setStateAndAdvance(.CommentLessThanSignBangDashDash, input),
+                    else => self.state = .CommentEndDash,
+                }
+            },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#comment-less-than-sign-bang-dash-dash-state
-            .CommentLessThanSignBangDashDash => {},
+            .CommentLessThanSignBangDashDash => {
+                if (is_eof or ch == '>') self.state = .CommentEnd else {
+                    if (self.on_error) |err_cb| err_cb(.NestedComment, ch);
+                    self.state = .CommentEnd;
+                }
+            },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#comment-end-dash-state
-            .CommentEndDash => {},
+            .CommentEndDash => {
+                if (is_eof) {
+                    if (self.on_error) |err_cb| err_cb(.EofInComment, ch);
+                    self.emitCurrentComment();
+                    self.emitEof();
+                    return;
+                }
+                switch (ch) {
+                    '-' => self.setStateAndAdvance(.CommentEnd, input),
+                    else => {
+                        try self.current_comment.push('-');
+                        self.state = .Comment;
+                    },
+                }
+            },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#comment-end-state
-            .CommentEnd => {},
+            .CommentEnd => {
+                if (is_eof) {
+                    if (self.on_error) |err_cb| err_cb(.EofInComment, ch);
+                    self.emitCurrentComment();
+                    self.emitEof();
+                    return;
+                }
+                switch (ch) {
+                    '>' => {
+                        self.setStateAndAdvance(.Data, input);
+                        self.emitCurrentComment();
+                    },
+                    '!' => self.setStateAndAdvance(.CommentEndBang, input),
+                    '-' => {
+                        try self.current_comment.push('-');
+                        _ = input.nextChar();
+                    },
+                    else => {
+                        try self.current_comment.push('-');
+                        try self.current_comment.push('-');
+                        self.state = .CommentEnd;
+                    },
+                }
+            },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#comment-end-bang-state
-            .CommentEndBang => {},
+            .CommentEndBang => {
+                if (is_eof) {
+                    if (self.on_error) |err_cb| err_cb(.EofInComment, ch);
+                    self.emitCurrentComment();
+                    self.emitEof();
+                    return;
+                }
+                switch (ch) {
+                    '>' => {
+                    if (self.on_error) |err_cb| err_cb(.IncorrectlyClosedComment, ch);
+                        self.setStateAndAdvance(.Data, input);
+                        self.emitCurrentComment();
+                    },
+                    '-' => {
+                        try self.current_comment.push('-');
+                        try self.current_comment.push('-');
+                        try self.current_comment.push('!');
+                        self.setStateAndAdvance(.CommentEndDash, input);
+                    },
+                    else => {
+                        try self.current_comment.push('-');
+                        try self.current_comment.push('-');
+                        try self.current_comment.push('!');
+                        self.state = .Comment;
+                    },
+                }
+            },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#doctype-state
             .DOCTYPE => {},

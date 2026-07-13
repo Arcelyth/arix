@@ -5,7 +5,7 @@
     .dependencies = .{
         .strale = .{
             .url = "https://github.com/Arcelyth/strale/archive/main.tar.gz",
-            .hash = "strale-0.0.1-MSMDXAKjAQATOUlcc09nCaWN9_jR7_kP54yU7XOQzaV9",
+            .hash = "strale-0.0.1-MSMDXEOjAQCoVHELizhGu8EZANas20zip1DRCH45wJc3",
         },
     },
     .paths = .{""},

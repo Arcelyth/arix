@@ -24,6 +24,8 @@ current_comment: StraleUtf8Global,
 
 current_attribute_name: StraleUtf8Global,
 current_attribute_value: StraleUtf8Global,
+// Current tag's attributes.
+current_tag_attrs: std.ArrayList(StraleUtf8Global),
 
 current_doctype: token.Doctype,
 
@@ -32,6 +34,8 @@ temporary_buffer: StraleUtf8Global,
 on_error: ?TokenizerErrorProc,
 
 pub fn init(alloc: std.mem.Allocator, on_error: ?TokenizerErrorProc) Self {
+    //  TOOD: enable global allocator
+    //    strale.setGlobalAlloc(alloc);
     return Self{
         .allocator = alloc,
         .state = .Data,
@@ -43,6 +47,7 @@ pub fn init(alloc: std.mem.Allocator, on_error: ?TokenizerErrorProc) Self {
         .current_comment = StraleUtf8Global.initEmpty(),
         .current_attribute_name = StraleUtf8Global.initEmpty(),
         .current_attribute_value = StraleUtf8Global.initEmpty(),
+        .current_tag_attrs = .empty,
         .current_doctype = token.Doctype.init(),
         .last_start_tag_name = null,
         .temporary_buffer = StraleUtf8Global.initEmpty(),
@@ -80,6 +85,11 @@ pub fn createTag_E(self: *Self, tag_kind: token.TagKind, ch: u21) !void {
     self.discardTag();
     self.current_tag_kind = tag_kind;
     try self.current_tag_name.push(ch);
+}
+
+pub fn createAttr_E(self: *Self, ch: u21) !void {
+    _ = self;
+    _ = ch;
 }
 
 pub inline fn setStateAndAdvance(self: *Self, state: TokenizerState, input: *BufferDeque(.utf8, .not_atomic, false)) void {
@@ -811,28 +821,201 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void
             },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#before-attribute-name-state
-            .BeforeAttributeName => {},
+            .BeforeAttributeName => {
+                if (is_eof) {
+                    self.state = .AfterAttributeName;
+                    return;
+                }
+                switch (ch) {
+                    '\t', '\n', '\x0C', ' ' => {
+                        // Ignore.
+                    },
+                    '/', '>' => {
+                        self.state = .AfterAttributeName;
+                    },
+                    '=' => {
+                        if (self.on_error) |err_cb| err_cb(.UnexpectedEqualsSignBeforeAttributeName, ch);
+                        try self.createAttr_E('=');
+                        self.setStateAndAdvance(.AttributeName, input);
+                    },
+                    else => {
+                        try self.createAttr_E(ch);
+                        self.setStateAndAdvance(.AttributeName, input);
+                    },
+                }
+            },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#attribute-name-state
-            .AttributeName => {},
+            .AttributeName => {
+                if (is_eof) {
+                    self.state = .AfterAttributeName;
+                    return;
+                }
+                switch (ch) {
+                    '\t', '\n', '\x0C', ' ' => self.state = .AfterAttributeName,
+                    '=' => self.setStateAndAdvance(.BeforeAttributeName, input),
+                    0x0000 => {
+                        if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
+                        try self.current_attribute_name.push('\u{FFFD}');
+                        _ = input.nextChar();
+                    },
+                    '"', '\'', '<' => {
+                        if (self.on_error) |err_cb| err_cb(.UnexpectedCharacterInAttributeName, ch);
+                        try self.current_attribute_name.push(ch);
+                        _ = input.nextChar();
+                    },
+                    else => {
+                        if (ascii.isAsciiUpperAlpha(ch)) {
+                            try self.current_attribute_name.push(ch + 0x0020);
+                        } else {
+                            try self.current_attribute_name.push(ch);
+                        }
+                    },
+                }
+            },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#after-attribute-name-state
-            .AfterAttributeName => {},
+            .AfterAttributeName => {
+                if (is_eof) {
+                    if (self.on_error) |err_cb| err_cb(.EofInTag, ch);
+                    self.emitEof();
+                    return;
+                }
+                switch (ch) {
+                    '\t', '\n', '\x0C', ' ' => {
+                        // Ignore.
+                    },
+                    '/' => self.setStateAndAdvance(.SelfClosingStartTag, input),
+                    '=' => self.setStateAndAdvance(.BeforeAttributeValue, input),
+                    '>' => {
+                        self.setStateAndAdvance(.Data, input);
+                        self.emitCurrentTag();
+                    },
+                    else => {
+                        try self.createAttr_E(ch);
+                        self.setStateAndAdvance(.AttributeName, input);
+                    },
+                }
+            },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#before-attribute-value-state
-            .BeforeAttributeValue => {},
+            .BeforeAttributeValue => {
+                if (is_eof) {
+                    self.state = .AttributeValueUnquoted;
+                    return;
+                }
+                switch (ch) {
+                    '\t', '\n', '\x0C', ' ' => {
+                        // Ignore.
+                    },
+                    '"' => self.setStateAndAdvance(.AttributeValueDoubleQuoted, input),
+                    '\'' => self.setStateAndAdvance(.AttributeValueSingleQuoted, input),
+                    '>' => {
+                        if (self.on_error) |err_cb| err_cb(.MissingAttributeValue, ch);
+                        self.setStateAndAdvance(.Data, input);
+                        self.emitCurrentTag();
+                    },
+                    else => {
+                        self.state = .AttributeValueUnquoted;
+                    },
+                }
+            },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#attribute-value-double-quoted-state
-            .AttributeValueDoubleQuoted => {},
+            .AttributeValueDoubleQuoted => {
+                if (is_eof) {
+                    if (self.on_error) |err_cb| err_cb(.EofInTag, ch);
+                    self.emitEof();
+                    return;
+                }
+                switch (ch) {
+                    '"' => self.setStateAndAdvance(.AfterAttributeValueQuoted, input),
+                    '&' => self.setStateAndAdvance(.CharacterReferenceInAttributeValueDoubleQuoted, input),
+                    0x0000 => {
+                        if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
+                        try self.current_attribute_value.push('\u{FFFD}');
+                        _ = input.nextChar();
+                    },
+                    else => {
+                        try self.current_attribute_value.push(ch);
+                        _ = input.nextChar();
+                    },
+                }
+            },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#attribute-value-single-quoted-state
-            .AttributeValueSingleQuoted => {},
+            .AttributeValueSingleQuoted => {
+                if (is_eof) {
+                    if (self.on_error) |err_cb| err_cb(.EofInTag, ch);
+                    self.emitEof();
+                    return;
+                }
+                switch (ch) {
+                    '\'' => self.setStateAndAdvance(.AfterAttributeValueQuoted, input),
+                    '&' => self.setStateAndAdvance(.CharacterReferenceInAttributeValueSingleQuoted, input),
+                    0x0000 => {
+                        if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
+                        try self.current_attribute_value.push('\u{FFFD}');
+                        _ = input.nextChar();
+                    },
+                    else => {
+                        try self.current_attribute_value.push(ch);
+                        _ = input.nextChar();
+                    },
+                }
+            },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#attribute-value-unquoted-state
-            .AttributeValueUnquoted => {},
+            .AttributeValueUnquoted => {
+                if (is_eof) {
+                    if (self.on_error) |err_cb| err_cb(.EofInTag, ch);
+                    self.emitEof();
+                    return;
+                }
+                switch (ch) {
+                    '\t', '\n', '\x0C', ' ' => self.setStateAndAdvance(.BeforeAttributeName, input),
+                    '&' => self.setStateAndAdvance(.AttributeValueUnquoted, input),
+                    '>' => {
+                        self.setStateAndAdvance(.Data, input);
+                        self.emitCurrentTag();
+                    },
+                    0x0000 => {
+                        if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
+                        try self.current_attribute_value.push('\u{FFFD}');
+                        _ = input.nextChar();
+                    },
+                    '"', '\'', '<', '=', '`' => {
+                        if (self.on_error) |err_cb| err_cb(.UnexpectedCharacterInUnquotedAttributeValue, ch);
+                        try self.current_attribute_value.push(ch);
+                        _ = input.nextChar();
+                    },
+                    else => {
+                        try self.current_attribute_value.push(ch);
+                        _ = input.nextChar();
+                    },
+                }
+            },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#after-attribute-value-quoted-state
-            .AfterAttributeValueQuoted => {},
+            .AfterAttributeValueQuoted => {
+                if (is_eof) {
+                    if (self.on_error) |err_cb| err_cb(.EofInTag, ch);
+                    self.emitEof();
+                    return;
+                }
+                switch (ch) {
+                    '\t', '\n', '\x0C', ' ' => self.setStateAndAdvance(.BeforeAttributeName, input),
+                    '/' => self.setStateAndAdvance(.SelfClosingStartTag, input),
+                    '>' => {
+                        self.setStateAndAdvance(.Data, input);
+                        self.emitCurrentTag();
+                    },
+                    else => {
+                        if (self.on_error) |err_cb| err_cb(.MissingWhitespaceBetweenAttributes, ch);
+                        self.state = .BeforeAttributeName;
+                    },
+                }
+            },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#self-closing-start-tag-state
             .SelfClosingStartTag => {},

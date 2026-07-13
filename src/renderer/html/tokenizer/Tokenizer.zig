@@ -313,47 +313,106 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void
             },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#rcdata-end-tag-name-state
-            .RCDATAEndTagName => {
+            .RCDATAEndTagName => blk: {
                 if (self.isAppropriateEndTag()) {
                     switch (ch) {
                         '\t', '\n', '\x0C', ' ' => {
                             self.setStateAndAdvance(.BeforeAttributeName, input);
+                            break :blk;
                         },
                         '/' => {
                             self.setStateAndAdvance(.SelfClosingStartTag, input);
+                            break :blk;
                         },
                         '>' => {
                             self.setStateAndAdvance(.Data, input);
                             self.emitCurrentTag();
+                            break :blk;
                         },
-                        else => {}
+                        else => {},
                     }
+                }
+                if (ascii.isAsciiUpperAlpha(ch)) {
+                    try self.current_tag_name.push(ch + 0x0020);
+                    try self.temporary_buffer.push(ch);
+                    _ = input.nextChar();
+                } else if (ascii.isAsciiLowerAlpha(ch)) {
+                    try self.current_tag_name.push(ch);
+                    try self.temporary_buffer.push(ch);
+                    _ = input.nextChar();
                 } else {
-                    if (ascii.isAsciiUpperAlpha(ch)) {
-                        try self.current_tag_name.push(ch + 0x0020);
-                        try self.temporary_buffer.push(ch);
-                        _ = input.nextChar();
-                    } else if (ascii.isAsciiLowerAlpha(ch)) {
-                        try self.current_tag_name.push(ch);
-                        try self.temporary_buffer.push(ch);
-                        _ = input.nextChar();
-                    } else {
-                        self.emitChar('<');
-                        self.emitChar('/');
-                        self.emitTempBuffer();
-                        self.state = .RCDATA;
-                    }
+                    self.emitChar('<');
+                    self.emitChar('/');
+                    self.emitTempBuffer();
+                    self.state = .RCDATA;
                 }
             },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#rawtext-less-than-sign-state
-            .RAWTEXTLessThanSign => {},
+            .RAWTEXTLessThanSign => {
+                switch (ch) {
+                    '/' => {
+                        self.temporary_buffer.clear();
+                        self.setStateAndAdvance(.RAWTEXTEndTagOpen, input);
+                    },
+                    else => {
+                        self.emitChar('<');
+                        self.state = .RAWTEXT;
+                    },
+                }
+                if (is_eof) return;
+            },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#rawtext-end-tag-open-state
-            .RAWTEXTEndTagOpen => {},
+            .RAWTEXTEndTagOpen => {
+                if (ascii.isAsciiAlpha(ch)) {
+                    try self.createTag_E(.EndTag, ch);
+                    self.setStateAndAdvance(.RAWTEXTEndTagName, input);
+                } else {
+                    self.emitChar('<');
+                    self.emitChar('/');
+                    self.state = .RAWTEXT;
+                }
+                if (is_eof) return;
+            },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#rawtext-end-tag-name-state
-            .RAWTEXTEndTagName => {},
+            .RAWTEXTEndTagName => blk: {
+                if (self.isAppropriateEndTag()) {
+                    switch (ch) {
+                        '\t', '\n', '\x0C', ' ' => {
+                            self.setStateAndAdvance(.BeforeAttributeName, input);
+                            break :blk;
+                        },
+
+                        '/' => {
+                            self.setStateAndAdvance(.SelfClosingStartTag, input);
+                            break :blk;
+                        },
+                        '>' => {
+                            self.setStateAndAdvance(.Data, input);
+                            self.emitCurrentTag();
+                            break :blk;
+                        },
+                        else => {},
+                    }
+                }
+                if (ascii.isAsciiAlpha(ch)) {
+                    try self.current_tag_name.push(ch + 0x0020);
+                    try self.temporary_buffer.push(ch);
+                    _ = input.nextChar();
+                } else if (ascii.isAsciiLowerAlpha(ch)) {
+                    try self.current_tag_name.push(ch);
+                    try self.temporary_buffer.push(ch);
+                    _ = input.nextChar();
+                } else {
+                    self.emitChar('<');
+                    self.emitChar('/');
+                    self.emitTempBuffer();
+                    self.state = .RAWTEXT;
+                }
+                if (is_eof) return;
+            },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#script-data-less-than-sign-state
             .ScriptDataLessThanSign => {},

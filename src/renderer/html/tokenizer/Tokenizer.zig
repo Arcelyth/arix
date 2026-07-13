@@ -438,7 +438,7 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void
             .ScriptDataEndTagOpen => {
                 if (ascii.isAsciiAlpha(ch)) {
                     try self.createTag_E(.EndTag, ch);
-                    self.state = .ScriptDataEndTagName;
+                    self.setStateAndAdvance(.ScriptDataEndTagName, input);
                 } else {
                     self.emitChar('<');
                     self.emitChar('/');
@@ -613,28 +613,202 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void
             },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#script-data-escaped-end-tag-open-state
-            .ScriptDataEscapedEndTagOpen => {},
+            .ScriptDataEscapedEndTagOpen => {
+                if (ascii.isAsciiAlpha(ch)) {
+                    try self.createTag_E(.EndTag, ch);
+                    self.setStateAndAdvance(.ScriptDataEscapedEndTagName, input);
+                } else {
+                    self.emitChar('<');
+                    self.emitChar('/');
+                    self.state = .ScriptDataEscaped;
+                }
+                if (is_eof) return;
+            },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#script-data-escaped-end-tag-name-state
-            .ScriptDataEscapedEndTagName => {},
+            .ScriptDataEscapedEndTagName => blk: {
+                if (self.isAppropriateEndTag()) {
+                    switch (ch) {
+                        '\t', '\n', '\x0C', ' ' => {
+                            self.setStateAndAdvance(.BeforeAttributeName, input);
+                            break :blk;
+                        },
+                        '/' => {
+                            self.setStateAndAdvance(.SelfClosingStartTag, input);
+                            break :blk;
+                        },
+                        '>' => {
+                            self.setStateAndAdvance(.Data, input);
+                            self.emitCurrentTag();
+                            break :blk;
+                        },
+                        else => {},
+                    }
+                }
+                if (ascii.isAsciiUpperAlpha(ch)) {
+                    try self.current_tag_name.push(ch + 0x0020);
+                    try self.temporary_buffer.push(ch);
+                    _ = input.nextChar();
+                } else if (ascii.isAsciiLowerAlpha(ch)) {
+                    try self.current_tag_name.push(ch);
+                    try self.temporary_buffer.push(ch);
+                    _ = input.nextChar();
+                } else {
+                    self.emitChar('<');
+                    self.emitChar('/');
+                    self.emitTempBuffer();
+                    self.state = .ScriptDataEscaped;
+                }
+
+                if (is_eof) return;
+            },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#script-data-double-escape-start-state
-            .ScriptDataDoubleEscapeStart => {},
+            .ScriptDataDoubleEscapeStart => {
+                switch (ch) {
+                    '\t', '\n', '\x0C', ' ', '/', '>' => {
+                        if (std.mem.eql(u8, self.temporary_buffer.slice(), "script")) self.setStateAndAdvance(.ScriptDataDoubleEscaped, input) else self.setStateAndAdvance(.ScriptDataEscaped, input);
+                        self.emitChar(ch);
+                    },
+                    else => {
+                        if (ascii.isAsciiUpperAlpha(ch)) {
+                            try self.temporary_buffer.push(ch);
+                            self.emitChar(ch);
+                            _ = input.nextChar();
+                        } else if (ascii.isAsciiLowerAlpha(ch)) {
+                            try self.temporary_buffer.push(ch);
+                            self.emitChar(ch);
+                            _ = input.nextChar();
+                        } else {
+                            self.state = .ScriptDataDoubleEscaped;
+                        }
+                    },
+                }
+                if (is_eof) return;
+            },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#script-data-double-escaped-state
-            .ScriptDataDoubleEscaped => {},
+            .ScriptDataDoubleEscaped => {
+                if (is_eof) {
+                    if (self.on_error) |err_cb| err_cb(.EofInScriptHtmlCommentLikeText, ch);
+                    self.emitEof();
+                    return;
+                }
+                switch (ch) {
+                    '-' => {
+                        self.setStateAndAdvance(.ScriptDataEscapedDash, input);
+                        self.emitChar('-');
+                    },
+                    '<' => {
+                        self.setStateAndAdvance(.ScriptDataEscapedLessThanSign, input);
+                        self.emitChar('<');
+                    },
+                    0x0000 => {
+                        if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
+                        self.emitChar('\u{FFFD}');
+                        _ = input.nextChar();
+                    },
+                    else => {
+                        self.emitChar(ch);
+                        _ = input.nextChar();
+                    },
+                }
+            },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#script-data-double-escaped-dash-state
-            .ScriptDataDoubleEscapedDash => {},
+            .ScriptDataDoubleEscapedDash => {
+                if (is_eof) {
+                    if (self.on_error) |err_cb| err_cb(.EofInScriptHtmlCommentLikeText, ch);
+                    self.emitEof();
+                    return;
+                }
+                switch (ch) {
+                    '-' => {
+                        self.setStateAndAdvance(.ScriptDataDoubleEscapedDashDash, input);
+                        self.emitChar('-');
+                    },
+                    '<' => {
+                        self.setStateAndAdvance(.ScriptDataDoubleEscapedLessThanSign, input);
+                        self.emitChar('<');
+                    },
+                    0x0000 => {
+                        if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
+                        self.setStateAndAdvance(.ScriptDataDoubleEscaped, input);
+                        self.emitChar('\u{FFFD}');
+                    },
+                    else => {
+                        self.setStateAndAdvance(.ScriptDataDoubleEscaped, input);
+                        self.emitChar(ch);
+                    },
+                }
+            },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#script-data-double-escaped-dash-dash-state
-            .ScriptDataDoubleEscapedDashDash => {},
+            .ScriptDataDoubleEscapedDashDash => {
+                if (is_eof) {
+                    if (self.on_error) |err_cb| err_cb(.EofInScriptHtmlCommentLikeText, ch);
+                    self.emitEof();
+                    return;
+                }
+                switch (ch) {
+                    '-' => {
+                        self.emitChar('-');
+                        _ = input.nextChar();
+                    },
+                    '<' => {
+                        self.setStateAndAdvance(.ScriptDataDoubleEscapedLessThanSign, input);
+                        self.emitChar('<');
+                    },
+                    0x0000 => {
+                        if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
+                        self.setStateAndAdvance(.ScriptDataDoubleEscaped, input);
+                        self.emitChar('\u{FFFD}');
+                    },
+                    else => {
+                        self.setStateAndAdvance(.ScriptDataDoubleEscaped, input);
+                        self.emitChar(ch);
+                    },
+                }
+            },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#script-data-double-escaped-less-than-sign-state
-            .ScriptDataDoubleEscapedLessThanSign => {},
+            .ScriptDataDoubleEscapedLessThanSign => {
+                switch (ch) {
+                    '/' => {
+                        self.temporary_buffer.clear();
+                        self.setStateAndAdvance(.ScriptDataDoubleEscapeEnd, input);
+                        self.emitChar('/');
+                    },
+                    else => {
+                        self.state = .ScriptDataDoubleEscaped;
+                    },
+                }
+                if (is_eof) return;
+            },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#script-data-double-escape-end-state
-            .ScriptDataDoubleEscapeEnd => {},
+            .ScriptDataDoubleEscapeEnd => {
+                switch (ch) {
+                    '\t', '\n', '\x0C', ' ', '/', '>' => {
+                        if (std.mem.eql(u8, self.temporary_buffer.slice(), "script")) self.setStateAndAdvance(.ScriptDataEscaped, input) else self.setStateAndAdvance(.ScriptDataDoubleEscaped, input);
+                        self.emitChar(ch);
+                    },
+                    else => {
+                        if (ascii.isAsciiUpperAlpha(ch)) {
+                            try self.temporary_buffer.push(ch);
+                            self.emitChar(ch);
+                            _ = input.nextChar();
+                        } else if (ascii.isAsciiLowerAlpha(ch)) {
+                            try self.temporary_buffer.push(ch);
+                            self.emitChar(ch);
+                            _ = input.nextChar();
+                        } else {
+                            self.state = .ScriptDataDoubleEscaped;
+                        }
+                    },
+                }
+                if (is_eof) return;
+            },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#before-attribute-name-state
             .BeforeAttributeName => {},

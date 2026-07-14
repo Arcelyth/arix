@@ -13,6 +13,7 @@ const token = @import("token.zig");
 const Self = @This();
 allocator: std.mem.Allocator,
 state: TokenizerState,
+return_state: TokenizerState,
 pause_flag: bool,
 at_eof: bool,
 
@@ -39,6 +40,7 @@ pub fn init(alloc: std.mem.Allocator, on_error: ?TokenizerErrorProc) Self {
     return Self{
         .allocator = alloc,
         .state = .Data,
+        .return_state = .Data,
         .pause_flag = false,
         .at_eof = false,
         .current_tag_name = StraleUtf8Global.initEmpty(),
@@ -105,6 +107,12 @@ pub inline fn setStateAndAdvance(self: *Self, state: TokenizerState, input: *Buf
     _ = input.nextChar();
 }
 
+pub inline fn setCharacterReferenceStateAndAdvance(self: *Self, return_state: TokenizerState, input: *BufferDeque(.utf8, .not_atomic, false)) void {
+    self.state = .CharacterReference;
+    self.return_state = return_state;
+    _ = input.nextChar();
+}
+
 pub inline fn emitCharAndAdvance(self: *Self, ch: u21, input: *BufferDeque(.utf8, .not_atomic, false)) void {
     self.emitChar(ch);
     _ = input.nextChar();
@@ -149,7 +157,7 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void
                     return;
                 }
                 switch (ch) {
-                    '&' => self.setStateAndAdvance(.CharacterReferenceInData, input),
+                    '&' => self.setCharacterReferenceStateAndAdvance(.Data, input),
                     '<' => self.setStateAndAdvance(.TagOpen, input),
                     0x0000 => {
                         if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
@@ -167,7 +175,7 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void
                 }
 
                 switch (ch) {
-                    '&' => self.setStateAndAdvance(.CharacterReferenceInRCDATA, input),
+                    '&' => self.setCharacterReferenceStateAndAdvance(.RCDATA, input),
                     '<' => self.setStateAndAdvance(.RCDATALessThanSign, input),
                     0x0000 => {
                         if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
@@ -1018,7 +1026,7 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void
                 }
                 switch (ch) {
                     '"' => self.setStateAndAdvance(.AfterAttributeValueQuoted, input),
-                    '&' => self.setStateAndAdvance(.CharacterReferenceInAttributeValueDoubleQuoted, input),
+                    '&' => self.setCharacterReferenceStateAndAdvance(.AttributeValueDoubleQuoted, input),
                     0x0000 => {
                         if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
                         try self.current_attribute_value.push('\u{FFFD}');
@@ -1040,7 +1048,7 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void
                 }
                 switch (ch) {
                     '\'' => self.setStateAndAdvance(.AfterAttributeValueQuoted, input),
-                    '&' => self.setStateAndAdvance(.CharacterReferenceInAttributeValueSingleQuoted, input),
+                    '&' => self.setCharacterReferenceStateAndAdvance(.AttributeValueSingleQuoted, input),
                     0x0000 => {
                         if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
                         try self.current_attribute_value.push('\u{FFFD}');
@@ -1062,7 +1070,7 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void
                 }
                 switch (ch) {
                     '\t', '\n', '\x0C', ' ' => self.setStateAndAdvance(.BeforeAttributeName, input),
-                    '&' => self.setStateAndAdvance(.CharacterReferenceInAttributeValueUnquoted, input),
+                    '&' => self.setCharacterReferenceStateAndAdvance(.AttributeValueUnquoted, input),
                     '>' => {
                         self.setStateAndAdvance(.Data, input);
                         self.emitCurrentTag();
@@ -1869,16 +1877,80 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void
                 }
             },
 
+            // https://html.spec.whatwg.org/multipage/parsing.html#processing-instruction-open-state
+            //            .ProcessingInstructionOpen => {
+            //                if (is_eof) {
+            //                    if (self.on_error) |err_cb| err_cb(.EofInProcessingInstruction, ch);
+            //                    self.emitEof();
+            //                    return;
+            //                }
+            //                if (ascii.isAsciiAlpha(ch) or ch == '_') self.state = .ProcessingInstructionTarget else {
+            //                    if (self.on_error) |err_cb| err_cb(.InvalidFirstCharacterOfProcessingInstructionTarget, ch);
+            //                    self.current_comment = self.temporary_buffer;
+            //                    self.state = .BogusComment;
+            //                }
+            //            },
+            //
+            //            // https://html.spec.whatwg.org/multipage/parsing.html#processing-instruction-target-state
+            //            .ProcessingInstructionTarget => {
+            //                if (is_eof) {
+            //                    if (self.on_error) |err_cb| err_cb(.EofInProcessingInstruction, ch);
+            //                    self.emitEof();
+            //                    return;
+            //                }
+            //                switch (ch) {
+            //                    '\t', '\n', '\x0C', ' ', '?', '>' => {
+            //                        const t = 1;
+            //                        if (match_insensitive(t, "xml") or match_insensitive(t, "xml-stylesheet")) {
+            //                            if (self.on_error) |err_cb| err_cb(.DisallowedProcessingInstructionTarget, ch);
+            //
+            //                            self.current_comment = self.temporary_buffer;
+            //                            self.state = .BogusComment;
+            //                        } else {}
+            //                    },
+            //                }
+            //            },
+            //
+            //            // https://html.spec.whatwg.org/multipage/parsing.html#after-processing-instruction-target-state
+            //            .AfterProcessingInstructionTarget => {},
+            //
+            //            // https://html.spec.whatwg.org/multipage/parsing.html#processing-instruction-data-state
+            //            .ProcessingInstructionData => {},
+            //
+            //            // https://html.spec.whatwg.org/multipage/parsing.html#processing-instruction-questionable-state
+            //            .ProcessingInstructionQuestionable => {},
+            //
             // https://html.spec.whatwg.org/multipage/parsing.html#character-reference-state
-            .CharacterReferenceInData => {},
-
-            .CharacterReferenceInRCDATA => {},
-
-            .CharacterReferenceInAttributeValueSingleQuoted => {},
-
-            .CharacterReferenceInAttributeValueDoubleQuoted => {},
-
-            .CharacterReferenceInAttributeValueUnquoted => {},
+            .CharacterReference => {
+                self.temporary_buffer.clear();
+                try self.temporary_buffer.push('&');
+                if (is_eof) {
+                    try self.flushCodePoints();
+                    self.state = self.return_state;
+                    return;
+                }
+                switch (ch) {
+                    '#' => {
+                        try self.temporary_buffer.push(ch);
+                        self.setStateAndAdvance(.NumericCharacterReference, input);
+                    },
+                    else => {
+                        if (ascii.isAsciiAlphanum(ch)) self.state = .NamedCharacterReference else {
+                            try self.flushCodePoints();
+                            self.state = self.return_state;
+                        }
+                    },
+                }
+            },
+            //            .CharacterReferenceInData => self.stepCharacterReference(.CharacterReferenceInData, is_eof, ch),
+            //
+            //            .CharacterReferenceInRCDATA => self.stepCharacterReference(.CharacterReferenceInRCDATA, is_eof, ch),
+            //
+            //            .CharacterReferenceInAttributeValueSingleQuoted => self.stepCharacterReference(.CharacterReferenceInAttributeValueSingleQuoted, is_eof, ch),
+            //
+            //            .CharacterReferenceInAttributeValueDoubleQuoted => self.stepCharacterReference(.CharacterReferenceInAttributeValueDoubleQuoted, is_eof, ch),
+            //
+            //            .CharacterReferenceInAttributeValueUnquoted => self.stepCharacterReference(.CharacterReferenceInAttributeValueUnquoted, is_eof, ch),
 
             // https://html.spec.whatwg.org/multipage/parsing.html#named-character-reference-state
             .NamedCharacterReference => {},
@@ -1903,6 +1975,22 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void
 
             // https://html.spec.whatwg.org/multipage/parsing.html#numeric-character-reference-end-state
             .NumericCharacterReferenceEnd => {},
+            else => {},
         }
     }
+}
+
+// https://html.spec.whatwg.org/multipage/parsing.html#flush-code-points-consumed-as-a-character-reference
+pub fn flushCodePoints(self: *Self) !void {
+    const slice = self.temporary_buffer.slice();
+    for (slice) |s| {
+        if (self.isConsumedAsPartOfAttr()) try self.current_attribute_value.push(s) else self.emitChar(s);
+    }
+}
+
+inline fn isConsumedAsPartOfAttr(self: *Self) bool {
+    return blk: switch (self.return_state) {
+        .AttributeValueSingleQuoted, .AttributeValueDoubleQuoted, .AttributeValueUnquoted => break :blk true,
+        else => break :blk false,
+    };
 }

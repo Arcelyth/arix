@@ -20,9 +20,9 @@ pub const Doctype = struct {
         };
     } 
 
-    pub fn deinit() void {
-
-        // TODO
+    pub fn deinit(self: *Doctype) void {
+        // TODO.
+        _ = self;
     }
 };
 

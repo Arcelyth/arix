@@ -80,6 +80,10 @@ pub fn emitCurrentComment(self: *Self) void {
     _ = self;
 }
 
+pub fn emitCurrentDoctype(self: *Self) void {
+    _ = self;
+}
+
 pub fn discardTag(self: *Self) void {
     self.current_tag_name.clear();
     self.current_tag_self_closing = false;
@@ -106,8 +110,20 @@ pub inline fn emitCharAndNext(self: *Self, ch: u21, input: *BufferDeque(.utf8, .
     _ = input.nextChar();
 }
 
+pub fn match_insensitive(input: *BufferDeque(.utf8, .not_atomic, false), str: []const u8) bool {
+    // TODO.
+    _ = input;
+    _ = str;
+    return true;
+}
+
 pub fn createComment(self: *Self) void {
     _ = self;
+}
+
+pub inline fn createDoctype(self: *Self) void {
+    self.current_doctype.deinit();
+    self.current_doctype = token.Doctype.init();
 }
 
 pub fn isAppropriateEndTag(self: *const Self) bool {
@@ -897,6 +913,7 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void
                 switch (ch) {
                     '\t', '\n', '\x0C', ' ' => {
                         // Ignore.
+                        _ = input.nextChar();
                     },
                     '/', '>' => {
                         self.state = .AfterAttributeName;
@@ -953,6 +970,7 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void
                 switch (ch) {
                     '\t', '\n', '\x0C', ' ' => {
                         // Ignore.
+                        _ = input.nextChar();
                     },
                     '/' => self.setStateAndAdvance(.SelfClosingStartTag, input),
                     '=' => self.setStateAndAdvance(.BeforeAttributeValue, input),
@@ -976,6 +994,7 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void
                 switch (ch) {
                     '\t', '\n', '\x0C', ' ' => {
                         // Ignore.
+                        _ = input.nextChar();
                     },
                     '"' => self.setStateAndAdvance(.AttributeValueDoubleQuoted, input),
                     '\'' => self.setStateAndAdvance(.AttributeValueSingleQuoted, input),
@@ -1324,28 +1343,254 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void
             },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#doctype-state
-            .DOCTYPE => {},
+            .DOCTYPE => {
+                if (is_eof) {
+                    if (self.on_error) |err_cb| err_cb(.EofInDOCTYPE, ch);
+                    self.createDoctype();
+                    self.current_doctype.force_quirks = true;
+                    self.emitCurrentDoctype();
+                    self.emitEof();
+                    return;
+                }
+                switch (ch) {
+                    '\t', '\n', '\x0C', ' ' => self.setStateAndAdvance(.BeforeDOCTYPEName, input),
+                    '>' => self.state = .BeforeDOCTYPEName,
+                    else => {
+                        if (self.on_error) |err_cb| err_cb(.MissingWhitespaceBeforeDOCTYPEName, ch);
+                        self.state = .BeforeDOCTYPEName;
+                    },
+                }
+            },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#before-doctype-name-state
-            .BeforeDOCTYPEName => {},
+            .BeforeDOCTYPEName => {
+                if (is_eof) {
+                    if (self.on_error) |err_cb| err_cb(.EofInDOCTYPE, ch);
+                    self.createDoctype();
+                    self.current_doctype.force_quirks = true;
+                    self.emitCurrentDoctype();
+                    self.emitEof();
+                    return;
+                }
+                switch (ch) {
+                    '\t', '\n', '\x0C', ' ' => {
+                        // Ignore.
+                        _ = input.nextChar();
+                    },
+                    'A'...'Z' => {
+                        self.createDoctype();
+                        try self.current_doctype.name.push(ch + 0x0020);
+                        self.setStateAndAdvance(.DOCTYPEName, input);
+                    },
+                    0x0000 => {
+                        if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
+                        self.createDoctype();
+                        try self.current_doctype.name.push('\u{FFFD}');
+                        self.setStateAndAdvance(.DOCTYPEName, input);
+                    },
+                    '>' => {
+                        if (self.on_error) |err_cb| err_cb(.MissingDOCTYPEName, ch);
+                        self.createDoctype();
+                        self.current_doctype.force_quirks = true;
+                        self.setStateAndAdvance(.Data, input);
+                        self.emitCurrentDoctype();
+                    },
+                    else => {
+                        self.createDoctype();
+                        try self.current_doctype.name.push(ch);
+                        self.setStateAndAdvance(.DOCTYPEName, input);
+                    },
+                }
+            },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#doctype-name-state
-            .DOCTYPEName => {},
+            .DOCTYPEName => {
+                if (is_eof) {
+                    if (self.on_error) |err_cb| err_cb(.EofInDOCTYPE, ch);
+                    self.current_doctype.force_quirks = true;
+                    self.emitCurrentDoctype();
+                    self.emitEof();
+                    return;
+                }
+                switch (ch) {
+                    '\t', '\n', '\x0C', ' ' => self.setStateAndAdvance(.AfterDOCTYPEName, input),
+                    '>' => {
+                        self.setStateAndAdvance(.Data, input);
+                        self.emitCurrentDoctype();
+                    },
+                    'A'...'Z' => {
+                        try self.current_doctype.name.push(ch + 0x0020);
+                        _ = input.nextChar();
+                    },
+                    0x0000 => {
+                        if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
+                        try self.current_doctype.name.push('\u{FFFD}');
+                        _ = input.nextChar();
+                    },
+                    else => {
+                        try self.current_doctype.name.push(ch);
+                        _ = input.nextChar();
+                    },
+                }
+            },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#after-doctype-name-state
-            .AfterDOCTYPEName => {},
+            .AfterDOCTYPEName => {
+                if (is_eof) {
+                    if (self.on_error) |err_cb| err_cb(.EofInDOCTYPE, ch);
+                    self.current_doctype.force_quirks = true;
+                    self.emitCurrentDoctype();
+                    self.emitEof();
+                    return;
+                }
+                switch (ch) {
+                    '\t', '\n', '\x0C', ' ' => {
+                        // Ignore.
+                        _ = input.nextChar();
+                    },
+                    '>' => {
+                        self.setStateAndAdvance(.Data, input);
+                        self.emitCurrentDoctype();
+                    },
+                    else => {
+                        if (match_insensitive(input, "PUBLIC"))
+                            self.state = .AfterDOCTYPEPublicKeyword
+                        else if (match_insensitive(input, "SYSTEM")) self.state = .AfterDOCTYPESystemKeyword else {
+                            if (self.on_error) |err_cb| err_cb(.InvalidCharacterSequenceAfterDOCTYPEName, ch);
+                            self.current_doctype.force_quirks = true;
+                            self.state = .BogusDOCTYPE;
+                        }
+                    },
+                }
+            },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#after-doctype-public-keyword-state
-            .AfterDOCTYPEPublicKeyword => {},
+            .AfterDOCTYPEPublicKeyword => {
+                if (is_eof) {
+                    if (self.on_error) |err_cb| err_cb(.EofInDOCTYPE, ch);
+                    self.current_doctype.force_quirks = true;
+                    self.emitCurrentDoctype();
+                    self.emitEof();
+                    return;
+                }
+                switch (ch) {
+                    '\t', '\n', '\x0C', ' ' => self.setStateAndAdvance(.BeforeDOCTYPEPublicIdentifier, input),
+                    '"' => {
+                        if (self.on_error) |err_cb| err_cb(.MissingWhitespaceAfterDOCTYPEPublicKeyword, ch);
+                        self.current_doctype.public_id.clear();
+                        self.setStateAndAdvance(.DOCTYPEPublicIdentifierDoubleQuoted, input);
+                    },
+                    '\'' => {
+                        if (self.on_error) |err_cb| err_cb(.MissingWhitespaceAfterDOCTYPEPublicKeyword, ch);
+                        self.current_doctype.public_id.clear();
+                        self.setStateAndAdvance(.DOCTYPEPublicIdentifierSingleQuoted, input);
+                    },
+                    '>' => {
+                        if (self.on_error) |err_cb| err_cb(.MissingDOCTYPEPublicIdentifier, ch);
+                        self.current_doctype.force_quirks = true;
+                        self.setStateAndAdvance(.Data, input);
+                        self.emitCurrentDoctype();
+                    },
+                    else => {
+                        if (self.on_error) |err_cb| err_cb(.MissingQuoteBeforeDOCTYPEPublicIdentifier, ch);
+                        self.current_doctype.force_quirks = true;
+                        self.state = .BogusDOCTYPE;
+                    },
+                }
+            },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#before-doctype-public-identifier-state
-            .BeforeDOCTYPEPublicIdentifier => {},
+            .BeforeDOCTYPEPublicIdentifier => {
+                if (is_eof) {
+                    if (self.on_error) |err_cb| err_cb(.EofInDOCTYPE, ch);
+                    self.current_doctype.force_quirks = true;
+                    self.emitCurrentDoctype();
+                    self.emitEof();
+                    return;
+                }
+                switch (ch) {
+                    '\t', '\n', '\x0C', ' ' => {
+                        // Ignore.
+                        _ = input.nextChar();
+                    },
+                    '"' => {
+                        self.current_doctype.public_id.clear();
+                        self.setStateAndAdvance(.DOCTYPEPublicIdentifierDoubleQuoted, input);
+                    },
+                    '\'' => {
+                        self.current_doctype.public_id.clear();
+                        self.setStateAndAdvance(.DOCTYPEPublicIdentifierSingleQuoted, input);
+                    },
+                    '>' => {
+                        if (self.on_error) |err_cb| err_cb(.MissingDOCTYPEPublicIdentifier, ch);
+                        self.current_doctype.force_quirks = true;
+                        self.setStateAndAdvance(.Data, input);
+                        self.emitCurrentDoctype();
+                    },
+                    else => {
+                        if (self.on_error) |err_cb| err_cb(.MissingQuoteBeforeDOCTYPEPublicIdentifier, ch);
+                        self.current_doctype.force_quirks = true;
+                        self.setStateAndAdvance(.BogusDOCTYPE, input);
+                    },
+                }
+            },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#doctype-public-identifier-(double-quoted)-state
-            .DOCTYPEPublicIdentifierDoubleQuoted => {},
+            .DOCTYPEPublicIdentifierDoubleQuoted => {
+                if (is_eof) {
+                    if (self.on_error) |err_cb| err_cb(.EofInDOCTYPE, ch);
+                    self.current_doctype.force_quirks = true;
+                    self.emitCurrentDoctype();
+                    self.emitEof();
+                    return;
+                }
+                switch (ch) {
+                    '"' => self.setStateAndAdvance(.AfterDOCTYPEPublicIdentifier, input),
+                    0x0000 => {
+                        if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
+                        try self.current_doctype.public_id.push('\u{FFFD}');
+                    },
+                    '>' => {
+                        if (self.on_error) |err_cb| err_cb(.AbruptDOCTYPEPublicIdentifier, ch);
+                        self.current_doctype.force_quirks = true;
+                        self.setStateAndAdvance(.Data, input);
+                        self.emitCurrentDoctype();
+                    },
+                    else => {
+                        try self.current_doctype.public_id.push(ch);
+                        _ = input.nextChar();
+                    },
+                }
+            },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#doctype-public-identifier-(single-quoted)-state
-            .DOCTYPEPublicIdentifierSingleQuoted => {},
+            .DOCTYPEPublicIdentifierSingleQuoted => {
+                if (is_eof) {
+                    if (self.on_error) |err_cb| err_cb(.EofInDOCTYPE, ch);
+                    self.current_doctype.force_quirks = true;
+                    self.emitCurrentDoctype();
+                    self.emitEof();
+                    return;
+                }
+                switch (ch) {
+                    '\'' => self.setStateAndAdvance(.AfterDOCTYPEPublicIdentifier, input),
+                    0x0000 => {
+                        if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
+                        try self.current_doctype.public_id.push('\u{FFFD}');
+                    },
+                    '>' => {
+                        if (self.on_error) |err_cb| err_cb(.AbruptDOCTYPEPublicIdentifier, ch);
+                        self.current_doctype.force_quirks = true;
+                        self.setStateAndAdvance(.Data, input);
+                        self.emitCurrentDoctype();
+                    },
+                    else => {
+                        try self.current_doctype.public_id.push(ch);
+                        _ = input.nextChar();
+                    },
+                }
+            },
+
 
             // https://html.spec.whatwg.org/multipage/parsing.html#after-doctype-public-identifier-state
             .AfterDOCTYPEPublicIdentifier => {},

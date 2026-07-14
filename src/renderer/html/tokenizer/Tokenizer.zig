@@ -1591,30 +1591,235 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void
                 }
             },
 
-
             // https://html.spec.whatwg.org/multipage/parsing.html#after-doctype-public-identifier-state
-            .AfterDOCTYPEPublicIdentifier => {},
+            .AfterDOCTYPEPublicIdentifier => {
+                if (is_eof) {
+                    if (self.on_error) |err_cb| err_cb(.EofInDOCTYPE, ch);
+                    self.current_doctype.force_quirks = true;
+                    self.emitCurrentDoctype();
+                    self.emitEof();
+                    return;
+                }
+                switch (ch) {
+                    '\t', '\n', '\x0C', ' ' => self.setStateAndAdvance(.BetweenDOCTYPEPublicAndSystemIdentifiers, input),
+                    '>' => {
+                        self.setStateAndAdvance(.Data, input);
+                        self.emitCurrentDoctype();
+                    },
+                    '"' => {
+                        if (self.on_error) |err_cb| err_cb(.MissingWhitespaceBetweenDOCTYPEPublicAndSystemIdentifiers, ch);
+                        self.current_doctype.system_id.clear();
+                        self.setStateAndAdvance(.DOCTYPEPublicIdentifierDoubleQuoted, input);
+                    },
+                    '\'' => {
+                        if (self.on_error) |err_cb| err_cb(.MissingWhitespaceBetweenDOCTYPEPublicAndSystemIdentifiers, ch);
+                        self.current_doctype.system_id.clear();
+                        self.setStateAndAdvance(.DOCTYPEPublicIdentifierSingleQuoted, input);
+                    },
+                    else => {
+                        if (self.on_error) |err_cb| err_cb(.MissingQuoteBeforeDOCTYPESystemIdentifier, ch);
+                        self.current_doctype.force_quirks = true;
+                        self.state = .BogusDOCTYPE;
+                    },
+                }
+            },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#between-doctype-public-and-system-identifiers-state
-            .BetweenDOCTYPEPublicAndSystemIdentifiers => {},
+            .BetweenDOCTYPEPublicAndSystemIdentifiers => {
+                if (is_eof) {
+                    if (self.on_error) |err_cb| err_cb(.EofInDOCTYPE, ch);
+                    self.current_doctype.force_quirks = true;
+                    self.emitCurrentDoctype();
+                    self.emitEof();
+                    return;
+                }
+                switch (ch) {
+                    '\t', '\n', '\x0C', ' ' => _ = input.nextChar(),
+                    '>' => {
+                        self.setStateAndAdvance(.Data, input);
+                        self.emitCurrentDoctype();
+                    },
+                    '"' => {
+                        self.current_doctype.system_id.clear();
+                        self.setStateAndAdvance(.DOCTYPESystemIdentifierDoubleQuoted, input);
+                    },
+                    '\'' => {
+                        self.current_doctype.system_id.clear();
+                        self.setStateAndAdvance(.DOCTYPESystemIdentifierSingleQuoted, input);
+                    },
+                    else => {
+                        if (self.on_error) |err_cb| err_cb(.MissingQuoteBeforeDOCTYPESystemIdentifier, ch);
+                        self.current_doctype.force_quirks = true;
+                        self.state = .BogusDOCTYPE;
+                    },
+                }
+            },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#after-doctype-system-keyword-state
-            .AfterDOCTYPESystemKeyword => {},
+            .AfterDOCTYPESystemKeyword => {
+                if (is_eof) {
+                    if (self.on_error) |err_cb| err_cb(.EofInDOCTYPE, ch);
+                    self.current_doctype.force_quirks = true;
+                    self.emitCurrentDoctype();
+                    self.emitEof();
+                    return;
+                }
+                switch (ch) {
+                    '\t', '\n', '\x0C', ' ' => self.setStateAndAdvance(.BeforeDOCTYPESystemIdentifier, input),
+                    '"' => {
+                        if (self.on_error) |err_cb| err_cb(.MissingWhitespaceAfterDOCTYPESystemKeyword, ch);
+                        self.current_doctype.system_id.clear();
+                        self.setStateAndAdvance(.DOCTYPESystemIdentifierDoubleQuoted, input);
+                    },
+                    '\'' => {
+                        if (self.on_error) |err_cb| err_cb(.MissingWhitespaceAfterDOCTYPESystemKeyword, ch);
+                        self.current_doctype.system_id.clear();
+                        self.setStateAndAdvance(.DOCTYPESystemIdentifierSingleQuoted, input);
+                    },
+                    '>' => {
+                        if (self.on_error) |err_cb| err_cb(.MissingDOCTYPESystemIdentifier, ch);
+                        self.current_doctype.force_quirks = true;
+                        self.setStateAndAdvance(.Data, input);
+                        self.emitCurrentDoctype();
+                    },
+                    else => {
+                        if (self.on_error) |err_cb| err_cb(.MissingQuoteBeforeDOCTYPESystemIdentifier, ch);
+                        self.current_doctype.force_quirks = true;
+                        self.state = .BogusDOCTYPE;
+                    },
+                }
+            },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#before-doctype-system-identifier-state
-            .BeforeDOCTYPESystemIdentifier => {},
+            .BeforeDOCTYPESystemIdentifier => {
+                if (is_eof) {
+                    if (self.on_error) |err_cb| err_cb(.EofInDOCTYPE, ch);
+                    self.current_doctype.force_quirks = true;
+                    self.emitCurrentDoctype();
+                    self.emitEof();
+                    return;
+                }
+                switch (ch) {
+                    '\t', '\n', '\x0C', ' ' => _ = input.nextChar(),
+                    '"' => {
+                        self.current_doctype.system_id.clear();
+                        self.setStateAndAdvance(.DOCTYPESystemIdentifierDoubleQuoted, input);
+                    },
+                    '\'' => {
+                        self.current_doctype.system_id.clear();
+                        self.setStateAndAdvance(.DOCTYPESystemIdentifierSingleQuoted, input);
+                    },
+                    '>' => {
+                        self.current_doctype.force_quirks = true;
+                        self.setStateAndAdvance(.Data, input);
+                        self.emitCurrentDoctype();
+                    },
+                    else => {
+                        if (self.on_error) |err_cb| err_cb(.UnexpectedCharacterAfterDOCTYPESystemIdentifier, ch);
+                        self.state = .BogusDOCTYPE;
+                    },
+                }
+            },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#doctype-system-identifier-(double-quoted)-state
-            .DOCTYPESystemIdentifierDoubleQuoted => {},
+            .DOCTYPESystemIdentifierDoubleQuoted => {
+                if (is_eof) {
+                    if (self.on_error) |err_cb| err_cb(.EofInDOCTYPE, ch);
+                    self.current_doctype.force_quirks = true;
+                    self.emitCurrentDoctype();
+                    self.emitEof();
+                    return;
+                }
+                switch (ch) {
+                    '"' => self.setStateAndAdvance(.AfterDOCTYPESystemIdentifier, input),
+                    0x0000 => {
+                        if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
+                        try self.current_doctype.system_id.push('\u{FFFD}');
+                        _ = input.nextChar();
+                    },
+                    '>' => {
+                        if (self.on_error) |err_cb| err_cb(.AbruptDOCTYPESystemIdentifier, ch);
+                        self.current_doctype.force_quirks = true;
+                        self.setStateAndAdvance(.Data, input);
+                        self.emitCurrentDoctype();
+                    },
+                    else => {
+                        try self.current_doctype.system_id.push(ch);
+                        _ = input.nextChar();
+                    },
+                }
+            },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#doctype-system-identifier-(single-quoted)-state
-            .DOCTYPESystemIdentifierSingleQuoted => {},
+            .DOCTYPESystemIdentifierSingleQuoted => {
+                if (is_eof) {
+                    if (self.on_error) |err_cb| err_cb(.EofInDOCTYPE, ch);
+                    self.current_doctype.force_quirks = true;
+                    self.emitCurrentDoctype();
+                    self.emitEof();
+                    return;
+                }
+                switch (ch) {
+                    '\'' => self.setStateAndAdvance(.AfterDOCTYPESystemIdentifier, input),
+                    0x0000 => {
+                        if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
+                        try self.current_doctype.system_id.push('\u{FFFD}');
+                        _ = input.nextChar();
+                    },
+                    '>' => {
+                        if (self.on_error) |err_cb| err_cb(.AbruptDOCTYPESystemIdentifier, ch);
+                        self.current_doctype.force_quirks = true;
+                        self.setStateAndAdvance(.Data, input);
+                        self.emitCurrentDoctype();
+                    },
+                    else => {
+                        try self.current_doctype.system_id.push(ch);
+                        _ = input.nextChar();
+                    },
+                }
+            },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#after-doctype-system-identifier-state
-            .AfterDOCTYPESystemIdentifier => {},
+            .AfterDOCTYPESystemIdentifier => {
+                if (is_eof) {
+                    if (self.on_error) |err_cb| err_cb(.EofInDOCTYPE, ch);
+                    self.current_doctype.force_quirks = true;
+                    self.emitCurrentDoctype();
+                    self.emitEof();
+                    return;
+                }
+                switch (ch) {
+                    '\t', '\n', '\x0C', ' ' => _ = input.nextChar(),
+                    '>' => {
+                        self.setStateAndAdvance(.Data, input);
+                        self.emitCurrentDoctype();
+                    },
+                    else => {
+                        if (self.on_error) |err_cb| err_cb(.UnexpectedCharacterAfterDOCTYPESystemIdentifier, ch);
+                        self.state = .BogusDOCTYPE;
+                    },
+                }
+            },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#bogus-doctype-state
-            .BogusDOCTYPE => {},
+            .BogusDOCTYPE => {
+                if (is_eof) {
+                    self.emitCurrentDoctype();
+                    self.emitEof();
+                    return;
+                }
+                switch (ch) {
+                    '>' => {
+                        self.setStateAndAdvance(.Data, input);
+                        self.emitCurrentDoctype();
+                    },
+                    0x0000 => {
+                        if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
+                        _ = input.nextChar();
+                    },
+                    else => _ = input.nextChar(),
+                }
+            },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#cdata-section-state
             .CDATASection => {},

@@ -9,6 +9,7 @@ const TokenizerError = t_error.TokenizerError;
 const u8_buffer = @import("../../utils/u8_buffer.zig");
 const ascii = @import("../../utils/ascii.zig");
 const token = @import("token.zig");
+const named_char_refs = @import("named_char_refs_gen.zig").named_char_refs;
 
 const Self = @This();
 allocator: std.mem.Allocator,
@@ -1993,4 +1994,15 @@ inline fn isConsumedAsPartOfAttr(self: *Self) bool {
         .AttributeValueSingleQuoted, .AttributeValueDoubleQuoted, .AttributeValueUnquoted => break :blk true,
         else => break :blk false,
     };
+}
+
+
+// TODO: Replace with Trie.
+pub fn tryConsumeNamedCharRef(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) ?struct {
+    has_semicolon: bool,
+    value: []const u8,
+} {
+    _ = self;
+    _ = input;
+    return null;
 }

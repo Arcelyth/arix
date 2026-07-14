@@ -105,7 +105,7 @@ pub inline fn setStateAndAdvance(self: *Self, state: TokenizerState, input: *Buf
     _ = input.nextChar();
 }
 
-pub inline fn emitCharAndNext(self: *Self, ch: u21, input: *BufferDeque(.utf8, .not_atomic, false)) void {
+pub inline fn emitCharAndAdvance(self: *Self, ch: u21, input: *BufferDeque(.utf8, .not_atomic, false)) void {
     self.emitChar(ch);
     _ = input.nextChar();
 }
@@ -153,9 +153,9 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void
                     '<' => self.setStateAndAdvance(.TagOpen, input),
                     0x0000 => {
                         if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
-                        self.emitCharAndNext('\u{FFFD}', input);
+                        self.emitCharAndAdvance('\u{FFFD}', input);
                     },
-                    else => self.emitCharAndNext(ch, input),
+                    else => self.emitCharAndAdvance(ch, input),
                 }
             },
 
@@ -171,9 +171,9 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void
                     '<' => self.setStateAndAdvance(.RCDATALessThanSign, input),
                     0x0000 => {
                         if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
-                        self.emitCharAndNext('\u{FFFD}', input);
+                        self.emitCharAndAdvance('\u{FFFD}', input);
                     },
-                    else => self.emitCharAndNext(ch, input),
+                    else => self.emitCharAndAdvance(ch, input),
                 }
             },
 
@@ -188,9 +188,9 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void
                     '<' => self.setStateAndAdvance(.RAWTEXTLessThanSign, input),
                     0x0000 => {
                         if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
-                        self.emitCharAndNext('\u{FFFD}', input);
+                        self.emitCharAndAdvance('\u{FFFD}', input);
                     },
-                    else => self.emitCharAndNext(ch, input),
+                    else => self.emitCharAndAdvance(ch, input),
                 }
             },
 
@@ -205,9 +205,9 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void
                     '<' => self.setStateAndAdvance(.ScriptDataLessThanSign, input),
                     0x0000 => {
                         if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
-                        self.emitCharAndNext('\u{FFFD}', input);
+                        self.emitCharAndAdvance('\u{FFFD}', input);
                     },
-                    else => self.emitCharAndNext(ch, input),
+                    else => self.emitCharAndAdvance(ch, input),
                 }
             },
 
@@ -221,9 +221,9 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void
                 switch (ch) {
                     0x0000 => {
                         if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
-                        self.emitCharAndNext('\u{FFFD}', input);
+                        self.emitCharAndAdvance('\u{FFFD}', input);
                     },
-                    else => self.emitCharAndNext(ch, input),
+                    else => self.emitCharAndAdvance(ch, input),
                 }
             },
 
@@ -1822,13 +1822,52 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void
             },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#cdata-section-state
-            .CDATASection => {},
+            .CDATASection => {
+                if (is_eof) {
+                    if (self.on_error) |err_cb| err_cb(.EofInCDATA, ch);
+                    self.emitEof();
+                    return;
+                }
+                switch (ch) {
+                    ']' => self.setStateAndAdvance(.CDATASectionBracket, input),
+                    else => self.emitCharAndAdvance(ch, input),
+                }
+            },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#cdata-section-bracket-state
-            .CDATASectionBracket => {},
+            .CDATASectionBracket => {
+                if (is_eof) {
+                    self.emitChar(']');
+                    self.state = .CDATASection;
+                    return;
+                }
+                switch (ch) {
+                    ']' => self.setStateAndAdvance(.CDATASectionEnd, input),
+                    else => {
+                        self.emitChar(']');
+                        self.state = .CDATASection;
+                    },
+                }
+            },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#cdata-section-end-state
-            .CDATASectionEnd => {},
+            .CDATASectionEnd => {
+                if (is_eof) {
+                    self.emitChar(']');
+                    self.emitChar(']');
+                    self.state = .CDATASection;
+                    return;
+                }
+                switch (ch) {
+                    ']' => self.emitCharAndAdvance(']', input),
+                    '>' => self.setStateAndAdvance(.Data, input),
+                    else => {
+                        self.emitChar(']');
+                        self.emitChar(']');
+                        self.state = .CDATASection;
+                    },
+                }
+            },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#character-reference-state
             .CharacterReferenceInData => {},

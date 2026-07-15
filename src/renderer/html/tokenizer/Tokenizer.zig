@@ -328,11 +328,6 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void
 
             // https://html.spec.whatwg.org/multipage/parsing.html#rcdata-less-than-sign-state
             .RCDATALessThanSign => {
-                if (is_eof) {
-                    self.emitChar('<');
-                    self.state = .RCDATA;
-                    return;
-                }
                 switch (ch) {
                     '/' => {
                         self.temporary_buffer.clear();
@@ -347,12 +342,6 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void
 
             // https://html.spec.whatwg.org/multipage/parsing.html#rcdata-end-tag-open-state
             .RCDATAEndTagOpen => {
-                if (is_eof) {
-                    self.emitChar('<');
-                    self.emitChar('/');
-                    self.state = .RCDATA;
-                    return;
-                }
                 if (ascii.isAsciiAlpha(ch)) {
                     try self.createTag_E(.EndTag, ch);
                     self.setStateAndAdvance(.RCDATAEndTagName, input);
@@ -401,11 +390,6 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void
 
             // https://html.spec.whatwg.org/multipage/parsing.html#rawtext-less-than-sign-state
             .RAWTEXTLessThanSign => {
-                if (is_eof) {
-                    self.emitChar('<');
-                    self.state = .RAWTEXT;
-                    return;
-                }
                 switch (ch) {
                     '/' => {
                         self.temporary_buffer.clear();
@@ -420,12 +404,6 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void
 
             // https://html.spec.whatwg.org/multipage/parsing.html#rawtext-end-tag-open-state
             .RAWTEXTEndTagOpen => {
-                if (is_eof) {
-                    self.emitChar('<');
-                    self.emitChar('/');
-                    self.state = .RAWTEXT;
-                    return;
-                }
                 if (ascii.isAsciiAlpha(ch)) {
                     try self.createTag_E(.EndTag, ch);
                     self.setStateAndAdvance(.RAWTEXTEndTagName, input);
@@ -438,13 +416,6 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void
 
             // https://html.spec.whatwg.org/multipage/parsing.html#rawtext-end-tag-name-state
             .RAWTEXTEndTagName => blk: {
-                if (is_eof) {
-                    self.emitChar('<');
-                    self.emitChar('/');
-                    self.emitTempBuffer();
-                    self.state = .RAWTEXT;
-                    return;
-                }
                 if (self.isAppropriateEndTag()) {
                     switch (ch) {
                         '\t', '\n', '\x0C', ' ' => {
@@ -482,11 +453,6 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void
 
             // https://html.spec.whatwg.org/multipage/parsing.html#script-data-less-than-sign-state
             .ScriptDataLessThanSign => {
-                if (is_eof) {
-                    self.emitChar('<');
-                    self.state = .ScriptData;
-                    return;
-                }
                 switch (ch) {
                     '/' => {
                         self.temporary_buffer.clear();
@@ -506,12 +472,6 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void
 
             // https://html.spec.whatwg.org/multipage/parsing.html#script-data-end-tag-open-state
             .ScriptDataEndTagOpen => {
-                if (is_eof) {
-                    self.emitChar('<');
-                    self.emitChar('/');
-                    self.state = .ScriptData;
-                    return;
-                }
                 if (ascii.isAsciiAlpha(ch)) {
                     try self.createTag_E(.EndTag, ch);
                     self.setStateAndAdvance(.ScriptDataEndTagName, input);
@@ -524,13 +484,6 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void
 
             // https://html.spec.whatwg.org/multipage/parsing.html#script-data-end-tag-name-state
             .ScriptDataEndTagName => blk: {
-                if (is_eof) {
-                    self.emitChar('<');
-                    self.emitChar('/');
-                    self.emitTempBuffer();
-                    self.state = .ScriptData;
-                    return;
-                }
                 if (self.isAppropriateEndTag()) {
                     switch (ch) {
                         '\t', '\n', '\x0C', ' ' => {
@@ -567,10 +520,6 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void
 
             // https://html.spec.whatwg.org/multipage/parsing.html#script-data-escape-start-state
             .ScriptDataEscapeStart => {
-                if (is_eof) {
-                    self.state = .ScriptData;
-                    return;
-                }
                 switch (ch) {
                     '-' => {
                         self.setStateAndAdvance(.ScriptDataEscapeStartDash, input);
@@ -582,10 +531,6 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void
 
             // https://html.spec.whatwg.org/multipage/parsing.html#script-data-escape-start-dash-state
             .ScriptDataEscapeStartDash => {
-                if (is_eof) {
-                    self.state = .ScriptData;
-                    return;
-                }
                 switch (ch) {
                     '-' => {
                         self.setStateAndAdvance(.ScriptDataEscapedDashDash, input);
@@ -676,11 +621,6 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void
 
             // https://html.spec.whatwg.org/multipage/parsing.html#script-data-escaped-less-than-sign-state
             .ScriptDataEscapedLessThanSign => {
-                if (is_eof) {
-                    self.emitChar('<');
-                    self.state = .ScriptDataEscaped;
-                    return;
-                }
                 switch (ch) {
                     '/' => {
                         self.temporary_buffer.clear();
@@ -701,12 +641,6 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void
 
             // https://html.spec.whatwg.org/multipage/parsing.html#script-data-escaped-end-tag-open-state
             .ScriptDataEscapedEndTagOpen => {
-                if (is_eof) {
-                    self.emitChar('<');
-                    self.emitChar('/');
-                    self.state = .ScriptDataEscaped;
-                    return;
-                }
                 if (ascii.isAsciiAlpha(ch)) {
                     try self.createTag_E(.EndTag, ch);
                     self.setStateAndAdvance(.ScriptDataEscapedEndTagName, input);
@@ -719,13 +653,6 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void
 
             // https://html.spec.whatwg.org/multipage/parsing.html#script-data-escaped-end-tag-name-state
             .ScriptDataEscapedEndTagName => blk: {
-                if (is_eof) {
-                    self.emitChar('<');
-                    self.emitChar('/');
-                    self.emitTempBuffer();
-                    self.state = .ScriptDataEscaped;
-                    return;
-                }
                 if (self.isAppropriateEndTag()) {
                     switch (ch) {
                         '\t', '\n', '\x0C', ' ' => {
@@ -762,10 +689,6 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void
 
             // https://html.spec.whatwg.org/multipage/parsing.html#script-data-double-escape-start-state
             .ScriptDataDoubleEscapeStart => {
-                if (is_eof) {
-                    self.state = .ScriptDataEscaped;
-                    return;
-                }
                 switch (ch) {
                     '\t', '\n', '\x0C', ' ', '/', '>' => {
                         if (std.mem.eql(u8, self.temporary_buffer.slice(), "script")) self.setStateAndAdvance(.ScriptDataDoubleEscaped, input) else self.setStateAndAdvance(.ScriptDataEscaped, input);
@@ -873,10 +796,6 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void
 
             // https://html.spec.whatwg.org/multipage/parsing.html#script-data-double-escaped-less-than-sign-state
             .ScriptDataDoubleEscapedLessThanSign => {
-                if (is_eof) {
-                    self.state = .ScriptDataDoubleEscaped;
-                    return;
-                }
                 switch (ch) {
                     '/' => {
                         self.temporary_buffer.clear();
@@ -891,10 +810,6 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void
 
             // https://html.spec.whatwg.org/multipage/parsing.html#script-data-double-escape-end-state
             .ScriptDataDoubleEscapeEnd => {
-                if (is_eof) {
-                    self.state = .ScriptDataDoubleEscaped;
-                    return;
-                }
                 switch (ch) {
                     '\t', '\n', '\x0C', ' ', '/', '>' => {
                         if (std.mem.eql(u8, self.temporary_buffer.slice(), "script")) self.setStateAndAdvance(.ScriptDataEscaped, input) else self.setStateAndAdvance(.ScriptDataDoubleEscaped, input);
@@ -999,10 +914,6 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void
 
             // https://html.spec.whatwg.org/multipage/parsing.html#before-attribute-value-state
             .BeforeAttributeValue => {
-                if (is_eof) {
-                    self.state = .AttributeValueUnquoted;
-                    return;
-                }
                 switch (ch) {
                     '\t', '\n', '\x0C', ' ' => {
                         // Ignore.
@@ -1168,10 +1079,6 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void
 
             // https://html.spec.whatwg.org/multipage/parsing.html#comment-start-state
             .CommentStart => {
-                if (is_eof) {
-                    self.state = .Comment;
-                    return;
-                }
                 switch (ch) {
                     '-' => self.setStateAndAdvance(.CommentStartDash, input),
                     '>' => {
@@ -1233,10 +1140,6 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void
 
             // https://html.spec.whatwg.org/multipage/parsing.html#comment-less-than-sign-state
             .CommentLessThanSign => {
-                if (is_eof) {
-                    self.state = .Comment;
-                    return;
-                }
                 switch (ch) {
                     '!' => {
                         try self.current_comment.push('!');
@@ -1252,10 +1155,6 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void
 
             // https://html.spec.whatwg.org/multipage/parsing.html#comment-less-than-sign-bang-state
             .CommentLessThanSignBang => {
-                if (is_eof) {
-                    self.state = .Comment;
-                    return;
-                }
                 switch (ch) {
                     '-' => self.setStateAndAdvance(.CommentLessThanSignBangDash, input),
                     else => self.state = .Comment,
@@ -1264,10 +1163,6 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void
 
             // https://html.spec.whatwg.org/multipage/parsing.html#comment-less-than-sign-bang-dash-state
             .CommentLessThanSignBangDash => {
-                if (is_eof) {
-                    self.state = .CommentEndDash;
-                    return;
-                }
                 switch (ch) {
                     '-' => self.setStateAndAdvance(.CommentLessThanSignBangDashDash, input),
                     else => self.state = .CommentEndDash,
@@ -1848,11 +1743,6 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void
 
             // https://html.spec.whatwg.org/multipage/parsing.html#cdata-section-bracket-state
             .CDATASectionBracket => {
-                if (is_eof) {
-                    self.emitChar(']');
-                    self.state = .CDATASection;
-                    return;
-                }
                 switch (ch) {
                     ']' => self.setStateAndAdvance(.CDATASectionEnd, input),
                     else => {
@@ -1864,12 +1754,6 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void
 
             // https://html.spec.whatwg.org/multipage/parsing.html#cdata-section-end-state
             .CDATASectionEnd => {
-                if (is_eof) {
-                    self.emitChar(']');
-                    self.emitChar(']');
-                    self.state = .CDATASection;
-                    return;
-                }
                 switch (ch) {
                     ']' => self.emitCharAndAdvance(']', input),
                     '>' => self.setStateAndAdvance(.Data, input),
@@ -1928,11 +1812,6 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void
             .CharacterReference => {
                 self.temporary_buffer.clear();
                 try self.temporary_buffer.push('&');
-                if (is_eof) {
-                    try self.flushCodePoints();
-                    self.state = self.return_state;
-                    return;
-                }
                 switch (ch) {
                     '#' => {
                         try self.temporary_buffer.push(ch);

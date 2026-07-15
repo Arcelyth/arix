@@ -17,6 +17,8 @@ state: TokenizerState,
 return_state: TokenizerState,
 pause_flag: bool,
 at_eof: bool,
+// character reference code
+char_ref_code: u21,
 
 current_tag_name: StraleUtf8Global,
 current_tag_kind: token.TagKind,
@@ -44,6 +46,7 @@ pub fn init(alloc: std.mem.Allocator, on_error: ?TokenizerErrorProc) Self {
         .return_state = .Data,
         .pause_flag = false,
         .at_eof = false,
+        .char_ref_code = 0,
         .current_tag_name = StraleUtf8Global.initEmpty(),
         .current_tag_kind = .StartTag,
         .current_tag_self_closing = false,
@@ -1954,28 +1957,133 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void
             //            .CharacterReferenceInAttributeValueUnquoted => self.stepCharacterReference(.CharacterReferenceInAttributeValueUnquoted, is_eof, ch),
 
             // https://html.spec.whatwg.org/multipage/parsing.html#named-character-reference-state
-            .NamedCharacterReference => {},
+            .NamedCharacterReference => {
+                const res = self.tryConsumeNamedCharRef(input);
+                if (res) |r| {
+                    const is_last_semicolon, const matched = r;
+                    if (self.isConsumedAsPartOfAttr() and
+                        !is_last_semicolon and (ch == '=' or ascii.isAsciiAlphanum(ch)))
+                    {
+                        try self.flushCodePoints();
+                        self.setStateAndAdvance(self.return_state, input);
+                    } else {
+                        if (!is_last_semicolon) {
+                            if (self.on_error) |err_cb| err_cb(.MissingSemicolonAfterCharacterReference, ch);
+                        }
+                        self.temporary_buffer.clear();
+                        try self.temporary_buffer.append(matched);
+                        try self.flushCodePoints();
+                        self.setStateAndAdvance(self.return_state, input);
+                    }
+                } else {
+                    try self.flushCodePoints();
+                    self.setStateAndAdvance(.AmbiguousAmpersand, input);
+                }
+            },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#ambiguous-ampersand-state
-            .AmbiguousAmpersand => {},
+            .AmbiguousAmpersand => {
+                switch (ch) {
+                    ';' => {
+                        if (self.on_error) |err_cb| err_cb(.UnknownNamedCharacterReference, ch);
+                        self.state = self.return_state;
+                    },
+                    else => {
+                        if (ascii.isAsciiAlphanum(ch)) {
+                            if (self.isConsumedAsPartOfAttr())
+                                try self.current_attribute_value.push(ch)
+                            else
+                                self.emitChar(ch);
+                            _ = input.nextChar();
+                        } else {
+                            self.state = self.return_state;
+                        }
+                    },
+                }
+            },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#numeric-character-reference-state
-            .NumericCharacterReference => {},
+            .NumericCharacterReference => {
+                self.char_ref_code = 0;
+                switch (ch) {
+                    'x', 'X' => {
+                        try self.temporary_buffer.push(ch);
+                        self.setStateAndAdvance(.HexadecimalCharacterReferenceStart, input);
+                    },
+                    else => self.state = .DecimalCharacterReferenceStart,
+                }
+            },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#hexadecimal-character-reference-start-state
-            .HexadecimalCharacterReferenceStart => {},
+            .HexadecimalCharacterReferenceStart => {
+                if (ascii.isAsciiHexDigit(ch)) self.state = .HexadecimalCharacterReference else {
+                    if (self.on_error) |err_cb| err_cb(.AbsenceOfDigitsInNumericCharacterReference, ch);
+                    try self.flushCodePoints();
+                    self.state = self.return_state;
+                }
+            },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#decimal-character-reference-start-state
-            .DecimalCharacterReferenceStart => {},
+            .DecimalCharacterReferenceStart => {
+                if (ascii.isAsciiDigit(ch)) self.state = .DecimalCharacterReference else {
+                    if (self.on_error) |err_cb| err_cb(.AbsenceOfDigitsInNumericCharacterReference, ch);
+                    try self.flushCodePoints();
+                    self.state = self.return_state;
+                }
+            },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#hexadecimal-character-reference-state
-            .HexadecimalCharacterReference => {},
+            .HexadecimalCharacterReference => blk: {
+                if (ascii.isAsciiDigit(ch))
+                    self.char_ref_code = self.char_ref_code * 16 + (ch - 0x0030)
+                else if (ascii.isAsciiUpperAlpha(ch)) self.char_ref_code = self.char_ref_code * 16 + (ch - 0x0037) else if (ascii.isAsciiLowerAlpha(ch)) self.char_ref_code = self.char_ref_code * 16 + (ch - 0x0057) else if (ch == ';') self.state = .NumericCharacterReferenceEnd else {
+                    if (self.on_error) |err_cb| err_cb(.MissingSemicolonAfterCharacterReference, ch);
+                    self.state = .NumericCharacterReferenceEnd;
+                    break :blk;
+                }
+                _ = input.nextChar();
+            },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#decimal-character-reference-state
-            .DecimalCharacterReference => {},
+            .DecimalCharacterReference => {
+                switch (ch) {
+                    ';' => self.setStateAndAdvance(.NumericCharacterReferenceEnd, input),
+                    else => {
+                        if (ascii.isAsciiDigit(ch)) {
+                            self.char_ref_code = self.char_ref_code * 10 + (ch - 0x0030);
+                            _ = input.nextChar();
+                        } else {
+                            if (self.on_error) |err_cb| err_cb(.MissingSemicolonAfterCharacterReference, ch);
+                            self.state = .NumericCharacterReferenceEnd;
+                        }
+                    },
+                }
+            },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#numeric-character-reference-end-state
-            .NumericCharacterReferenceEnd => {},
+            .NumericCharacterReferenceEnd => {
+                const code = self.char_ref_code;
+                if (code == 0x00) {
+                    if (self.on_error) |err_cb| err_cb(.NullCharacterReference, ch);
+                    self.char_ref_code = 0xFFFD;
+                } else if (code > 0x10FFFF) {
+                    if (self.on_error) |err_cb| err_cb(.CharacterReferenceOutsideUnicodeRange, ch);
+                    self.char_ref_code = 0xFFFD;
+                } else if (ascii.isSurrogate(code)) {
+                    if (self.on_error) |err_cb| err_cb(.SurrogateCharacterReference, ch);
+                    self.char_ref_code = 0xFFFD;
+                } else if (ascii.isNoneCharacter(code)) {
+                    if (self.on_error) |err_cb| err_cb(.NoncharacterCharacterReference, ch);
+                } else if (code == 0x0D or (ascii.isControl(code) and !ascii.isAsciiWhitespace(code))) {
+                    if (self.on_error) |err_cb| err_cb(.ControlCharacterReference, ch);
+                    self.setCodePoint();
+                }
+
+                self.temporary_buffer.clear();
+                try self.temporary_buffer.push(self.char_ref_code);
+                try self.flushCodePoints();
+                self.setStateAndAdvance(self.return_state, input);
+            },
             else => {},
         }
     }
@@ -1996,13 +2104,42 @@ inline fn isConsumedAsPartOfAttr(self: *Self) bool {
     };
 }
 
-
 // TODO: Replace with Trie.
-pub fn tryConsumeNamedCharRef(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) ?struct {
-    has_semicolon: bool,
-    value: []const u8,
-} {
+pub fn tryConsumeNamedCharRef(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) ?struct { bool, []const u8 } {
     _ = self;
     _ = input;
     return null;
+}
+
+pub inline fn setCodePoint(self: *Self) void {
+    switch (self.char_ref_code) {
+        0x80 => self.char_ref_code = 0x20AC,
+        0x82 => self.char_ref_code = 0x201A,
+        0x83 => self.char_ref_code = 0x0192,
+        0x84 => self.char_ref_code = 0x201E,
+        0x85 => self.char_ref_code = 0x2026,
+        0x86 => self.char_ref_code = 0x2020,
+        0x87 => self.char_ref_code = 0x2021,
+        0x88 => self.char_ref_code = 0x02C6,
+        0x89 => self.char_ref_code = 0x2030,
+        0x8A => self.char_ref_code = 0x0160,
+        0x8B => self.char_ref_code = 0x2039,
+        0x8C => self.char_ref_code = 0x0152,
+        0x8E => self.char_ref_code = 0x017D,
+        0x91 => self.char_ref_code = 0x2018,
+        0x92 => self.char_ref_code = 0x2019,
+        0x93 => self.char_ref_code = 0x201C,
+        0x94 => self.char_ref_code = 0x201D,
+        0x95 => self.char_ref_code = 0x2022,
+        0x96 => self.char_ref_code = 0x2013,
+        0x97 => self.char_ref_code = 0x2014,
+        0x98 => self.char_ref_code = 0x02DC,
+        0x99 => self.char_ref_code = 0x2122,
+        0x9A => self.char_ref_code = 0x0161,
+        0x9B => self.char_ref_code = 0x203A,
+        0x9C => self.char_ref_code = 0x0153,
+        0x9E => self.char_ref_code = 0x017E,
+        0x9F => self.char_ref_code = 0x0178,
+        else => {},
+    }
 }

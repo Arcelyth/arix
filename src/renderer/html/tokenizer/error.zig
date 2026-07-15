@@ -47,4 +47,8 @@ pub const TokenizerError = enum {
     ControlCharacterReference,
     UnknownNamedCharacterReference,
     CreateElementForToken,
+    InvaildProcessingInstructionTarget,
+    InvalidFirstCharacterOfProcessingInstructionTarget,
+    DisallowedProcessingInstructionTarget,
+    EofInProcessingInstruction,
 };

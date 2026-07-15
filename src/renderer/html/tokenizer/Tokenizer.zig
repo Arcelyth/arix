@@ -33,6 +33,9 @@ current_tag_attrs: std.ArrayList(StraleUtf8Global),
 
 current_doctype: token.Doctype,
 
+// Current processing instruction.
+current_process_inst: token.ProcessingInstruction,
+
 last_start_tag_name: ?StraleUtf8Global,
 temporary_buffer: StraleUtf8Global,
 on_error: ?TokenizerErrorProc,
@@ -55,6 +58,7 @@ pub fn init(alloc: std.mem.Allocator, on_error: ?TokenizerErrorProc) Self {
         .current_attribute_value = StraleUtf8Global.initEmpty(),
         .current_tag_attrs = .empty,
         .current_doctype = token.Doctype.init(),
+        .current_process_inst = token.ProcessingInstruction.init(),
         .last_start_tag_name = null,
         .temporary_buffer = StraleUtf8Global.initEmpty(),
         .on_error = on_error,
@@ -106,23 +110,27 @@ pub fn createAttr_E(self: *Self, ch: u21) !void {
     _ = ch;
 }
 
-pub inline fn setStateAndAdvance(self: *Self, state: TokenizerState, input: *BufferDeque(.utf8, .not_atomic, false)) void {
+pub inline fn setStateAndAdvance(self: *Self, state: TokenizerState, input: *BufferDeque(.utf8, .not_atomic, true)) void {
     self.state = state;
     _ = input.nextChar();
 }
 
-pub inline fn setCharacterReferenceStateAndAdvance(self: *Self, return_state: TokenizerState, input: *BufferDeque(.utf8, .not_atomic, false)) void {
+pub inline fn setCharacterReferenceStateAndAdvance(self: *Self, return_state: TokenizerState, input: *BufferDeque(.utf8, .not_atomic, true)) void {
     self.state = .CharacterReference;
     self.return_state = return_state;
     _ = input.nextChar();
 }
 
-pub inline fn emitCharAndAdvance(self: *Self, ch: u21, input: *BufferDeque(.utf8, .not_atomic, false)) void {
+pub inline fn emitCharAndAdvance(self: *Self, ch: u21, input: *BufferDeque(.utf8, .not_atomic, true)) void {
     self.emitChar(ch);
     _ = input.nextChar();
 }
 
-pub fn match_insensitive(input: *BufferDeque(.utf8, .not_atomic, false), str: []const u8) bool {
+pub inline fn emitProcessingInst(self: *Self) void {
+    _ = self;
+}
+
+pub fn match_insensitive(input: *BufferDeque(.utf8, .not_atomic, true), str: []const u8) bool {
     // TODO.
     _ = input;
     _ = str;
@@ -144,7 +152,7 @@ pub fn isAppropriateEndTag(self: *const Self) bool {
     } else false;
 }
 
-pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void {
+pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, true)) !void {
     var ch: u21 = undefined;
     while (true) {
         const is_eof = if (input.peekChar()) |c| blk: {
@@ -1766,48 +1774,102 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void
             },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#processing-instruction-open-state
-            //            .ProcessingInstructionOpen => {
-            //                if (is_eof) {
-            //                    if (self.on_error) |err_cb| err_cb(.EofInProcessingInstruction, ch);
-            //                    self.emitEof();
-            //                    return;
-            //                }
-            //                if (ascii.isAsciiAlpha(ch) or ch == '_') self.state = .ProcessingInstructionTarget else {
-            //                    if (self.on_error) |err_cb| err_cb(.InvalidFirstCharacterOfProcessingInstructionTarget, ch);
-            //                    self.current_comment = self.temporary_buffer;
-            //                    self.state = .BogusComment;
-            //                }
-            //            },
-            //
-            //            // https://html.spec.whatwg.org/multipage/parsing.html#processing-instruction-target-state
-            //            .ProcessingInstructionTarget => {
-            //                if (is_eof) {
-            //                    if (self.on_error) |err_cb| err_cb(.EofInProcessingInstruction, ch);
-            //                    self.emitEof();
-            //                    return;
-            //                }
-            //                switch (ch) {
-            //                    '\t', '\n', '\x0C', ' ', '?', '>' => {
-            //                        const t = 1;
-            //                        if (match_insensitive(t, "xml") or match_insensitive(t, "xml-stylesheet")) {
-            //                            if (self.on_error) |err_cb| err_cb(.DisallowedProcessingInstructionTarget, ch);
-            //
-            //                            self.current_comment = self.temporary_buffer;
-            //                            self.state = .BogusComment;
-            //                        } else {}
-            //                    },
-            //                }
-            //            },
-            //
-            //            // https://html.spec.whatwg.org/multipage/parsing.html#after-processing-instruction-target-state
-            //            .AfterProcessingInstructionTarget => {},
-            //
-            //            // https://html.spec.whatwg.org/multipage/parsing.html#processing-instruction-data-state
-            //            .ProcessingInstructionData => {},
-            //
-            //            // https://html.spec.whatwg.org/multipage/parsing.html#processing-instruction-questionable-state
-            //            .ProcessingInstructionQuestionable => {},
-            //
+            .ProcessingInstructionOpen => {
+                if (is_eof) {
+                    if (self.on_error) |err_cb| err_cb(.EofInProcessingInstruction, ch);
+                    self.emitEof();
+                    return;
+                }
+                if (ascii.isAsciiAlpha(ch) or ch == '_') self.state = .ProcessingInstructionTarget else {
+                    if (self.on_error) |err_cb| err_cb(.InvalidFirstCharacterOfProcessingInstructionTarget, ch);
+                    self.current_comment = self.temporary_buffer;
+                    self.state = .BogusComment;
+                }
+            },
+
+            // https://html.spec.whatwg.org/multipage/parsing.html#processing-instruction-target-state
+            .ProcessingInstructionTarget => {
+                if (is_eof) {
+                    if (self.on_error) |err_cb| err_cb(.EofInProcessingInstruction, ch);
+                    self.emitEof();
+                    return;
+                }
+                switch (ch) {
+                    '\t', '\n', '\x0C', ' ', '?', '>' => {
+                        var t = try BufferDeque(.utf8, .not_atomic, true).init(self.allocator);
+                        try t.pushBack(self.temporary_buffer.clone());
+                        if (match_insensitive(&t, "xml") or match_insensitive(&t, "xml-stylesheet")) {
+                            if (self.on_error) |err_cb| err_cb(.DisallowedProcessingInstructionTarget, ch);
+
+                            self.current_comment = self.temporary_buffer.clone();
+                            self.temporary_buffer.clear();
+                            self.state = .BogusComment;
+                        } else {
+                            if (t.popFront()) |str| {
+                                self.current_process_inst.target = str;
+                            }
+                            self.state = .AfterProcessingInstructionTarget;
+                        }
+                    },
+                    else => {
+                        if (ascii.isAsciiAlphanum(ch) or (ch == '-') or (ch == '_')) {
+                            try self.temporary_buffer.push(ch);
+                            _ = input.nextChar();
+                        } else {
+                            if (self.on_error) |err_cb| err_cb(.InvaildProcessingInstructionTarget, ch);
+                            self.current_comment = self.temporary_buffer.clone();
+                            self.temporary_buffer.clear();
+                            self.state = .BogusComment;
+                        }
+                    },
+                }
+            },
+
+            // https://html.spec.whatwg.org/multipage/parsing.html#after-processing-instruction-target-state
+            .AfterProcessingInstructionTarget => {
+                switch (ch) {
+                    '\t', '\n', '\x0C', ' ' => _ = input.nextChar(),
+                    else => self.state = .ProcessingInstructionData,
+                }
+            },
+
+            // https://html.spec.whatwg.org/multipage/parsing.html#processing-instruction-data-state
+            .ProcessingInstructionData => {
+                if (is_eof) {
+                    if (self.on_error) |err_cb| err_cb(.EofInProcessingInstruction, ch);
+                    self.emitEof();
+                }
+                switch (ch) {
+                    '?' => self.setStateAndAdvance(.ProcessingInstructionQuestionable, input),
+                    '>' => {
+                        self.setStateAndAdvance(.Data, input);
+                        self.emitProcessingInst();
+                    },
+                    else => {
+                        try self.current_process_inst.data.push(ch);
+                        _ = input.nextChar();
+                    },
+                }
+            },
+
+            // https://html.spec.whatwg.org/multipage/parsing.html#processing-instruction-questionable-state
+            .ProcessingInstructionQuestionable => {
+                if (is_eof) {
+                    if (self.on_error) |err_cb| err_cb(.EofInProcessingInstruction, ch);
+                    self.emitEof();
+                }
+                switch (ch) {
+                    '>' => {
+                        self.setStateAndAdvance(.Data, input);
+                        self.emitProcessingInst();
+                    },
+                    else => {
+                        try self.current_process_inst.data.push('?');
+                        self.state = .ProcessingInstructionData;
+                    },
+                }
+            },
+
             // https://html.spec.whatwg.org/multipage/parsing.html#character-reference-state
             .CharacterReference => {
                 self.temporary_buffer.clear();
@@ -1963,7 +2025,6 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) !void
                 try self.flushCodePoints();
                 self.setStateAndAdvance(self.return_state, input);
             },
-            else => {},
         }
     }
 }
@@ -1984,7 +2045,7 @@ inline fn isConsumedAsPartOfAttr(self: *Self) bool {
 }
 
 // TODO: Replace with Trie.
-pub fn tryConsumeNamedCharRef(self: *Self, input: *BufferDeque(.utf8, .not_atomic, false)) ?struct { bool, []const u8 } {
+pub fn tryConsumeNamedCharRef(self: *Self, input: *BufferDeque(.utf8, .not_atomic, true)) ?struct { bool, []const u8 } {
     _ = self;
     _ = input;
     return null;

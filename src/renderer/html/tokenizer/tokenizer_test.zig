@@ -7,11 +7,11 @@ const BufferDeque = strale.BufferDeque;
 
 test "Tokenizer Runnable Test" {
     const allocator = testing.allocator;
-
+    strale.setGlobalAlloc(allocator);
     var tok = Tokenizer.init(allocator, null);
     defer tok.deinit();
 
-    var input = try BufferDeque(.utf8, .not_atomic, false).init(allocator);
+    var input = try BufferDeque(.utf8, .not_atomic, true).init(allocator);
     defer input.deinit();
 
     try input.pushBackSlice("Hello");

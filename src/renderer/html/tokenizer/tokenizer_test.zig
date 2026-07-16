@@ -4,11 +4,19 @@ const Tokenizer = @import("Tokenizer.zig");
 const TokenizerState = @import("state.zig");
 const strale = @import("strale");
 const BufferDeque = strale.BufferDeque;
+const TestIngester = @import("TestIngester.zig");
+const TokenIngester = @import("TokenIngester.zig");
 
-test "Tokenizer Runnable Test" {
+test "tokenizer test" {
     const allocator = testing.allocator;
+    var ti = TestIngester.init(allocator);
+    defer ti.deinit();
+    const ingester = TokenIngester.init(
+        &ti,
+        TestIngester.handleToken,
+    );
     strale.setGlobalAlloc(allocator);
-    var tok = Tokenizer.init(allocator, null);
+    var tok = Tokenizer.init(allocator, ingester, null);
     defer tok.deinit();
 
     var input = try BufferDeque(.utf8, .not_atomic, true).init(allocator);

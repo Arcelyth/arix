@@ -9,9 +9,10 @@ const TokenizerError = t_error.TokenizerError;
 const u8_buffer = @import("../../utils/u8_buffer.zig");
 const ascii = @import("../../utils/ascii.zig");
 const token = @import("token.zig");
+const TokenIngester = @import("TokenIngester.zig");
 const named_char_refs = @import("named_char_refs_gen.zig").named_char_refs;
 
-const Self = @This();
+const Tokenizer = @This();
 allocator: std.mem.Allocator,
 state: TokenizerState,
 return_state: TokenizerState,
@@ -29,21 +30,22 @@ current_comment: StraleUtf8Global,
 current_attribute_name: StraleUtf8Global,
 current_attribute_value: StraleUtf8Global,
 // Current tag's attributes.
-current_tag_attrs: std.ArrayList(StraleUtf8Global),
+current_tag_attrs: std.ArrayList(token.Attribute),
 
 current_doctype: token.Doctype,
 
 // Current processing instruction.
 current_process_inst: token.ProcessingInstruction,
 
+ingester: TokenIngester,
 last_start_tag_name: ?StraleUtf8Global,
 temporary_buffer: StraleUtf8Global,
 on_error: ?TokenizerErrorProc,
 
-pub fn init(alloc: std.mem.Allocator, on_error: ?TokenizerErrorProc) Self {
+pub fn init(alloc: std.mem.Allocator, ingester: TokenIngester, on_error: ?TokenizerErrorProc) Tokenizer {
     //  TOOD: enable global allocator
     //    strale.setGlobalAlloc(alloc);
-    return Self{
+    return Tokenizer{
         .allocator = alloc,
         .state = .Data,
         .return_state = .Data,
@@ -59,75 +61,97 @@ pub fn init(alloc: std.mem.Allocator, on_error: ?TokenizerErrorProc) Self {
         .current_tag_attrs = .empty,
         .current_doctype = token.Doctype.init(),
         .current_process_inst = token.ProcessingInstruction.init(),
+        .ingester = ingester,
         .last_start_tag_name = null,
         .temporary_buffer = StraleUtf8Global.initEmpty(),
         .on_error = on_error,
     };
 }
 
-pub fn deinit(self: *Self) void {
+pub fn deinit(self: *Tokenizer) void {
     _ = self;
 }
 
-pub fn emitEof(self: *Self) void {
-    _ = self;
+pub fn handle_token(self: *Tokenizer, t: token.Token) void {
+    self.ingester.handle_token(t);
 }
 
-pub fn emitChar(self: *Self, ch: u21) void {
-    _ = self;
-    _ = ch;
+pub fn emitEof(self: *Tokenizer) void {
+    self.handle_token(.EofToken);
 }
 
-pub fn emitCurrentTag(self: *Self) void {
-    _ = self;
+pub fn emitChar(self: *Tokenizer, ch: u21) void {
+    self.handle_token(token.Token{ .CharacterToken = StraleUtf8Global.initChar(ch) catch return });
 }
 
-pub fn emitTempBuffer(self: *Self) void {
-    _ = self;
+pub fn emitCurrentTag(self: *Tokenizer) void {
+    switch (self.current_tag_kind) {
+        .StartTag => {
+            self.last_start_tag_name = self.current_tag_name.clone();
+        },
+        .EndTag => {
+            // TODO.
+        },
+    }
+    const tag_token = token.Tag{
+        .kind = self.current_tag_kind,
+        .name = self.current_tag_name.clone(),
+        .self_closing = self.current_tag_self_closing,
+        .attrs = self.current_tag_attrs,
+    };
+    self.current_tag_attrs = .empty;
+    self.handle_token(token.Token{ .TagToken = tag_token });
 }
 
-pub fn emitCurrentComment(self: *Self) void {
-    _ = self;
+pub fn emitTempBuffer(self: *Tokenizer) void {
+    self.handle_token(token.Token{ .CharacterToken = self.temporary_buffer.clone() });
+    self.temporary_buffer.clear();
 }
 
-pub fn emitCurrentDoctype(self: *Self) void {
-    _ = self;
+pub fn emitCurrentComment(self: *Tokenizer) void {
+    self.handle_token(token.Token{ .CommentToken = self.current_comment.clone() });
+    self.current_comment.clear();
 }
 
-pub fn discardTag(self: *Self) void {
+pub fn emitCurrentDoctype(self: *Tokenizer) void {
+    self.handle_token(token.Token{ .DoctypeToken = self.current_doctype });
+    self.current_doctype = token.Doctype.init();
+}
+
+pub fn discardTag(self: *Tokenizer) void {
     self.current_tag_name.clear();
     self.current_tag_self_closing = false;
 }
 
-pub fn createTag_E(self: *Self, tag_kind: token.TagKind, ch: u21) !void {
+pub fn createTag_E(self: *Tokenizer, tag_kind: token.TagKind, ch: u21) !void {
     self.discardTag();
     self.current_tag_kind = tag_kind;
     try self.current_tag_name.push(ch);
 }
 
-pub fn createAttr_E(self: *Self, ch: u21) !void {
+pub fn createAttr_E(self: *Tokenizer, ch: u21) !void {
     _ = self;
     _ = ch;
 }
 
-pub inline fn setStateAndAdvance(self: *Self, state: TokenizerState, input: *BufferDeque(.utf8, .not_atomic, true)) void {
+pub inline fn setStateAndAdvance(self: *Tokenizer, state: TokenizerState, input: *BufferDeque(.utf8, .not_atomic, true)) void {
     self.state = state;
     _ = input.nextChar();
 }
 
-pub inline fn setCharacterReferenceStateAndAdvance(self: *Self, return_state: TokenizerState, input: *BufferDeque(.utf8, .not_atomic, true)) void {
+pub inline fn setCharacterReferenceStateAndAdvance(self: *Tokenizer, return_state: TokenizerState, input: *BufferDeque(.utf8, .not_atomic, true)) void {
     self.state = .CharacterReference;
     self.return_state = return_state;
     _ = input.nextChar();
 }
 
-pub inline fn emitCharAndAdvance(self: *Self, ch: u21, input: *BufferDeque(.utf8, .not_atomic, true)) void {
+pub inline fn emitCharAndAdvance(self: *Tokenizer, ch: u21, input: *BufferDeque(.utf8, .not_atomic, true)) void {
     self.emitChar(ch);
     _ = input.nextChar();
 }
 
-pub inline fn emitProcessingInst(self: *Self) void {
-    _ = self;
+pub inline fn emitProcessingInst(self: *Tokenizer) void {
+    self.handle_token(token.Token{ .ProcessingInstructionToken = self.current_process_inst });
 }
 
 pub fn match_insensitive(input: *BufferDeque(.utf8, .not_atomic, true), str: []const u8) bool {
@@ -137,22 +161,22 @@ pub fn match_insensitive(input: *BufferDeque(.utf8, .not_atomic, true), str: []c
     return true;
 }
 
-pub fn createComment(self: *Self) void {
+pub fn createComment(self: *Tokenizer) void {
     _ = self;
 }
 
-pub inline fn createDoctype(self: *Self) void {
+pub inline fn createDoctype(self: *Tokenizer) void {
     self.current_doctype.deinit();
     self.current_doctype = token.Doctype.init();
 }
 
-pub fn isAppropriateEndTag(self: *const Self) bool {
+pub fn isAppropriateEndTag(self: *const Tokenizer) bool {
     return if (self.last_start_tag_name) |*name| blk: {
         break :blk self.current_tag_kind == .EndTag and self.current_tag_name.cmp(name);
     } else false;
 }
 
-pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, true)) !void {
+pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !void {
     var ch: u21 = undefined;
     while (true) {
         const is_eof = if (input.peekChar()) |c| blk: {
@@ -2030,14 +2054,14 @@ pub fn step_E(self: *Self, input: *BufferDeque(.utf8, .not_atomic, true)) !void 
 }
 
 // https://html.spec.whatwg.org/multipage/parsing.html#flush-code-points-consumed-as-a-character-reference
-pub fn flushCodePoints(self: *Self) !void {
+pub fn flushCodePoints(self: *Tokenizer) !void {
     const slice = self.temporary_buffer.slice();
     for (slice) |s| {
         if (self.isConsumedAsPartOfAttr()) try self.current_attribute_value.push(s) else self.emitChar(s);
     }
 }
 
-inline fn isConsumedAsPartOfAttr(self: *Self) bool {
+inline fn isConsumedAsPartOfAttr(self: *Tokenizer) bool {
     return blk: switch (self.return_state) {
         .AttributeValueSingleQuoted, .AttributeValueDoubleQuoted, .AttributeValueUnquoted => break :blk true,
         else => break :blk false,
@@ -2045,13 +2069,13 @@ inline fn isConsumedAsPartOfAttr(self: *Self) bool {
 }
 
 // TODO: Replace with Trie.
-pub fn tryConsumeNamedCharRef(self: *Self, input: *BufferDeque(.utf8, .not_atomic, true)) ?struct { bool, []const u8 } {
+pub fn tryConsumeNamedCharRef(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) ?struct { bool, []const u8 } {
     _ = self;
     _ = input;
     return null;
 }
 
-pub inline fn setCodePoint(self: *Self) void {
+pub inline fn setCodePoint(self: *Tokenizer) void {
     switch (self.char_ref_code) {
         0x80 => self.char_ref_code = 0x20AC,
         0x82 => self.char_ref_code = 0x201A,

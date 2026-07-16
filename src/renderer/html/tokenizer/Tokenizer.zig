@@ -1,3 +1,5 @@
+const Tokenizer = @This();
+
 const std = @import("std");
 const TokenizerState = @import("state.zig").TokenizerState;
 const strale = @import("strale");
@@ -12,13 +14,12 @@ const token = @import("token.zig");
 const TokenIngester = @import("TokenIngester.zig");
 const named_char_refs = @import("named_char_refs_gen.zig").named_char_refs;
 
-const Tokenizer = @This();
 allocator: std.mem.Allocator,
 state: TokenizerState,
 return_state: TokenizerState,
 pause_flag: bool,
 at_eof: bool,
-// character reference code
+// Character reference code.
 char_ref_code: u21,
 
 current_tag_name: StraleUtf8Global,
@@ -69,7 +70,13 @@ pub fn init(alloc: std.mem.Allocator, ingester: TokenIngester, on_error: ?Tokeni
 }
 
 pub fn deinit(self: *Tokenizer) void {
-    _ = self;
+    self.current_tag_name.deinit();
+    self.current_comment.deinit();
+    self.current_attribute_name.deinit();
+    self.current_attribute_value.deinit();
+    self.current_doctype.deinit();
+    self.current_process_inst.deinit();
+    self.temporary_buffer.deinit();
 }
 
 pub fn handle_token(self: *Tokenizer, t: token.Token) void {
@@ -154,15 +161,12 @@ pub inline fn emitProcessingInst(self: *Tokenizer) void {
     self.handle_token(token.Token{ .ProcessingInstructionToken = self.current_process_inst });
 }
 
-pub fn match_insensitive(input: *BufferDeque(.utf8, .not_atomic, true), str: []const u8) bool {
-    // TODO.
-    _ = input;
-    _ = str;
-    return true;
+fn asciiEqIgnoreCase(a: u8, b: u8) bool {
+    return std.ascii.toLower(a) == std.ascii.toLower(b);
 }
 
-pub fn createComment(self: *Tokenizer) void {
-    _ = self;
+pub fn match_insensitive(input: *BufferDeque(.utf8, .not_atomic, true), str: []const u8) bool {
+    return input.consume(str, asciiEqIgnoreCase);
 }
 
 pub inline fn createDoctype(self: *Tokenizer) void {
@@ -174,6 +178,61 @@ pub fn isAppropriateEndTag(self: *const Tokenizer) bool {
     return if (self.last_start_tag_name) |*name| blk: {
         break :blk self.current_tag_kind == .EndTag and self.current_tag_name.cmp(name);
     } else false;
+}
+
+// https://html.spec.whatwg.org/multipage/parsing.html#flush-code-points-consumed-as-a-character-reference
+pub fn flushCodePoints(self: *Tokenizer) !void {
+    const slice = self.temporary_buffer.slice();
+    for (slice) |s| {
+        if (self.isConsumedAsPartOfAttr()) try self.current_attribute_value.push(s) else self.emitChar(s);
+    }
+}
+
+inline fn isConsumedAsPartOfAttr(self: *Tokenizer) bool {
+    return blk: switch (self.return_state) {
+        .AttributeValueSingleQuoted, .AttributeValueDoubleQuoted, .AttributeValueUnquoted => break :blk true,
+        else => break :blk false,
+    };
+}
+
+// TODO: Replace with Trie.
+pub fn tryConsumeNamedCharRef(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) ?struct { bool, []const u8 } {
+    _ = self;
+    _ = input;
+    return null;
+}
+
+pub inline fn setCodePoint(self: *Tokenizer) void {
+    switch (self.char_ref_code) {
+        0x80 => self.char_ref_code = 0x20AC,
+        0x82 => self.char_ref_code = 0x201A,
+        0x83 => self.char_ref_code = 0x0192,
+        0x84 => self.char_ref_code = 0x201E,
+        0x85 => self.char_ref_code = 0x2026,
+        0x86 => self.char_ref_code = 0x2020,
+        0x87 => self.char_ref_code = 0x2021,
+        0x88 => self.char_ref_code = 0x02C6,
+        0x89 => self.char_ref_code = 0x2030,
+        0x8A => self.char_ref_code = 0x0160,
+        0x8B => self.char_ref_code = 0x2039,
+        0x8C => self.char_ref_code = 0x0152,
+        0x8E => self.char_ref_code = 0x017D,
+        0x91 => self.char_ref_code = 0x2018,
+        0x92 => self.char_ref_code = 0x2019,
+        0x93 => self.char_ref_code = 0x201C,
+        0x94 => self.char_ref_code = 0x201D,
+        0x95 => self.char_ref_code = 0x2022,
+        0x96 => self.char_ref_code = 0x2013,
+        0x97 => self.char_ref_code = 0x2014,
+        0x98 => self.char_ref_code = 0x02DC,
+        0x99 => self.char_ref_code = 0x2122,
+        0x9A => self.char_ref_code = 0x0161,
+        0x9B => self.char_ref_code = 0x203A,
+        0x9C => self.char_ref_code = 0x0153,
+        0x9E => self.char_ref_code = 0x017E,
+        0x9F => self.char_ref_code = 0x0178,
+        else => {},
+    }
 }
 
 pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !void {
@@ -2050,60 +2109,5 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                 self.setStateAndAdvance(self.return_state, input);
             },
         }
-    }
-}
-
-// https://html.spec.whatwg.org/multipage/parsing.html#flush-code-points-consumed-as-a-character-reference
-pub fn flushCodePoints(self: *Tokenizer) !void {
-    const slice = self.temporary_buffer.slice();
-    for (slice) |s| {
-        if (self.isConsumedAsPartOfAttr()) try self.current_attribute_value.push(s) else self.emitChar(s);
-    }
-}
-
-inline fn isConsumedAsPartOfAttr(self: *Tokenizer) bool {
-    return blk: switch (self.return_state) {
-        .AttributeValueSingleQuoted, .AttributeValueDoubleQuoted, .AttributeValueUnquoted => break :blk true,
-        else => break :blk false,
-    };
-}
-
-// TODO: Replace with Trie.
-pub fn tryConsumeNamedCharRef(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) ?struct { bool, []const u8 } {
-    _ = self;
-    _ = input;
-    return null;
-}
-
-pub inline fn setCodePoint(self: *Tokenizer) void {
-    switch (self.char_ref_code) {
-        0x80 => self.char_ref_code = 0x20AC,
-        0x82 => self.char_ref_code = 0x201A,
-        0x83 => self.char_ref_code = 0x0192,
-        0x84 => self.char_ref_code = 0x201E,
-        0x85 => self.char_ref_code = 0x2026,
-        0x86 => self.char_ref_code = 0x2020,
-        0x87 => self.char_ref_code = 0x2021,
-        0x88 => self.char_ref_code = 0x02C6,
-        0x89 => self.char_ref_code = 0x2030,
-        0x8A => self.char_ref_code = 0x0160,
-        0x8B => self.char_ref_code = 0x2039,
-        0x8C => self.char_ref_code = 0x0152,
-        0x8E => self.char_ref_code = 0x017D,
-        0x91 => self.char_ref_code = 0x2018,
-        0x92 => self.char_ref_code = 0x2019,
-        0x93 => self.char_ref_code = 0x201C,
-        0x94 => self.char_ref_code = 0x201D,
-        0x95 => self.char_ref_code = 0x2022,
-        0x96 => self.char_ref_code = 0x2013,
-        0x97 => self.char_ref_code = 0x2014,
-        0x98 => self.char_ref_code = 0x02DC,
-        0x99 => self.char_ref_code = 0x2122,
-        0x9A => self.char_ref_code = 0x0161,
-        0x9B => self.char_ref_code = 0x203A,
-        0x9C => self.char_ref_code = 0x0153,
-        0x9E => self.char_ref_code = 0x017E,
-        0x9F => self.char_ref_code = 0x0178,
-        else => {},
     }
 }

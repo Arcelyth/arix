@@ -52,6 +52,11 @@ pub const ProcessingInstruction = struct {
     pub fn init() ProcessingInstruction {
         return ProcessingInstruction{ .target = StraleUtf8Global.initEmpty(), .data = StraleUtf8Global.initEmpty() };
     }
+
+    pub fn deinit(self: *ProcessingInstruction) void {
+        self.target.deinit();
+        self.data.deinit();
+    }
 };
 
 pub const TokenTag = enum {

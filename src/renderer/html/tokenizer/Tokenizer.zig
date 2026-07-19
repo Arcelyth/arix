@@ -37,6 +37,7 @@ current_doctype: token.Doctype,
 
 // Current processing instruction.
 current_process_inst: token.ProcessingInstruction,
+current_attr_dup: bool,
 
 ingester: TokenIngester,
 last_start_tag_name: ?StraleUtf8Global,
@@ -62,6 +63,7 @@ pub fn init(alloc: std.mem.Allocator, ingester: TokenIngester, on_error: ?Tokeni
         .current_tag_attrs = .empty,
         .current_doctype = token.Doctype.init(),
         .current_process_inst = token.ProcessingInstruction.init(),
+        .current_attr_dup = false,
         .ingester = ingester,
         .last_start_tag_name = null,
         .temporary_buffer = StraleUtf8Global.initEmpty(),
@@ -92,12 +94,13 @@ pub fn emitChar(self: *Tokenizer, ch: u21) void {
 }
 
 pub fn emitCurrentTag(self: *Tokenizer) void {
+    self.sealAttr();
     switch (self.current_tag_kind) {
         .StartTag => {
             self.last_start_tag_name = self.current_tag_name.clone();
         },
         .EndTag => {
-            // TODO.
+            // TODO handle errors.
         },
     }
     const tag_token = token.Tag{
@@ -137,8 +140,28 @@ pub fn createTag_E(self: *Tokenizer, tag_kind: token.TagKind, ch: u21) !void {
 }
 
 pub fn createAttr_E(self: *Tokenizer, ch: u21) !void {
-    _ = self;
-    _ = ch;
+    try self.sealAttr();
+    try self.current_tag_name.push(ch);
+}
+
+// Append current attribute to current tag's attribute list and
+// clear the fields.
+pub fn sealAttr(self: *Tokenizer) !void {
+    if (self.current_tag_name.isEmpty()) return;
+    const dup = for (self.current_tag_attrs.items) |attr| {
+        if (attr.name.cmp(&self.current_tag_name)) break true;
+    } else false;
+    if (dup) {
+        if (self.on_error) |err_cb| err_cb(.DuplicateAttribute, 0);
+        self.current_attr_dup = true;
+        self.current_attribute_name.clear();
+        self.current_attribute_value.clear();
+    } else {
+        try self.current_tag_attrs.append(self.allocator, .{
+            .name = self.current_attribute_name.take(),
+            .value = self.current_attribute_value.take(),
+        });
+    }
 }
 
 pub inline fn setStateAndAdvance(self: *Tokenizer, state: TokenizerState, input: *BufferDeque(.utf8, .not_atomic, true)) void {

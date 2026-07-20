@@ -12,7 +12,7 @@ const u8_buffer = @import("../../utils/u8_buffer.zig");
 const ascii = @import("../../utils/ascii.zig");
 const token = @import("token.zig");
 const TokenIngester = @import("TokenIngester.zig");
-const named_char_refs = @import("named_char_refs_gen.zig").named_char_refs;
+const named_char_trie = @import("named_char_refs_gen.zig").named_char_trie;
 
 allocator: std.mem.Allocator,
 state: TokenizerState,
@@ -94,7 +94,7 @@ pub fn emitChar(self: *Tokenizer, ch: u21) void {
 }
 
 pub fn emitCurrentTag(self: *Tokenizer) void {
-    self.sealAttr();
+    self.sealAttr() catch return;
     switch (self.current_tag_kind) {
         .StartTag => {
             self.last_start_tag_name = self.current_tag_name.clone();
@@ -188,6 +188,10 @@ fn asciiEqIgnoreCase(a: u8, b: u8) bool {
     return std.ascii.toLower(a) == std.ascii.toLower(b);
 }
 
+fn asciiEq(a: u8, b: u8) bool {
+    return a == b;
+}
+
 pub fn match_insensitive(input: *BufferDeque(.utf8, .not_atomic, true), str: []const u8) bool {
     return input.consume(str, asciiEqIgnoreCase);
 }
@@ -218,10 +222,66 @@ inline fn isConsumedAsPartOfAttr(self: *Tokenizer) bool {
     };
 }
 
-// TODO: Replace with Trie.
-pub fn tryConsumeNamedCharRef(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) ?struct { bool, []const u8 } {
-    _ = self;
-    _ = input;
+pub fn consumeNamedCharRef(input: *BufferDeque(.utf8, .not_atomic, true)) !?struct { []const u8, bool } {
+    const entity = try tryConsumeNamedCharRef(input) orelse return null;
+    _ = input.consume(entity.matched_str, asciiEq);
+    return .{ entity.matched_str, entity.has_semicolon };
+}
+
+pub const EntityMatch = struct {
+    matched_str: []const u8,
+    consumed_len: usize,
+    has_semicolon: bool,
+};
+
+pub fn tryConsumeNamedCharRef(input: *BufferDeque(.utf8, .not_atomic, true)) !?EntityMatch {
+    var last_valid: ?EntityMatch = null;
+
+    var current_node_idx: usize = 0;
+    var lookahead_idx: usize = 0;
+
+    while (true) {
+        const next_ch = input.peekCharN(lookahead_idx) orelse break;
+
+        if (next_ch > 127) break;
+        const search_char = @as(u8, @intCast(next_ch));
+
+        const current_node = named_char_trie[current_node_idx];
+
+        var found_child_idx: ?usize = null;
+        const start = current_node.child_start;
+        const end = start + current_node.child_count;
+
+        var i = start;
+        while (i < end) : (i += 1) {
+            if (named_char_trie[i].char == search_char) {
+                found_child_idx = i;
+                break;
+            }
+        }
+
+        const child_idx = found_child_idx orelse break;
+
+        current_node_idx = child_idx;
+        lookahead_idx += 1;
+
+        if (named_char_trie[child_idx].value) |val| {
+            last_valid = EntityMatch{
+                .matched_str = val,
+                .consumed_len = lookahead_idx,
+                .has_semicolon = (search_char == ';'),
+            };
+        }
+    }
+
+    if (last_valid) |match| {
+        var k: usize = 0;
+        while (k < match.consumed_len) : (k += 1) {
+            _ = input.nextChar();
+        }
+        return match;
+    }
+
     return null;
 }
 
@@ -2005,9 +2065,9 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
 
             // https://html.spec.whatwg.org/multipage/parsing.html#named-character-reference-state
             .NamedCharacterReference => {
-                const res = self.tryConsumeNamedCharRef(input);
+                const res = try consumeNamedCharRef(input);
                 if (res) |r| {
-                    const is_last_semicolon, const matched = r;
+                    const matched, const is_last_semicolon = r;
                     if (self.isConsumedAsPartOfAttr() and
                         !is_last_semicolon and (ch == '=' or ascii.isAsciiAlphanum(ch)))
                     {

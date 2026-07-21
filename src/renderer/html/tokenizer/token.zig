@@ -1,4 +1,5 @@
 const std = @import("std");
+const testing = std.testing;
 const u8_buffer = @import("../../utils/u8_buffer.zig");
 const strale = @import("strale");
 const StraleUtf8Global = strale.StraleUtf8Global;
@@ -78,3 +79,47 @@ pub const Token = union(TokenTag) {
     EofToken,
     ProcessingInstructionToken: ProcessingInstruction,
 };
+
+pub fn expectToken(expected: Token, actual: Token) !void {
+    const expected_tag = std.meta.activeTag(expected);
+    const actual_tag = std.meta.activeTag(actual);
+    try testing.expectEqual(expected_tag, actual_tag);
+    switch (expected) {
+        .UndefinedToken, .EofToken => {},
+
+        .DoctypeToken => |exp_doc| {
+            const act_doc = actual.DoctypeToken;
+            try testing.expectEqualSlices(u8, exp_doc.name.slice(), act_doc.name.slice());
+            try testing.expectEqualSlices(u8, exp_doc.public_id.slice(), act_doc.public_id.slice());
+            try testing.expectEqualSlices(u8, exp_doc.system_id.slice(), act_doc.system_id.slice());
+            try testing.expectEqual(exp_doc.force_quirks, act_doc.force_quirks);
+        },
+
+        .TagToken => |exp_tag| {
+            const act_tag = actual.TagToken;
+            try testing.expectEqual(exp_tag.kind, act_tag.kind);
+            try testing.expectEqualSlices(u8, exp_tag.name.slice(), act_tag.name.slice());
+            try testing.expectEqual(exp_tag.self_closing, act_tag.self_closing);
+
+            try testing.expectEqual(exp_tag.attrs.items.len, act_tag.attrs.items.len);
+            for (exp_tag.attrs.items, act_tag.attrs.items) |exp_attr, act_attr| {
+                try testing.expectEqualSlices(u8, exp_attr.name.slice(), act_attr.name.slice());
+                try testing.expectEqualSlices(u8, exp_attr.value.slice(), act_attr.value.slice());
+            }
+        },
+
+        .CommentToken => |exp_comment| {
+            try testing.expectEqualSlices(u8, exp_comment.slice(), actual.CommentToken.slice());
+        },
+
+        .CharacterToken => |exp_char| {
+            try testing.expectEqualSlices(u8, exp_char.slice(), actual.CharacterToken.slice());
+        },
+
+        .ProcessingInstructionToken => |exp_pi| {
+            const act_pi = actual.ProcessingInstructionToken;
+            try testing.expectEqualSlices(u8, exp_pi.target.slice(), act_pi.target.slice());
+            try testing.expectEqualSlices(u8, exp_pi.data.slice(), act_pi.data.slice());
+        },
+    }
+}

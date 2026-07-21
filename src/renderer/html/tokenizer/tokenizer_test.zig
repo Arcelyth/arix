@@ -6,6 +6,8 @@ const strale = @import("strale");
 const BufferDeque = strale.BufferDeque;
 const TestIngester = @import("TestIngester.zig");
 const TokenIngester = @import("TokenIngester.zig");
+const token = @import("token.zig");
+const Token = token.Token;
 
 test "tokenizer test" {
     const allocator = testing.allocator;
@@ -28,3 +30,6 @@ test "tokenizer test" {
 
     try testing.expectEqual(.Data, tok.state);
 }
+
+
+

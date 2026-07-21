@@ -6,6 +6,7 @@ pub const sniff = @import("renderer/html/encoding/sniff.zig");
 
 pub const tokenizer_test = @import("renderer/html/tokenizer/tokenizer_test.zig");
 pub const Tokenizer = @import("renderer/html/tokenizer/Tokenizer.zig");
+pub const html5lib_tokenizer_test = @import("renderer/tests/html5lib_tokenizer_test.zig");
 
 test {
     @import("std").testing.refAllDecls(@This());

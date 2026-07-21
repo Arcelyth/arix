@@ -42,6 +42,7 @@ current_attr_dup: bool,
 ingester: TokenIngester,
 last_start_tag_name: ?StraleUtf8Global,
 temporary_buffer: StraleUtf8Global,
+is_eof: bool,
 on_error: ?TokenizerErrorProc,
 
 pub fn init(alloc: std.mem.Allocator, ingester: TokenIngester, on_error: ?TokenizerErrorProc) Tokenizer {
@@ -67,6 +68,7 @@ pub fn init(alloc: std.mem.Allocator, ingester: TokenIngester, on_error: ?Tokeni
         .ingester = ingester,
         .last_start_tag_name = null,
         .temporary_buffer = StraleUtf8Global.initEmpty(),
+        .is_eof = false,
         .on_error = on_error,
     };
 }
@@ -223,19 +225,8 @@ inline fn isConsumedAsPartOfAttr(self: *Tokenizer) bool {
 }
 
 pub fn consumeNamedCharRef(input: *BufferDeque(.utf8, .not_atomic, true)) !?struct { []const u8, bool } {
-    const entity = try tryConsumeNamedCharRef(input) orelse return null;
-    _ = input.consume(entity.matched_str, asciiEq);
-    return .{ entity.matched_str, entity.has_semicolon };
-}
-
-pub const EntityMatch = struct {
-    matched_str: []const u8,
-    consumed_len: usize,
-    has_semicolon: bool,
-};
-
-pub fn tryConsumeNamedCharRef(input: *BufferDeque(.utf8, .not_atomic, true)) !?EntityMatch {
-    var last_valid: ?EntityMatch = null;
+    var matched_str: ?[]const u8 = null;
+    var has_semicolon = false;
 
     var current_node_idx: usize = 0;
     var lookahead_idx: usize = 0;
@@ -266,20 +257,14 @@ pub fn tryConsumeNamedCharRef(input: *BufferDeque(.utf8, .not_atomic, true)) !?E
         lookahead_idx += 1;
 
         if (named_char_trie[child_idx].value) |val| {
-            last_valid = EntityMatch{
-                .matched_str = val,
-                .consumed_len = lookahead_idx,
-                .has_semicolon = (search_char == ';'),
-            };
+            matched_str = val;
+            has_semicolon = (search_char == ';');
         }
     }
 
-    if (last_valid) |match| {
-        var k: usize = 0;
-        while (k < match.consumed_len) : (k += 1) {
-            _ = input.nextChar();
-        }
-        return match;
+    if (matched_str) |match| {
+        _ = input.consume(match, asciiEq);
+        return .{ match, has_semicolon };
     }
 
     return null;
@@ -325,6 +310,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
             ch = c;
             break :blk false;
         } else true;
+        self.is_eof = is_eof;
 
         switch (self.state) {
 

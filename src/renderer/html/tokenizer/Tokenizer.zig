@@ -198,6 +198,10 @@ pub fn match_insensitive(input: *BufferDeque(.utf8, .not_atomic, true), str: []c
     return input.consume(str, asciiEqIgnoreCase);
 }
 
+pub fn match_sensitive(input: *BufferDeque(.utf8, .not_atomic, true), str: []const u8) bool {
+    return input.consume(str, asciiEq);
+}
+
 pub inline fn createDoctype(self: *Tokenizer) void {
     self.current_doctype.deinit();
     self.current_doctype = token.Doctype.init();
@@ -301,6 +305,13 @@ pub inline fn setCodePoint(self: *Tokenizer) void {
         0x9F => self.char_ref_code = 0x0178,
         else => {},
     }
+}
+
+// https://html.spec.whatwg.org/multipage/parsing.html#adjusted-current-node
+pub fn is_adjusted(self: *Tokenizer) bool {
+    // TODO
+    _ = self;
+    return false;
 }
 
 pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !void {
@@ -1234,7 +1245,25 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
 
             // https://html.spec.whatwg.org/multipage/parsing.html#markup-declaration-open-state
             .MarkupDeclarationOpen => {
-                // TODO
+                if (match_sensitive(input, "--")) {
+                    self.current_comment.clear();
+                    self.state = .CommentStart;
+                } else if (match_insensitive(input, "DOCTYPE")) {
+                    self.state = .DOCTYPE;
+                } else if (match_sensitive(input, "[CDATA[")) {
+                    // TODO
+                    if (self.is_adjusted()) {
+                        self.setStateAndAdvance(.CDATASection, input);
+                    } else {
+                        if (self.on_error) |err_cb| err_cb(.CDATAInHtmlContent, ch);
+                        try self.current_comment.append("[CDATA[");
+                        self.setStateAndAdvance(.BogusComment, input);
+                    }
+                } else {
+                    if (self.on_error) |err_cb| err_cb(.IncorrectlyOpenedComment, ch);
+                    self.current_comment.clear();
+                    self.state = .BogusComment;     
+                }
             },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#comment-start-state
@@ -1375,7 +1404,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     else => {
                         try self.current_comment.push('-');
                         try self.current_comment.push('-');
-                        self.state = .CommentEnd;
+                        self.state = .Comment;
                     },
                 }
             },

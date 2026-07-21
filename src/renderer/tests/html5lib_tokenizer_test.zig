@@ -225,10 +225,11 @@ pub fn runHtml5LibTestFile(
                 return error.MissingActualToken;
             }
 
-            const expected_token = try parseJsonToken(
+            var expected_token = try parseJsonToken(
                 allocator,
                 expected_json_token,
             );
+            defer expected_token.deinit(allocator);
 
             const actual_token = test_ingester.tokens.items[actual_index];
 
@@ -287,5 +288,3 @@ pub fn runHtml5LibTestFile(
         }
     }
 }
-
-

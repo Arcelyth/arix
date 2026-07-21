@@ -37,6 +37,7 @@ pub const TokenizerError = enum {
     MissingDOCTYPESystemIdentifier,
     AbruptDOCTYPESystemIdentifier,
     UnexpectedCharacterAfterDOCTYPESystemIdentifier,
+    CDATAInHtmlContent,
     EofInCDATA,
     MissingSemicolonAfterCharacterReference,
     AbsenceOfDigitsInNumericCharacterReference,

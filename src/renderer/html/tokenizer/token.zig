@@ -8,6 +8,11 @@ const BufferDeque = strale.BufferDeque;
 pub const Attribute = struct {
     name: StraleUtf8Global,
     value: StraleUtf8Global,
+
+    pub fn deinit(self: *Attribute) void {
+        self.name.deinit();
+        self.value.deinit();
+    }
 };
 
 pub const Doctype = struct {
@@ -78,6 +83,40 @@ pub const Token = union(TokenTag) {
     CharacterToken: StraleUtf8Global,
     EofToken,
     ProcessingInstructionToken: ProcessingInstruction,
+
+    pub fn deinit(self: *Token, alloc: std.mem.Allocator) void {
+        switch (self.*) {
+            .UndefinedToken => {},
+
+            .EofToken => {},
+
+            .DoctypeToken => |*doctype| {
+                doctype.deinit();
+            },
+
+            .TagToken => |*tag| {
+                tag.name.deinit();
+                for (tag.attrs.items) |*attr| {
+                    attr.deinit();
+                }
+                tag.attrs.deinit(alloc);
+            },
+
+            .CommentToken => |*comment| {
+                comment.deinit();
+            },
+
+            .CharacterToken => |*character| {
+                character.deinit();
+            },
+
+            .ProcessingInstructionToken => |*pi| {
+                pi.deinit();
+            },
+        }
+
+        self.* = .UndefinedToken;
+    }
 };
 
 pub fn expectToken(expected: Token, actual: Token) !void {

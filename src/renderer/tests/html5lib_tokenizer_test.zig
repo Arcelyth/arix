@@ -148,7 +148,6 @@ pub fn runHtml5LibTestFile(
         .unlimited,
     );
     defer allocator.free(content);
-
     const parsed = try std.json.parseFromSlice(
         std.json.Value,
         allocator,
@@ -197,10 +196,7 @@ pub fn runHtml5LibTestFile(
         defer buffer.deinit();
 
         try buffer.pushBackSlice(input);
-
-        while (!tokenizer.at_eof) {
-            try tokenizer.step_E(&buffer);
-        }
+        try tokenizer.step_E(&buffer);
 
         var actual_index: usize = 0;
 
@@ -287,4 +283,10 @@ pub fn runHtml5LibTestFile(
             return error.UnexpectedExtraTokens;
         }
     }
+}
+
+test "try" {
+    const alloc = testing.allocator;
+    var t = std.Io.Threaded.init_single_threaded;
+    try runHtml5LibTestFile(alloc, "src/renderer/tests/html5lib-tests/tokenizer/escapeFlag.test", std.Io.Threaded.io(&t));
 }

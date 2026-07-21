@@ -13,12 +13,12 @@ const ascii = @import("../../utils/ascii.zig");
 const token = @import("token.zig");
 const TokenIngester = @import("TokenIngester.zig");
 const named_char_trie = @import("named_char_refs_gen.zig").named_char_trie;
+const config = @import("config");
 
 allocator: std.mem.Allocator,
 state: TokenizerState,
 return_state: TokenizerState,
 pause_flag: bool,
-at_eof: bool,
 // Character reference code.
 char_ref_code: u21,
 
@@ -39,10 +39,10 @@ current_doctype: token.Doctype,
 current_process_inst: token.ProcessingInstruction,
 current_attr_dup: bool,
 
+current_character: StraleUtf8Global,
 ingester: TokenIngester,
 last_start_tag_name: ?StraleUtf8Global,
 temporary_buffer: StraleUtf8Global,
-is_eof: bool,
 on_error: ?TokenizerErrorProc,
 
 pub fn init(alloc: std.mem.Allocator, ingester: TokenIngester, on_error: ?TokenizerErrorProc) Tokenizer {
@@ -53,7 +53,6 @@ pub fn init(alloc: std.mem.Allocator, ingester: TokenIngester, on_error: ?Tokeni
         .state = .Data,
         .return_state = .Data,
         .pause_flag = false,
-        .at_eof = false,
         .char_ref_code = 0,
         .current_tag_name = StraleUtf8Global.initEmpty(),
         .current_tag_kind = .StartTag,
@@ -65,10 +64,10 @@ pub fn init(alloc: std.mem.Allocator, ingester: TokenIngester, on_error: ?Tokeni
         .current_doctype = token.Doctype.init(),
         .current_process_inst = token.ProcessingInstruction.init(),
         .current_attr_dup = false,
+        .current_character = StraleUtf8Global.initEmpty(),
         .ingester = ingester,
         .last_start_tag_name = null,
         .temporary_buffer = StraleUtf8Global.initEmpty(),
-        .is_eof = false,
         .on_error = on_error,
     };
 }
@@ -88,14 +87,21 @@ pub fn handle_token(self: *Tokenizer, t: token.Token) void {
 }
 
 pub fn emitEof(self: *Tokenizer) void {
+    self.flushCurrentChar();
     self.handle_token(.EofToken);
 }
 
 pub fn emitChar(self: *Tokenizer, ch: u21) void {
-    self.handle_token(token.Token{ .CharacterToken = StraleUtf8Global.initChar(ch) catch return });
+    self.current_character.push(ch) catch return;
+}
+
+pub fn flushCurrentChar(self: *Tokenizer) void {
+    if (self.current_character.isEmpty()) return;
+    self.handle_token(token.Token{ .CharacterToken = self.current_character.take() });
 }
 
 pub fn emitCurrentTag(self: *Tokenizer) void {
+    self.flushCurrentChar();
     self.sealAttr() catch return;
     switch (self.current_tag_kind) {
         .StartTag => {
@@ -116,18 +122,31 @@ pub fn emitCurrentTag(self: *Tokenizer) void {
 }
 
 pub fn emitTempBuffer(self: *Tokenizer) void {
+    self.flushCurrentChar();
     self.handle_token(token.Token{ .CharacterToken = self.temporary_buffer.clone() });
     self.temporary_buffer.clear();
 }
 
 pub fn emitCurrentComment(self: *Tokenizer) void {
+    self.flushCurrentChar();
     self.handle_token(token.Token{ .CommentToken = self.current_comment.clone() });
     self.current_comment.clear();
 }
 
 pub fn emitCurrentDoctype(self: *Tokenizer) void {
+    self.flushCurrentChar();
     self.handle_token(token.Token{ .DoctypeToken = self.current_doctype });
     self.current_doctype = token.Doctype.init();
+}
+
+pub fn emitCharAndAdvance(self: *Tokenizer, ch: u21, input: *BufferDeque(.utf8, .not_atomic, true)) void {
+    self.emitChar(ch);
+    _ = input.nextChar();
+}
+
+pub fn emitProcessingInst(self: *Tokenizer) void {
+    self.flushCurrentChar();
+    self.handle_token(token.Token{ .ProcessingInstructionToken = self.current_process_inst });
 }
 
 pub fn discardTag(self: *Tokenizer) void {
@@ -175,15 +194,6 @@ pub inline fn setCharacterReferenceStateAndAdvance(self: *Tokenizer, return_stat
     self.state = .CharacterReference;
     self.return_state = return_state;
     _ = input.nextChar();
-}
-
-pub inline fn emitCharAndAdvance(self: *Tokenizer, ch: u21, input: *BufferDeque(.utf8, .not_atomic, true)) void {
-    self.emitChar(ch);
-    _ = input.nextChar();
-}
-
-pub inline fn emitProcessingInst(self: *Tokenizer) void {
-    self.handle_token(token.Token{ .ProcessingInstructionToken = self.current_process_inst });
 }
 
 fn asciiEqIgnoreCase(a: u8, b: u8) bool {
@@ -321,7 +331,10 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
             ch = c;
             break :blk false;
         } else true;
-        self.is_eof = is_eof;
+
+        if (config.debug) {
+            std.log.debug("Current state: {s}\n", .{@tagName(self.state)});
+        }
 
         switch (self.state) {
 
@@ -1262,7 +1275,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                 } else {
                     if (self.on_error) |err_cb| err_cb(.IncorrectlyOpenedComment, ch);
                     self.current_comment.clear();
-                    self.state = .BogusComment;     
+                    self.state = .BogusComment;
                 }
             },
 

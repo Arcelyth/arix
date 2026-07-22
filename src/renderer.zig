@@ -4,7 +4,6 @@ pub const attr = @import("renderer/html/encoding/attr.zig");
 pub const encoding = @import("renderer/html/encoding/encoding.zig");
 pub const sniff = @import("renderer/html/encoding/sniff.zig");
 
-pub const tokenizer_test = @import("renderer/html/tokenizer/tokenizer_test.zig");
 pub const Tokenizer = @import("renderer/html/tokenizer/Tokenizer.zig");
 pub const html5lib_tokenizer_test = @import("renderer/tests/html5lib_tokenizer_test.zig");
 

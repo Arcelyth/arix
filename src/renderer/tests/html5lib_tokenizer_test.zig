@@ -4,6 +4,7 @@ const TokenIngester = @import("../html/tokenizer/TokenIngester.zig");
 const Tokenizer = @import("../html/tokenizer/Tokenizer.zig");
 const token = @import("../html/tokenizer/token.zig");
 const TestIngester = @import("../html/tokenizer/TestIngester.zig");
+const state = @import("../html/tokenizer/state.zig");
 
 const Token = token.Token;
 const Attribute = token.Attribute;
@@ -179,60 +180,99 @@ pub fn runHtml5LibTestFile(
 
         if (expected_output_value != .array) return error.InvalidOutputField;
 
-        var test_ingester = TestIngester.init(allocator);
-        defer test_ingester.deinit();
+        const initial_states = test_case.get("initialStates") orelse return error.MissingOutputField;
 
-        const ingester = TokenIngester.init(
-            &test_ingester,
-            TestIngester.handleToken,
-        );
+        const l = if (test_case.get("lastStartTag")) |last| blk: {
+            const s = try StraleUtf8Global.initSlice(last.string);
+            break :blk s;
+        } else null;
 
-        var tokenizer = Tokenizer.init(allocator, ingester, null);
-        defer tokenizer.deinit();
+        for (initial_states.array.items) |initial_state| {
+            const st = try state.stringToTokenizeState(initial_state.string);
+            var test_ingester = TestIngester.init(allocator);
+            defer test_ingester.deinit();
 
-        strale.setGlobalAlloc(allocator);
+            const ingester = TokenIngester.init(
+                &test_ingester,
+                TestIngester.handleToken,
+            );
 
-        var buffer = try BufferDeque(.utf8, .not_atomic, true).init(allocator);
-        defer buffer.deinit();
+            var tokenizer = Tokenizer.init(allocator, ingester, null, .{ .inital_state = st, .last_state_tag_name = l });
+            defer tokenizer.deinit();
 
-        try buffer.pushBackSlice(input);
-        try tokenizer.step_E(&buffer);
+            strale.setGlobalAlloc(allocator);
 
-        var actual_index: usize = 0;
+            var buffer = try BufferDeque(.utf8, .not_atomic, true).init(allocator);
+            defer buffer.deinit();
 
-        for (expected_output_value.array.items) |expected_json_token| {
-            // Skip EOF tokens.
+            try buffer.pushBackSlice(input);
+            try tokenizer.step_E(&buffer);
+
+            var actual_index: usize = 0;
+
+            for (expected_output_value.array.items) |expected_json_token| {
+                // Skip EOF tokens.
+                while (actual_index < test_ingester.tokens.items.len and
+                    std.meta.activeTag(test_ingester.tokens.items[actual_index]) == .EofToken)
+                {
+                    actual_index += 1;
+                }
+
+                if (actual_index >= test_ingester.tokens.items.len) {
+                    std.debug.print(
+                        "\n[Failed] Test Failed in File: {s}, Case #{d}\n",
+                        .{
+                            path,
+                            test_case_index,
+                        },
+                    );
+
+                    std.debug.print("Expected more tokens, but tokenizer ended early.\n", .{});
+                    return error.MissingActualToken;
+                }
+
+                var expected_token = try parseJsonToken(
+                    allocator,
+                    expected_json_token,
+                );
+                defer expected_token.deinit(allocator);
+
+                const actual_token = test_ingester.tokens.items[actual_index];
+
+                token.expectToken(
+                    expected_token,
+                    actual_token,
+                ) catch |err| {
+                    std.debug.print(
+                        "\n[Failed] Test Failed in File: {s}, Case #{d}: {s}\n",
+                        .{
+                            path,
+                            test_case_index,
+                            if (test_case.get("description")) |description|
+                                if (description == .string)
+                                    description.string
+                                else
+                                    "No description"
+                            else
+                                "No description",
+                        },
+                    );
+
+                    std.debug.print("Token index: {d}\n", .{actual_index});
+
+                    return err;
+                };
+
+                actual_index += 1;
+            }
+
             while (actual_index < test_ingester.tokens.items.len and
                 std.meta.activeTag(test_ingester.tokens.items[actual_index]) == .EofToken)
             {
                 actual_index += 1;
             }
 
-            if (actual_index >= test_ingester.tokens.items.len) {
-                std.debug.print(
-                    "\n[Failed] Test Failed in File: {s}, Case #{d}\n",
-                    .{
-                        path,
-                        test_case_index,
-                    },
-                );
-
-                std.debug.print("Expected more tokens, but tokenizer ended early.\n", .{});
-                return error.MissingActualToken;
-            }
-
-            var expected_token = try parseJsonToken(
-                allocator,
-                expected_json_token,
-            );
-            defer expected_token.deinit(allocator);
-
-            const actual_token = test_ingester.tokens.items[actual_index];
-
-            token.expectToken(
-                expected_token,
-                actual_token,
-            ) catch |err| {
+            if (actual_index != test_ingester.tokens.items.len) {
                 std.debug.print(
                     "\n[Failed] Test Failed in File: {s}, Case #{d}: {s}\n",
                     .{
@@ -248,44 +288,15 @@ pub fn runHtml5LibTestFile(
                     },
                 );
 
-                std.debug.print("Token index: {d}\n", .{actual_index});
+                std.debug.print("Tokenizer emitted unexpected extra tokens.\n", .{});
 
-                return err;
-            };
-
-            actual_index += 1;
-        }
-
-        while (actual_index < test_ingester.tokens.items.len and
-            std.meta.activeTag(test_ingester.tokens.items[actual_index]) == .EofToken)
-        {
-            actual_index += 1;
-        }
-
-        if (actual_index != test_ingester.tokens.items.len) {
-            std.debug.print(
-                "\n[Failed] Test Failed in File: {s}, Case #{d}: {s}\n",
-                .{
-                    path,
-                    test_case_index,
-                    if (test_case.get("description")) |description|
-                        if (description == .string)
-                            description.string
-                        else
-                            "No description"
-                    else
-                        "No description",
-                },
-            );
-
-            std.debug.print("Tokenizer emitted unexpected extra tokens.\n", .{});
-
-            return error.UnexpectedExtraTokens;
+                return error.UnexpectedExtraTokens;
+            }
         }
     }
 }
 
-test "try" {
+test "html5lib escapeFlag" {
     const alloc = testing.allocator;
     var t = std.Io.Threaded.init_single_threaded;
     try runHtml5LibTestFile(alloc, "src/renderer/tests/html5lib-tests/tokenizer/escapeFlag.test", std.Io.Threaded.io(&t));

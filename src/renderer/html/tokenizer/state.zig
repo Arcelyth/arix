@@ -94,3 +94,115 @@ pub const TokenizerState = enum {
     DecimalCharacterReference,
     NumericCharacterReferenceEnd,
 };
+
+pub fn stringToTokenizeState(name: []const u8) !TokenizerState {
+    const map = std.StaticStringMap(TokenizerState).initComptime(.{
+        .{ "Data state", .Data },
+        .{ "RCDATA state", .RCDATA },
+        .{ "RAWTEXT state", .RAWTEXT },
+        .{ "Script data state", .ScriptData },
+        .{ "PLAINTEXT state", .PLAINTEXT },
+
+        .{ "Tag open state", .TagOpen },
+        .{ "End tag open state", .EndTagOpen },
+        .{ "Tag name state", .TagName },
+
+        .{ "RCDATA less-than sign state", .RCDATALessThanSign },
+        .{ "RCDATA end tag open state", .RCDATAEndTagOpen },
+        .{ "RCDATA end tag name state", .RCDATAEndTagName },
+
+        .{ "RAWTEXT less-than sign state", .RAWTEXTLessThanSign },
+        .{ "RAWTEXT end tag open state", .RAWTEXTEndTagOpen },
+        .{ "RAWTEXT end tag name state", .RAWTEXTEndTagName },
+
+        .{ "Script data less-than sign state", .ScriptDataLessThanSign },
+        .{ "Script data end tag open state", .ScriptDataEndTagOpen },
+        .{ "Script data end tag name state", .ScriptDataEndTagName },
+
+        .{ "Script data escape start state", .ScriptDataEscapeStart },
+        .{ "Script data escape start dash state", .ScriptDataEscapeStartDash },
+        .{ "Script data escaped state", .ScriptDataEscaped },
+        .{ "Script data escaped dash state", .ScriptDataEscapedDash },
+        .{ "Script data escaped dash dash state", .ScriptDataEscapedDashDash },
+        .{ "Script data escaped less-than sign state", .ScriptDataEscapedLessThanSign },
+        .{ "Script data escaped end tag open state", .ScriptDataEscapedEndTagOpen },
+        .{ "Script data escaped end tag name state", .ScriptDataEscapedEndTagName },
+
+        .{ "Script data double escape start state", .ScriptDataDoubleEscapeStart },
+        .{ "Script data double escaped state", .ScriptDataDoubleEscaped },
+        .{ "Script data double escaped dash state", .ScriptDataDoubleEscapedDash },
+        .{ "Script data double escaped dash dash state", .ScriptDataDoubleEscapedDashDash },
+        .{ "Script data double escaped less-than sign state", .ScriptDataDoubleEscapedLessThanSign },
+        .{ "Script data double escape end state", .ScriptDataDoubleEscapeEnd },
+
+        .{ "Before attribute name state", .BeforeAttributeName },
+        .{ "Attribute name state", .AttributeName },
+        .{ "After attribute name state", .AfterAttributeName },
+        .{ "Before attribute value state", .BeforeAttributeValue },
+
+        .{ "Attribute value (double-quoted) state", .AttributeValueDoubleQuoted },
+        .{ "Attribute value (single-quoted) state", .AttributeValueSingleQuoted },
+        .{ "Attribute value (unquoted) state", .AttributeValueUnquoted },
+
+        .{ "After attribute value quoted state", .AfterAttributeValueQuoted },
+        .{ "Self-closing start tag state", .SelfClosingStartTag },
+
+        .{ "Bogus comment state", .BogusComment },
+        .{ "Markup declaration open state", .MarkupDeclarationOpen },
+
+        .{ "Comment start state", .CommentStart },
+        .{ "Comment start dash state", .CommentStartDash },
+        .{ "Comment state", .Comment },
+        .{ "Comment less-than sign state", .CommentLessThanSign },
+        .{ "Comment less-than sign bang state", .CommentLessThanSignBang },
+        .{ "Comment less-than sign bang dash state", .CommentLessThanSignBangDash },
+        .{ "Comment less-than sign bang dash dash state", .CommentLessThanSignBangDashDash },
+        .{ "Comment end dash state", .CommentEndDash },
+        .{ "Comment end state", .CommentEnd },
+        .{ "Comment end bang state", .CommentEndBang },
+
+        .{ "DOCTYPE state", .DOCTYPE },
+        .{ "Before DOCTYPE name state", .BeforeDOCTYPEName },
+        .{ "DOCTYPE name state", .DOCTYPEName },
+        .{ "After DOCTYPE name state", .AfterDOCTYPEName },
+
+        .{ "After DOCTYPE public keyword state", .AfterDOCTYPEPublicKeyword },
+        .{ "Before DOCTYPE public identifier state", .BeforeDOCTYPEPublicIdentifier },
+        .{ "DOCTYPE public identifier (double-quoted) state", .DOCTYPEPublicIdentifierDoubleQuoted },
+        .{ "DOCTYPE public identifier (single-quoted) state", .DOCTYPEPublicIdentifierSingleQuoted },
+
+        .{ "After DOCTYPE public identifier state", .AfterDOCTYPEPublicIdentifier },
+        .{ "Between DOCTYPE public and system identifiers state", .BetweenDOCTYPEPublicAndSystemIdentifiers },
+
+        .{ "After DOCTYPE system keyword state", .AfterDOCTYPESystemKeyword },
+        .{ "Before DOCTYPE system identifier state", .BeforeDOCTYPESystemIdentifier },
+        .{ "DOCTYPE system identifier (double-quoted) state", .DOCTYPESystemIdentifierDoubleQuoted },
+        .{ "DOCTYPE system identifier (single-quoted) state", .DOCTYPESystemIdentifierSingleQuoted },
+        .{ "After DOCTYPE system identifier state", .AfterDOCTYPESystemIdentifier },
+
+        .{ "Bogus DOCTYPE state", .BogusDOCTYPE },
+
+        .{ "CDATA section state", .CDATASection },
+        .{ "CDATA section bracket state", .CDATASectionBracket },
+        .{ "CDATA section end state", .CDATASectionEnd },
+
+        .{ "Processing instruction open state", .ProcessingInstructionOpen },
+        .{ "Processing instruction target state", .ProcessingInstructionTarget },
+        .{ "After processing instruction target state", .AfterProcessingInstructionTarget },
+        .{ "Processing instruction data state", .ProcessingInstructionData },
+        .{ "Processing instruction questionable state", .ProcessingInstructionQuestionable },
+
+        .{ "Character reference state", .CharacterReference },
+        .{ "Named character reference state", .NamedCharacterReference },
+        .{ "Ambiguous ampersand state", .AmbiguousAmpersand },
+
+        .{ "Numeric character reference state", .NumericCharacterReference },
+        .{ "Hexadecimal character reference start state", .HexadecimalCharacterReferenceStart },
+        .{ "Decimal character reference start state", .DecimalCharacterReferenceStart },
+        .{ "Hexadecimal character reference state", .HexadecimalCharacterReference },
+        .{ "Decimal character reference state", .DecimalCharacterReference },
+        .{ "Numeric character reference end state", .NumericCharacterReferenceEnd },
+    });
+
+    return map.get(name) orelse error.UnknownTokenizerState;
+}

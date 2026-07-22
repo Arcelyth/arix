@@ -45,12 +45,17 @@ last_start_tag_name: ?StraleUtf8Global,
 temporary_buffer: StraleUtf8Global,
 on_error: ?TokenizerErrorProc,
 
-pub fn init(alloc: std.mem.Allocator, ingester: TokenIngester, on_error: ?TokenizerErrorProc) Tokenizer {
+pub const TokenizerOpts = struct {
+    inital_state: TokenizerState = .Data,
+    last_state_tag_name: ?StraleUtf8Global = null,
+};
+
+pub fn init(alloc: std.mem.Allocator, ingester: TokenIngester, on_error: ?TokenizerErrorProc, opts: TokenizerOpts) Tokenizer {
     //  TOOD: enable global allocator
     //    strale.setGlobalAlloc(alloc);
     return Tokenizer{
         .allocator = alloc,
-        .state = .Data,
+        .state = opts.inital_state,
         .return_state = .Data,
         .pause_flag = false,
         .char_ref_code = 0,
@@ -66,7 +71,7 @@ pub fn init(alloc: std.mem.Allocator, ingester: TokenIngester, on_error: ?Tokeni
         .current_attr_dup = false,
         .current_character = StraleUtf8Global.initEmpty(),
         .ingester = ingester,
-        .last_start_tag_name = null,
+        .last_start_tag_name = opts.last_state_tag_name,
         .temporary_buffer = StraleUtf8Global.initEmpty(),
         .on_error = on_error,
     };
@@ -86,11 +91,6 @@ pub fn handle_token(self: *Tokenizer, t: token.Token) void {
     self.ingester.handle_token(t);
 }
 
-pub fn emitEof(self: *Tokenizer) void {
-    self.flushCurrentChar();
-    self.handle_token(.EofToken);
-}
-
 pub fn emitChar(self: *Tokenizer, ch: u21) void {
     self.current_character.push(ch) catch return;
 }
@@ -100,11 +100,16 @@ pub fn flushCurrentChar(self: *Tokenizer) void {
     self.handle_token(token.Token{ .CharacterToken = self.current_character.take() });
 }
 
+pub fn emitEof(self: *Tokenizer) void {
+    self.flushCurrentChar();
+    self.handle_token(.EofToken);
+}
+
 pub fn emitCurrentTag(self: *Tokenizer) void {
     self.flushCurrentChar();
-    self.sealAttr() catch return;
     switch (self.current_tag_kind) {
         .StartTag => {
+            self.sealAttr() catch return;
             self.last_start_tag_name = self.current_tag_name.clone();
         },
         .EndTag => {
@@ -276,9 +281,14 @@ pub fn consumeNamedCharRef(input: *BufferDeque(.utf8, .not_atomic, true)) !?stru
         }
     }
 
-    if (matched_str) |match| {
-        _ = input.consume(match, asciiEq);
-        return .{ match, has_semicolon };
+    if (matched_str) |value| {
+
+        var i: usize = 0;
+        while (i < lookahead_idx - 1) : (i += 1) {
+            _ = input.nextChar();
+        }
+
+        return .{ value, has_semicolon };
     }
 
     return null;
@@ -515,7 +525,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                 switch (ch) {
                     '/' => {
                         self.temporary_buffer.clear();
-                        self.setStateAndAdvance(.RCDATAEndTagName, input);
+                        self.setStateAndAdvance(.RCDATAEndTagOpen, input);
                     },
                     else => {
                         self.emitChar('<');

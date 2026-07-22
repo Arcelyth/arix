@@ -5,6 +5,8 @@ const Tokenizer = @import("../html/tokenizer/Tokenizer.zig");
 const token = @import("../html/tokenizer/token.zig");
 const TestIngester = @import("../html/tokenizer/TestIngester.zig");
 const state = @import("../html/tokenizer/state.zig");
+const ErrorIngester = @import("../html/tokenizer/ErrorIngester.zig");
+const TestErrorIngester = @import("../html/tokenizer/TestErrorIngester.zig");
 
 const Token = token.Token;
 const Attribute = token.Attribute;
@@ -189,15 +191,19 @@ pub fn runHtml5LibTestFile(
 
         for (initial_states.array.items) |initial_state| {
             const st = try state.stringToTokenizeState(initial_state.string);
+            // Initialize Token Ingester.
             var test_ingester = TestIngester.init(allocator);
             defer test_ingester.deinit();
 
-            const ingester = TokenIngester.init(
-                &test_ingester,
-                TestIngester.handleToken,
-            );
+            const ingester = TokenIngester.init(&test_ingester, TestIngester.handleToken);
 
-            var tokenizer = Tokenizer.init(allocator, ingester, null, .{ .inital_state = st, .last_state_tag_name = l });
+            // Initialize Error Ingester.
+            var err_ingester = TestErrorIngester.init(allocator);
+            defer err_ingester.deinit();
+
+            const ec = ErrorIngester.init(&err_ingester, TestErrorIngester.handleError);
+
+            var tokenizer = Tokenizer.init(allocator, ingester, ec, .{ .inital_state = st, .last_state_tag_name = l });
             defer tokenizer.deinit();
 
             strale.setGlobalAlloc(allocator);

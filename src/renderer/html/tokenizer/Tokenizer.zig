@@ -12,6 +12,7 @@ const u8_buffer = @import("../../utils/u8_buffer.zig");
 const ascii = @import("../../utils/ascii.zig");
 const token = @import("token.zig");
 const TokenIngester = @import("TokenIngester.zig");
+const ErrorIngester = @import("ErrorIngester.zig");
 const named_char_trie = @import("named_char_refs_gen.zig").named_char_trie;
 const config = @import("config");
 
@@ -44,14 +45,14 @@ current_line: usize,
 ingester: TokenIngester,
 last_start_tag_name: ?StraleUtf8Global,
 temporary_buffer: StraleUtf8Global,
-on_error: ?TokenizerErrorProc,
+err_ingester: ?ErrorIngester,
 
 pub const TokenizerOpts = struct {
     inital_state: TokenizerState = .Data,
     last_state_tag_name: ?StraleUtf8Global = null,
 };
 
-pub fn init(alloc: std.mem.Allocator, ingester: TokenIngester, on_error: ?TokenizerErrorProc, opts: TokenizerOpts) Tokenizer {
+pub fn init(alloc: std.mem.Allocator, ingester: TokenIngester, err_ingester: ?ErrorIngester, opts: TokenizerOpts) Tokenizer {
     //  TOOD: enable global allocator
     //    strale.setGlobalAlloc(alloc);
     return Tokenizer{
@@ -75,7 +76,7 @@ pub fn init(alloc: std.mem.Allocator, ingester: TokenIngester, on_error: ?Tokeni
         .ingester = ingester,
         .last_start_tag_name = opts.last_state_tag_name,
         .temporary_buffer = StraleUtf8Global.initEmpty(),
-        .on_error = on_error,
+        .err_ingester = err_ingester,
     };
 }
 
@@ -89,8 +90,8 @@ pub fn deinit(self: *Tokenizer) void {
     self.temporary_buffer.deinit();
 }
 
-pub fn handle_token(self: *Tokenizer, t: token.Token) void {
-    self.ingester.handle_token(t);
+pub fn handleToken(self: *Tokenizer, t: token.Token) void {
+    self.ingester.handleToken(t);
 }
 
 pub fn emitChar(self: *Tokenizer, ch: u21) void {
@@ -99,12 +100,12 @@ pub fn emitChar(self: *Tokenizer, ch: u21) void {
 
 pub fn flushCurrentChar(self: *Tokenizer) void {
     if (self.current_character.isEmpty()) return;
-    self.handle_token(token.Token{ .CharacterToken = self.current_character.take() });
+    self.handleToken(token.Token{ .CharacterToken = self.current_character.take() });
 }
 
 pub fn emitEof(self: *Tokenizer) void {
     self.flushCurrentChar();
-    self.handle_token(.EofToken);
+    self.handleToken(.EofToken);
 }
 
 pub fn emitCurrentTag(self: *Tokenizer) void {
@@ -125,24 +126,24 @@ pub fn emitCurrentTag(self: *Tokenizer) void {
         .attrs = self.current_tag_attrs,
     };
     self.current_tag_attrs = .empty;
-    self.handle_token(token.Token{ .TagToken = tag_token });
+    self.handleToken(token.Token{ .TagToken = tag_token });
 }
 
 pub fn emitTempBuffer(self: *Tokenizer) void {
     self.flushCurrentChar();
-    self.handle_token(token.Token{ .CharacterToken = self.temporary_buffer.clone() });
+    self.handleToken(token.Token{ .CharacterToken = self.temporary_buffer.clone() });
     self.temporary_buffer.clear();
 }
 
 pub fn emitCurrentComment(self: *Tokenizer) void {
     self.flushCurrentChar();
-    self.handle_token(token.Token{ .CommentToken = self.current_comment.clone() });
+    self.handleToken(token.Token{ .CommentToken = self.current_comment.clone() });
     self.current_comment.clear();
 }
 
 pub fn emitCurrentDoctype(self: *Tokenizer) void {
     self.flushCurrentChar();
-    self.handle_token(token.Token{ .DoctypeToken = self.current_doctype });
+    self.handleToken(token.Token{ .DoctypeToken = self.current_doctype });
     self.current_doctype = token.Doctype.init();
 }
 
@@ -160,7 +161,7 @@ pub fn emitCharAndAdvanceUpdateLine(self: *Tokenizer, ch: u21, input: *BufferDeq
 
 pub fn emitProcessingInst(self: *Tokenizer) void {
     self.flushCurrentChar();
-    self.handle_token(token.Token{ .ProcessingInstructionToken = self.current_process_inst });
+    self.handleToken(token.Token{ .ProcessingInstructionToken = self.current_process_inst });
 }
 
 pub fn discardTag(self: *Tokenizer) void {
@@ -356,7 +357,7 @@ pub fn is_adjusted(self: *Tokenizer) bool {
 }
 
 pub fn handleError(self: *Tokenizer, err: TokenizerError, ch: u21) void {
-    if (self.on_error) |err_cb| err_cb(err, self.current_line, ch);
+    if (self.err_ingester) |ei| ei.handleError(err, self.current_line, ch);
 }
 
 pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !void {

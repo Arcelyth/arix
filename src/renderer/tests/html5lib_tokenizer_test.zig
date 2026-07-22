@@ -16,6 +16,13 @@ const StraleUtf8Global = strale.StraleUtf8Global;
 const BufferDeque = strale.BufferDeque;
 const testing = std.testing;
 
+pub fn printFailedMessage(path: []const u8, idx: usize, desc: []const u8, init_state: []const u8) void {
+    std.debug.print(
+        "\n[Failed] Test Failed in File: {s}\nCase #{d}: {s}\nInitial state: {s}\n",
+        .{ path, idx, desc, init_state },
+    );
+}
+
 /// Parse one token from an html5lib tokenizer test JSON value.
 pub fn parseJsonToken(
     allocator: std.mem.Allocator,
@@ -175,12 +182,17 @@ pub fn runHtml5LibTestFile(
             return error.MissingInputField;
         };
 
+        // Get tests' input string.
         if (input_value != .string) return error.InvalidInputField;
-
         const input = input_value.string;
-        const expected_output_value = test_case.get("output") orelse return error.MissingOutputField;
 
+        // Get tests' output array.
+        const expected_output_value = test_case.get("output") orelse return error.MissingOutputField;
         if (expected_output_value != .array) return error.InvalidOutputField;
+
+        // Get tests' error array.
+        const errors = test_case.get("errors") orelse null;
+        if (errors) |errs| if (errs != .array) return error.InvalidErrorsField;
 
         const initial_states = test_case.get("initialStates") orelse return error.MissingOutputField;
 
@@ -215,6 +227,7 @@ pub fn runHtml5LibTestFile(
             try tokenizer.step_E(&buffer);
 
             var actual_index: usize = 0;
+            var err_actual_index: usize = 0;
 
             const description = if (test_case.get("description")) |d|
                 if (d == .string)
@@ -226,23 +239,17 @@ pub fn runHtml5LibTestFile(
 
             for (expected_output_value.array.items) |expected_json_token| {
                 // Skip EOF tokens.
-                while (actual_index < test_ingester.tokens.items.len and
+                const t_len = test_ingester.tokens.items.len;
+                while (actual_index < t_len and
                     std.meta.activeTag(test_ingester.tokens.items[actual_index]) == .EofToken)
                 {
                     actual_index += 1;
                 }
 
                 if (actual_index >= test_ingester.tokens.items.len) {
-                    std.debug.print(
-                        "\n[Failed] Test Failed in File: {s}, Case #{d}: {s}\n",
-                        .{
-                            path,
-                            test_case_index,
-                            description,
-                        },
-                    );
+                    printFailedMessage(path, test_case_index, description, initial_state.string);
 
-                    std.debug.print("Expected more tokens, but tokenizer ended early.\n", .{});
+                    std.debug.print("Expected {} tokens, but tokenizer only emit {} tokens.\n", .{ expected_output_value.array.items.len, t_len });
                     return error.MissingActualToken;
                 }
 
@@ -258,17 +265,9 @@ pub fn runHtml5LibTestFile(
                     expected_token,
                     actual_token,
                 ) catch |err| {
-                    std.debug.print(
-                        "\n[Failed] Test Failed in File: {s}, Case #{d}: {s}\n",
-                        .{
-                            path,
-                            test_case_index,
-                            description,
-                        },
-                    );
+                    printFailedMessage(path, test_case_index, description, initial_state.string);
 
                     std.debug.print("Token index: {d}\n", .{actual_index});
-
                     return err;
                 };
 
@@ -282,18 +281,39 @@ pub fn runHtml5LibTestFile(
             }
 
             if (actual_index != test_ingester.tokens.items.len) {
-                std.debug.print(
-                    "\n[Failed] Test Failed in File: {s}, Case #{d}: {s}\n",
-                    .{
-                        path,
-                        test_case_index,
-                        description,
-                    },
-                );
+                printFailedMessage(path, test_case_index, description, initial_state.string);
 
                 std.debug.print("Tokenizer emitted unexpected extra tokens.\n", .{});
-
                 return error.UnexpectedExtraTokens;
+            }
+
+            if (errors) |errs| {
+                for (errs.array.items) |expected_error| {
+                    const e_len = err_ingester.errors.items.len;
+                    if (err_actual_index >= e_len) {
+                        printFailedMessage(path, test_case_index, description, initial_state.string);
+
+                        std.debug.print("Expected {} errors, but tokenizer only emit {} errors.\n", .{ errs.array.items.len, e_len });
+                        return error.MissingActualError;
+                    }
+
+                    if (expected_error != .object) return error.InvalidTestsField;
+                    const code = expected_error.object.get("code") orelse return error.InvalidTestsField;
+                    const line = expected_error.object.get("line") orelse return error.InvalidTestsField;
+
+                    err_ingester.expectError(
+                        err_actual_index,
+                        code.string,
+                        @as(usize, @intCast(line.integer)),
+                    ) catch |err| {
+                        printFailedMessage(path, test_case_index, description, initial_state.string);
+                        
+                        std.debug.print("Error index: {d}\n", .{err_actual_index});
+                        return err;
+                    };
+
+                    err_actual_index += 1;
+                }
             }
         }
     }

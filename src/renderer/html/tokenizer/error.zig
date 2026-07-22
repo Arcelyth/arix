@@ -110,3 +110,4 @@ pub fn tokenizerErrorToString(self: TokenizerError) []const u8 {
         .EofInProcessingInstruction => "eof-in-processing-instruction",
     };
 }
+

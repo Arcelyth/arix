@@ -1,4 +1,5 @@
-pub const TokenizerErrorProc = *const fn (TokenizerError, u21) void;
+// (error, current_line, ch)
+pub const TokenizerErrorProc = *const fn (TokenizerError, usize, u21) void;
 
 pub const TokenizerError = enum {
     SurrogateInInputStream,

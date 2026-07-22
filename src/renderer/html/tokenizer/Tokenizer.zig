@@ -187,7 +187,7 @@ pub fn sealAttr(self: *Tokenizer) !void {
         if (attr.name.cmp(&self.current_tag_name)) break true;
     } else false;
     if (dup) {
-        if (self.on_error) |err_cb| err_cb(.DuplicateAttribute, 0);
+        self.handleError(.DuplicateAttribute, 0);
         self.current_attr_dup = true;
         self.current_attribute_name.clear();
         self.current_attribute_value.clear();
@@ -355,6 +355,10 @@ pub fn is_adjusted(self: *Tokenizer) bool {
     return false;
 }
 
+pub fn handleError(self: *Tokenizer, err: TokenizerError, ch: u21) void {
+    if (self.on_error) |err_cb| err_cb(err, self.current_line, ch);
+}
+
 pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !void {
     var ch: u21 = undefined;
     while (true) {
@@ -379,7 +383,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     '&' => self.setCharacterReferenceStateAndAdvance(.Data, input),
                     '<' => self.setStateAndAdvance(.TagOpen, input),
                     0x0000 => {
-                        if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
+                        self.handleError(.UnexpectedNullCharacter, ch);
                         self.emitCharAndAdvance('\u{FFFD}', input);
                     },
                     else => self.emitCharAndAdvanceUpdateLine(ch, input),
@@ -397,7 +401,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     '&' => self.setCharacterReferenceStateAndAdvance(.RCDATA, input),
                     '<' => self.setStateAndAdvance(.RCDATALessThanSign, input),
                     0x0000 => {
-                        if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
+                        self.handleError(.UnexpectedNullCharacter, ch);
                         self.emitCharAndAdvance('\u{FFFD}', input);
                     },
                     else => self.emitCharAndAdvanceUpdateLine(ch, input),
@@ -414,7 +418,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                 switch (ch) {
                     '<' => self.setStateAndAdvance(.RAWTEXTLessThanSign, input),
                     0x0000 => {
-                        if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
+                        self.handleError(.UnexpectedNullCharacter, ch);
                         self.emitCharAndAdvance('\u{FFFD}', input);
                     },
                     else => self.emitCharAndAdvanceUpdateLine(ch, input),
@@ -431,7 +435,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                 switch (ch) {
                     '<' => self.setStateAndAdvance(.ScriptDataLessThanSign, input),
                     0x0000 => {
-                        if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
+                        self.handleError(.UnexpectedNullCharacter, ch);
                         self.emitCharAndAdvance('\u{FFFD}', input);
                     },
                     else => self.emitCharAndAdvanceUpdateLine(ch, input),
@@ -447,7 +451,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
 
                 switch (ch) {
                     0x0000 => {
-                        if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
+                        self.handleError(.UnexpectedNullCharacter, ch);
                         self.emitCharAndAdvance('\u{FFFD}', input);
                     },
                     else => self.emitCharAndAdvanceUpdateLine(ch, input),
@@ -457,7 +461,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
             // https://html.spec.whatwg.org/multipage/parsing.html#tag-open-state
             .TagOpen => {
                 if (is_eof) {
-                    if (self.on_error) |err_cb| err_cb(.EofBeforeTagName, ch);
+                    self.handleError(.EofBeforeTagName, ch);
                     self.emitChar('<');
                     self.emitEof();
                     return;
@@ -466,7 +470,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     '!' => self.setStateAndAdvance(.MarkupDeclarationOpen, input),
                     '/' => self.setStateAndAdvance(.EndTagOpen, input),
                     '?' => {
-                        if (self.on_error) |err_cb| err_cb(.UnexpectedQuestionMarkInsteadOfTagName, ch);
+                        self.handleError(.UnexpectedQuestionMarkInsteadOfTagName, ch);
                         self.current_comment.clear();
                         // Since reconsume, no advance here.
                         self.state = .BogusComment;
@@ -477,7 +481,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                             // Since already pushed current char into tag_name, use advance instead of reconsume.
                             self.setStateAndAdvance(.TagName, input);
                         } else {
-                            if (self.on_error) |err_cb| err_cb(.InvalidFirstCharacterOfTagName, ch);
+                            self.handleError(.InvalidFirstCharacterOfTagName, ch);
                             self.emitChar('<');
                             self.state = .Data;
                         }
@@ -488,7 +492,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
             // https://html.spec.whatwg.org/multipage/parsing.html#end-tag-open-state
             .EndTagOpen => {
                 if (is_eof) {
-                    if (self.on_error) |err_cb| err_cb(.EofBeforeTagName, ch);
+                    self.handleError(.EofBeforeTagName, ch);
                     self.emitChar('<');
                     self.emitChar('/');
                     self.emitEof();
@@ -496,7 +500,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                 }
                 switch (ch) {
                     '>' => {
-                        if (self.on_error) |err_cb| err_cb(.MissingEndTagName, ch);
+                        self.handleError(.MissingEndTagName, ch);
                         self.state = .Data;
                     },
                     else => {
@@ -504,7 +508,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                             try self.createTag_E(.EndTag, ch);
                             self.setStateAndAdvance(.TagName, input);
                         } else {
-                            if (self.on_error) |err_cb| err_cb(.InvalidFirstCharacterOfTagName, ch);
+                            self.handleError(.InvalidFirstCharacterOfTagName, ch);
                             self.current_comment.clear();
                             self.state = .BogusComment;
                         }
@@ -515,7 +519,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
             // https://html.spec.whatwg.org/multipage/parsing.html#tag-name-state
             .TagName => {
                 if (is_eof) {
-                    if (self.on_error) |err_cb| err_cb(.EofInTag, ch);
+                    self.handleError(.EofInTag, ch);
                     self.emitEof();
                     return;
                 }
@@ -527,7 +531,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                         self.emitCurrentTag();
                     },
                     0x0000 => {
-                        if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
+                        self.handleError(.UnexpectedNullCharacter, ch);
                         try self.current_tag_name.push('\u{FFFD}');
                         _ = input.nextChar();
                     },
@@ -758,7 +762,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
             // https://html.spec.whatwg.org/multipage/parsing.html#script-data-escaped-state
             .ScriptDataEscaped => {
                 if (is_eof) {
-                    if (self.on_error) |err_cb| err_cb(.EofInScriptHtmlCommentLikeText, ch);
+                    self.handleError(.EofInScriptHtmlCommentLikeText, ch);
                     self.emitEof();
                     return;
                 }
@@ -769,7 +773,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     },
                     '<' => self.setStateAndAdvance(.ScriptDataEscapedLessThanSign, input),
                     0x0000 => {
-                        if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
+                        self.handleError(.UnexpectedNullCharacter, ch);
                         self.emitChar('\u{FFFD}');
                         _ = input.nextChar();
                     },
@@ -783,7 +787,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
             // https://html.spec.whatwg.org/multipage/parsing.html#script-data-escaped-dash-state
             .ScriptDataEscapedDash => {
                 if (is_eof) {
-                    if (self.on_error) |err_cb| err_cb(.EofInScriptHtmlCommentLikeText, ch);
+                    self.handleError(.EofInScriptHtmlCommentLikeText, ch);
                     self.emitEof();
                     return;
                 }
@@ -794,7 +798,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     },
                     '<' => self.setStateAndAdvance(.ScriptDataEscapedLessThanSign, input),
                     0x0000 => {
-                        if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
+                        self.handleError(.UnexpectedNullCharacter, ch);
                         self.setStateAndAdvance(.ScriptDataEscaped, input);
                         self.emitChar('\u{FFFD}');
                     },
@@ -808,7 +812,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
             // https://html.spec.whatwg.org/multipage/parsing.html#script-data-escaped-dash-dash-state
             .ScriptDataEscapedDashDash => {
                 if (is_eof) {
-                    if (self.on_error) |err_cb| err_cb(.EofInScriptHtmlCommentLikeText, ch);
+                    self.handleError(.EofInScriptHtmlCommentLikeText, ch);
                     self.emitEof();
                     return;
                 }
@@ -823,7 +827,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                         self.emitChar('>');
                     },
                     0x0000 => {
-                        if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
+                        self.handleError(.UnexpectedNullCharacter, ch);
                         self.setStateAndAdvance(.ScriptDataEscaped, input);
                         self.emitChar('\u{FFFD}');
                     },
@@ -928,7 +932,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
             // https://html.spec.whatwg.org/multipage/parsing.html#script-data-double-escaped-state
             .ScriptDataDoubleEscaped => {
                 if (is_eof) {
-                    if (self.on_error) |err_cb| err_cb(.EofInScriptHtmlCommentLikeText, ch);
+                    self.handleError(.EofInScriptHtmlCommentLikeText, ch);
                     self.emitEof();
                     return;
                 }
@@ -942,7 +946,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                         self.emitChar('<');
                     },
                     0x0000 => {
-                        if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
+                        self.handleError(.UnexpectedNullCharacter, ch);
                         self.emitChar('\u{FFFD}');
                         _ = input.nextChar();
                     },
@@ -956,7 +960,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
             // https://html.spec.whatwg.org/multipage/parsing.html#script-data-double-escaped-dash-state
             .ScriptDataDoubleEscapedDash => {
                 if (is_eof) {
-                    if (self.on_error) |err_cb| err_cb(.EofInScriptHtmlCommentLikeText, ch);
+                    self.handleError(.EofInScriptHtmlCommentLikeText, ch);
                     self.emitEof();
                     return;
                 }
@@ -970,7 +974,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                         self.emitChar('<');
                     },
                     0x0000 => {
-                        if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
+                        self.handleError(.UnexpectedNullCharacter, ch);
                         self.setStateAndAdvance(.ScriptDataDoubleEscaped, input);
                         self.emitChar('\u{FFFD}');
                     },
@@ -984,7 +988,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
             // https://html.spec.whatwg.org/multipage/parsing.html#script-data-double-escaped-dash-dash-state
             .ScriptDataDoubleEscapedDashDash => {
                 if (is_eof) {
-                    if (self.on_error) |err_cb| err_cb(.EofInScriptHtmlCommentLikeText, ch);
+                    self.handleError(.EofInScriptHtmlCommentLikeText, ch);
                     self.emitEof();
                     return;
                 }
@@ -998,7 +1002,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                         self.emitChar('<');
                     },
                     0x0000 => {
-                        if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
+                        self.handleError(.UnexpectedNullCharacter, ch);
                         self.setStateAndAdvance(.ScriptDataDoubleEscaped, input);
                         self.emitChar('\u{FFFD}');
                     },
@@ -1061,7 +1065,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                         self.state = .AfterAttributeName;
                     },
                     '=' => {
-                        if (self.on_error) |err_cb| err_cb(.UnexpectedEqualsSignBeforeAttributeName, ch);
+                        self.handleError(.UnexpectedEqualsSignBeforeAttributeName, ch);
                         try self.createAttr_E('=');
                         self.setStateAndAdvance(.AttributeName, input);
                     },
@@ -1082,12 +1086,12 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     '\t', '\n', '\x0C', ' ', '/', '>' => self.state = .AfterAttributeName,
                     '=' => self.setStateAndAdvance(.BeforeAttributeValue, input),
                     0x0000 => {
-                        if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
+                        self.handleError(.UnexpectedNullCharacter, ch);
                         try self.current_attribute_name.push('\u{FFFD}');
                         _ = input.nextChar();
                     },
                     '"', '\'', '<' => {
-                        if (self.on_error) |err_cb| err_cb(.UnexpectedCharacterInAttributeName, ch);
+                        self.handleError(.UnexpectedCharacterInAttributeName, ch);
                         try self.current_attribute_name.push(ch);
                         _ = input.nextChar();
                     },
@@ -1105,7 +1109,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
             // https://html.spec.whatwg.org/multipage/parsing.html#after-attribute-name-state
             .AfterAttributeName => {
                 if (is_eof) {
-                    if (self.on_error) |err_cb| err_cb(.EofInTag, ch);
+                    self.handleError(.EofInTag, ch);
                     self.emitEof();
                     return;
                 }
@@ -1137,7 +1141,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     '"' => self.setStateAndAdvance(.AttributeValueDoubleQuoted, input),
                     '\'' => self.setStateAndAdvance(.AttributeValueSingleQuoted, input),
                     '>' => {
-                        if (self.on_error) |err_cb| err_cb(.MissingAttributeValue, ch);
+                        self.handleError(.MissingAttributeValue, ch);
                         self.setStateAndAdvance(.Data, input);
                         self.emitCurrentTag();
                     },
@@ -1150,7 +1154,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
             // https://html.spec.whatwg.org/multipage/parsing.html#attribute-value-double-quoted-state
             .AttributeValueDoubleQuoted => {
                 if (is_eof) {
-                    if (self.on_error) |err_cb| err_cb(.EofInTag, ch);
+                    self.handleError(.EofInTag, ch);
                     self.emitEof();
                     return;
                 }
@@ -1158,7 +1162,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     '"' => self.setStateAndAdvance(.AfterAttributeValueQuoted, input),
                     '&' => self.setCharacterReferenceStateAndAdvance(.AttributeValueDoubleQuoted, input),
                     0x0000 => {
-                        if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
+                        self.handleError(.UnexpectedNullCharacter, ch);
                         try self.current_attribute_value.push('\u{FFFD}');
                         _ = input.nextChar();
                     },
@@ -1172,7 +1176,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
             // https://html.spec.whatwg.org/multipage/parsing.html#attribute-value-single-quoted-state
             .AttributeValueSingleQuoted => {
                 if (is_eof) {
-                    if (self.on_error) |err_cb| err_cb(.EofInTag, ch);
+                    self.handleError(.EofInTag, ch);
                     self.emitEof();
                     return;
                 }
@@ -1180,7 +1184,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     '\'' => self.setStateAndAdvance(.AfterAttributeValueQuoted, input),
                     '&' => self.setCharacterReferenceStateAndAdvance(.AttributeValueSingleQuoted, input),
                     0x0000 => {
-                        if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
+                        self.handleError(.UnexpectedNullCharacter, ch);
                         try self.current_attribute_value.push('\u{FFFD}');
                         _ = input.nextChar();
                     },
@@ -1194,7 +1198,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
             // https://html.spec.whatwg.org/multipage/parsing.html#attribute-value-unquoted-state
             .AttributeValueUnquoted => {
                 if (is_eof) {
-                    if (self.on_error) |err_cb| err_cb(.EofInTag, ch);
+                    self.handleError(.EofInTag, ch);
                     self.emitEof();
                     return;
                 }
@@ -1206,12 +1210,12 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                         self.emitCurrentTag();
                     },
                     0x0000 => {
-                        if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
+                        self.handleError(.UnexpectedNullCharacter, ch);
                         try self.current_attribute_value.push('\u{FFFD}');
                         _ = input.nextChar();
                     },
                     '"', '\'', '<', '=', '`' => {
-                        if (self.on_error) |err_cb| err_cb(.UnexpectedCharacterInUnquotedAttributeValue, ch);
+                        self.handleError(.UnexpectedCharacterInUnquotedAttributeValue, ch);
                         try self.current_attribute_value.push(ch);
                         _ = input.nextChar();
                     },
@@ -1225,7 +1229,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
             // https://html.spec.whatwg.org/multipage/parsing.html#after-attribute-value-quoted-state
             .AfterAttributeValueQuoted => {
                 if (is_eof) {
-                    if (self.on_error) |err_cb| err_cb(.EofInTag, ch);
+                    self.handleError(.EofInTag, ch);
                     self.emitEof();
                     return;
                 }
@@ -1237,7 +1241,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                         self.emitCurrentTag();
                     },
                     else => {
-                        if (self.on_error) |err_cb| err_cb(.MissingWhitespaceBetweenAttributes, ch);
+                        self.handleError(.MissingWhitespaceBetweenAttributes, ch);
                         self.state = .BeforeAttributeName;
                     },
                 }
@@ -1246,7 +1250,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
             // https://html.spec.whatwg.org/multipage/parsing.html#self-closing-start-tag-state
             .SelfClosingStartTag => {
                 if (is_eof) {
-                    if (self.on_error) |err_cb| err_cb(.EofInTag, ch);
+                    self.handleError(.EofInTag, ch);
                     self.emitEof();
                     return;
                 }
@@ -1257,7 +1261,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                         self.emitCurrentTag();
                     },
                     else => {
-                        if (self.on_error) |err_cb| err_cb(.UnexpectedSolidusInTag, ch);
+                        self.handleError(.UnexpectedSolidusInTag, ch);
                         self.state = .BeforeAttributeName;
                     },
                 }
@@ -1276,7 +1280,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                         self.emitCurrentComment();
                     },
                     0x0000 => {
-                        if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
+                        self.handleError(.UnexpectedNullCharacter, ch);
                         try self.current_comment.push('\u{FFFD}');
                         _ = input.nextChar();
                     },
@@ -1299,12 +1303,13 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     if (self.is_adjusted()) {
                         self.setStateAndAdvance(.CDATASection, input);
                     } else {
-                        if (self.on_error) |err_cb| err_cb(.CDATAInHtmlContent, ch);
+                        self.handleError(.CDATAInHtmlContent, ch);
+
                         try self.current_comment.append("[CDATA[");
                         self.setStateAndAdvance(.BogusComment, input);
                     }
                 } else {
-                    if (self.on_error) |err_cb| err_cb(.IncorrectlyOpenedComment, ch);
+                    self.handleError(.IncorrectlyOpenedComment, ch);
                     self.current_comment.clear();
                     self.state = .BogusComment;
                 }
@@ -1315,7 +1320,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                 switch (ch) {
                     '-' => self.setStateAndAdvance(.CommentStartDash, input),
                     '>' => {
-                        if (self.on_error) |err_cb| err_cb(.AbruptClosingOfEmptyComment, ch);
+                        self.handleError(.AbruptClosingOfEmptyComment, ch);
                         self.setStateAndAdvance(.Data, input);
                         self.emitCurrentComment();
                     },
@@ -1326,7 +1331,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
             // https://html.spec.whatwg.org/multipage/parsing.html#comment-start-dash-state
             .CommentStartDash => {
                 if (is_eof) {
-                    if (self.on_error) |err_cb| err_cb(.EofInComment, ch);
+                    self.handleError(.EofInComment, ch);
                     self.emitCurrentComment();
                     self.emitEof();
                     return;
@@ -1334,7 +1339,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                 switch (ch) {
                     '-' => self.setStateAndAdvance(.CommentEnd, input),
                     '>' => {
-                        if (self.on_error) |err_cb| err_cb(.AbruptClosingOfEmptyComment, ch);
+                        self.handleError(.AbruptClosingOfEmptyComment, ch);
                         self.setStateAndAdvance(.Data, input);
                         self.emitCurrentComment();
                     },
@@ -1348,7 +1353,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
             // https://html.spec.whatwg.org/multipage/parsing.html#comment-state
             .Comment => {
                 if (is_eof) {
-                    if (self.on_error) |err_cb| err_cb(.EofInComment, ch);
+                    self.handleError(.EofInComment, ch);
                     self.emitCurrentComment();
                     self.emitEof();
                     return;
@@ -1360,7 +1365,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     },
                     '-' => self.setStateAndAdvance(.CommentEndDash, input),
                     0x0000 => {
-                        if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
+                        self.handleError(.UnexpectedNullCharacter, ch);
                         try self.current_comment.push('\u{FFFD}');
                         _ = input.nextChar();
                     },
@@ -1405,7 +1410,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
             // https://html.spec.whatwg.org/multipage/parsing.html#comment-less-than-sign-bang-dash-dash-state
             .CommentLessThanSignBangDashDash => {
                 if (is_eof or ch == '>') self.state = .CommentEnd else {
-                    if (self.on_error) |err_cb| err_cb(.NestedComment, ch);
+                    self.handleError(.NestedComment, ch);
                     self.state = .CommentEnd;
                 }
             },
@@ -1413,7 +1418,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
             // https://html.spec.whatwg.org/multipage/parsing.html#comment-end-dash-state
             .CommentEndDash => {
                 if (is_eof) {
-                    if (self.on_error) |err_cb| err_cb(.EofInComment, ch);
+                    self.handleError(.EofInComment, ch);
                     self.emitCurrentComment();
                     self.emitEof();
                     return;
@@ -1430,7 +1435,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
             // https://html.spec.whatwg.org/multipage/parsing.html#comment-end-state
             .CommentEnd => {
                 if (is_eof) {
-                    if (self.on_error) |err_cb| err_cb(.EofInComment, ch);
+                    self.handleError(.EofInComment, ch);
                     self.emitCurrentComment();
                     self.emitEof();
                     return;
@@ -1456,14 +1461,14 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
             // https://html.spec.whatwg.org/multipage/parsing.html#comment-end-bang-state
             .CommentEndBang => {
                 if (is_eof) {
-                    if (self.on_error) |err_cb| err_cb(.EofInComment, ch);
+                    self.handleError(.EofInComment, ch);
                     self.emitCurrentComment();
                     self.emitEof();
                     return;
                 }
                 switch (ch) {
                     '>' => {
-                        if (self.on_error) |err_cb| err_cb(.IncorrectlyClosedComment, ch);
+                        self.handleError(.IncorrectlyClosedComment, ch);
                         self.setStateAndAdvance(.Data, input);
                         self.emitCurrentComment();
                     },
@@ -1485,7 +1490,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
             // https://html.spec.whatwg.org/multipage/parsing.html#doctype-state
             .DOCTYPE => {
                 if (is_eof) {
-                    if (self.on_error) |err_cb| err_cb(.EofInDOCTYPE, ch);
+                    self.handleError(.EofInDOCTYPE, ch);
                     self.createDoctype();
                     self.current_doctype.force_quirks = true;
                     self.emitCurrentDoctype();
@@ -1496,7 +1501,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     '\t', '\n', '\x0C', ' ' => self.setStateAndAdvanceUpdateLine(.BeforeDOCTYPEName, input),
                     '>' => self.state = .BeforeDOCTYPEName,
                     else => {
-                        if (self.on_error) |err_cb| err_cb(.MissingWhitespaceBeforeDOCTYPEName, ch);
+                        self.handleError(.MissingWhitespaceBeforeDOCTYPEName, ch);
                         self.state = .BeforeDOCTYPEName;
                     },
                 }
@@ -1505,7 +1510,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
             // https://html.spec.whatwg.org/multipage/parsing.html#before-doctype-name-state
             .BeforeDOCTYPEName => {
                 if (is_eof) {
-                    if (self.on_error) |err_cb| err_cb(.EofInDOCTYPE, ch);
+                    self.handleError(.EofInDOCTYPE, ch);
                     self.createDoctype();
                     self.current_doctype.force_quirks = true;
                     self.emitCurrentDoctype();
@@ -1523,13 +1528,13 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                         self.setStateAndAdvance(.DOCTYPEName, input);
                     },
                     0x0000 => {
-                        if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
+                        self.handleError(.UnexpectedNullCharacter, ch);
                         self.createDoctype();
                         try self.current_doctype.name.push('\u{FFFD}');
                         self.setStateAndAdvance(.DOCTYPEName, input);
                     },
                     '>' => {
-                        if (self.on_error) |err_cb| err_cb(.MissingDOCTYPEName, ch);
+                        self.handleError(.MissingDOCTYPEName, ch);
                         self.createDoctype();
                         self.current_doctype.force_quirks = true;
                         self.setStateAndAdvance(.Data, input);
@@ -1546,7 +1551,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
             // https://html.spec.whatwg.org/multipage/parsing.html#doctype-name-state
             .DOCTYPEName => {
                 if (is_eof) {
-                    if (self.on_error) |err_cb| err_cb(.EofInDOCTYPE, ch);
+                    self.handleError(.EofInDOCTYPE, ch);
                     self.current_doctype.force_quirks = true;
                     self.emitCurrentDoctype();
                     self.emitEof();
@@ -1563,7 +1568,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                         _ = input.nextChar();
                     },
                     0x0000 => {
-                        if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
+                        self.handleError(.UnexpectedNullCharacter, ch);
                         try self.current_doctype.name.push('\u{FFFD}');
                         _ = input.nextChar();
                     },
@@ -1577,7 +1582,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
             // https://html.spec.whatwg.org/multipage/parsing.html#after-doctype-name-state
             .AfterDOCTYPEName => {
                 if (is_eof) {
-                    if (self.on_error) |err_cb| err_cb(.EofInDOCTYPE, ch);
+                    self.handleError(.EofInDOCTYPE, ch);
                     self.current_doctype.force_quirks = true;
                     self.emitCurrentDoctype();
                     self.emitEof();
@@ -1596,7 +1601,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                         if (match_insensitive(input, "PUBLIC"))
                             self.state = .AfterDOCTYPEPublicKeyword
                         else if (match_insensitive(input, "SYSTEM")) self.state = .AfterDOCTYPESystemKeyword else {
-                            if (self.on_error) |err_cb| err_cb(.InvalidCharacterSequenceAfterDOCTYPEName, ch);
+                            self.handleError(.InvalidCharacterSequenceAfterDOCTYPEName, ch);
                             self.current_doctype.force_quirks = true;
                             self.state = .BogusDOCTYPE;
                         }
@@ -1607,7 +1612,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
             // https://html.spec.whatwg.org/multipage/parsing.html#after-doctype-public-keyword-state
             .AfterDOCTYPEPublicKeyword => {
                 if (is_eof) {
-                    if (self.on_error) |err_cb| err_cb(.EofInDOCTYPE, ch);
+                    self.handleError(.EofInDOCTYPE, ch);
                     self.current_doctype.force_quirks = true;
                     self.emitCurrentDoctype();
                     self.emitEof();
@@ -1616,23 +1621,23 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                 switch (ch) {
                     '\t', '\n', '\x0C', ' ' => self.setStateAndAdvanceUpdateLine(.BeforeDOCTYPEPublicIdentifier, input),
                     '"' => {
-                        if (self.on_error) |err_cb| err_cb(.MissingWhitespaceAfterDOCTYPEPublicKeyword, ch);
+                        self.handleError(.MissingWhitespaceAfterDOCTYPEPublicKeyword, ch);
                         self.current_doctype.public_id.clear();
                         self.setStateAndAdvance(.DOCTYPEPublicIdentifierDoubleQuoted, input);
                     },
                     '\'' => {
-                        if (self.on_error) |err_cb| err_cb(.MissingWhitespaceAfterDOCTYPEPublicKeyword, ch);
+                        self.handleError(.MissingWhitespaceAfterDOCTYPEPublicKeyword, ch);
                         self.current_doctype.public_id.clear();
                         self.setStateAndAdvance(.DOCTYPEPublicIdentifierSingleQuoted, input);
                     },
                     '>' => {
-                        if (self.on_error) |err_cb| err_cb(.MissingDOCTYPEPublicIdentifier, ch);
+                        self.handleError(.MissingDOCTYPEPublicIdentifier, ch);
                         self.current_doctype.force_quirks = true;
                         self.setStateAndAdvance(.Data, input);
                         self.emitCurrentDoctype();
                     },
                     else => {
-                        if (self.on_error) |err_cb| err_cb(.MissingQuoteBeforeDOCTYPEPublicIdentifier, ch);
+                        self.handleError(.MissingQuoteBeforeDOCTYPEPublicIdentifier, ch);
                         self.current_doctype.force_quirks = true;
                         self.state = .BogusDOCTYPE;
                     },
@@ -1642,7 +1647,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
             // https://html.spec.whatwg.org/multipage/parsing.html#before-doctype-public-identifier-state
             .BeforeDOCTYPEPublicIdentifier => {
                 if (is_eof) {
-                    if (self.on_error) |err_cb| err_cb(.EofInDOCTYPE, ch);
+                    self.handleError(.EofInDOCTYPE, ch);
                     self.current_doctype.force_quirks = true;
                     self.emitCurrentDoctype();
                     self.emitEof();
@@ -1662,13 +1667,13 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                         self.setStateAndAdvance(.DOCTYPEPublicIdentifierSingleQuoted, input);
                     },
                     '>' => {
-                        if (self.on_error) |err_cb| err_cb(.MissingDOCTYPEPublicIdentifier, ch);
+                        self.handleError(.MissingDOCTYPEPublicIdentifier, ch);
                         self.current_doctype.force_quirks = true;
                         self.setStateAndAdvance(.Data, input);
                         self.emitCurrentDoctype();
                     },
                     else => {
-                        if (self.on_error) |err_cb| err_cb(.MissingQuoteBeforeDOCTYPEPublicIdentifier, ch);
+                        self.handleError(.MissingQuoteBeforeDOCTYPEPublicIdentifier, ch);
                         self.current_doctype.force_quirks = true;
                         self.setStateAndAdvance(.BogusDOCTYPE, input);
                     },
@@ -1678,7 +1683,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
             // https://html.spec.whatwg.org/multipage/parsing.html#doctype-public-identifier-(double-quoted)-state
             .DOCTYPEPublicIdentifierDoubleQuoted => {
                 if (is_eof) {
-                    if (self.on_error) |err_cb| err_cb(.EofInDOCTYPE, ch);
+                    self.handleError(.EofInDOCTYPE, ch);
                     self.current_doctype.force_quirks = true;
                     self.emitCurrentDoctype();
                     self.emitEof();
@@ -1687,11 +1692,11 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                 switch (ch) {
                     '"' => self.setStateAndAdvance(.AfterDOCTYPEPublicIdentifier, input),
                     0x0000 => {
-                        if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
+                        self.handleError(.UnexpectedNullCharacter, ch);
                         try self.current_doctype.public_id.push('\u{FFFD}');
                     },
                     '>' => {
-                        if (self.on_error) |err_cb| err_cb(.AbruptDOCTYPEPublicIdentifier, ch);
+                        self.handleError(.AbruptDOCTYPEPublicIdentifier, ch);
                         self.current_doctype.force_quirks = true;
                         self.setStateAndAdvance(.Data, input);
                         self.emitCurrentDoctype();
@@ -1706,7 +1711,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
             // https://html.spec.whatwg.org/multipage/parsing.html#doctype-public-identifier-(single-quoted)-state
             .DOCTYPEPublicIdentifierSingleQuoted => {
                 if (is_eof) {
-                    if (self.on_error) |err_cb| err_cb(.EofInDOCTYPE, ch);
+                    self.handleError(.EofInDOCTYPE, ch);
                     self.current_doctype.force_quirks = true;
                     self.emitCurrentDoctype();
                     self.emitEof();
@@ -1715,11 +1720,11 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                 switch (ch) {
                     '\'' => self.setStateAndAdvance(.AfterDOCTYPEPublicIdentifier, input),
                     0x0000 => {
-                        if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
+                        self.handleError(.UnexpectedNullCharacter, ch);
                         try self.current_doctype.public_id.push('\u{FFFD}');
                     },
                     '>' => {
-                        if (self.on_error) |err_cb| err_cb(.AbruptDOCTYPEPublicIdentifier, ch);
+                        self.handleError(.AbruptDOCTYPEPublicIdentifier, ch);
                         self.current_doctype.force_quirks = true;
                         self.setStateAndAdvance(.Data, input);
                         self.emitCurrentDoctype();
@@ -1734,7 +1739,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
             // https://html.spec.whatwg.org/multipage/parsing.html#after-doctype-public-identifier-state
             .AfterDOCTYPEPublicIdentifier => {
                 if (is_eof) {
-                    if (self.on_error) |err_cb| err_cb(.EofInDOCTYPE, ch);
+                    self.handleError(.EofInDOCTYPE, ch);
                     self.current_doctype.force_quirks = true;
                     self.emitCurrentDoctype();
                     self.emitEof();
@@ -1747,17 +1752,17 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                         self.emitCurrentDoctype();
                     },
                     '"' => {
-                        if (self.on_error) |err_cb| err_cb(.MissingWhitespaceBetweenDOCTYPEPublicAndSystemIdentifiers, ch);
+                        self.handleError(.MissingWhitespaceBetweenDOCTYPEPublicAndSystemIdentifiers, ch);
                         self.current_doctype.system_id.clear();
                         self.setStateAndAdvance(.DOCTYPEPublicIdentifierDoubleQuoted, input);
                     },
                     '\'' => {
-                        if (self.on_error) |err_cb| err_cb(.MissingWhitespaceBetweenDOCTYPEPublicAndSystemIdentifiers, ch);
+                        self.handleError(.MissingWhitespaceBetweenDOCTYPEPublicAndSystemIdentifiers, ch);
                         self.current_doctype.system_id.clear();
                         self.setStateAndAdvance(.DOCTYPEPublicIdentifierSingleQuoted, input);
                     },
                     else => {
-                        if (self.on_error) |err_cb| err_cb(.MissingQuoteBeforeDOCTYPESystemIdentifier, ch);
+                        self.handleError(.MissingQuoteBeforeDOCTYPESystemIdentifier, ch);
                         self.current_doctype.force_quirks = true;
                         self.state = .BogusDOCTYPE;
                     },
@@ -1767,7 +1772,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
             // https://html.spec.whatwg.org/multipage/parsing.html#between-doctype-public-and-system-identifiers-state
             .BetweenDOCTYPEPublicAndSystemIdentifiers => {
                 if (is_eof) {
-                    if (self.on_error) |err_cb| err_cb(.EofInDOCTYPE, ch);
+                    self.handleError(.EofInDOCTYPE, ch);
                     self.current_doctype.force_quirks = true;
                     self.emitCurrentDoctype();
                     self.emitEof();
@@ -1788,7 +1793,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                         self.setStateAndAdvance(.DOCTYPESystemIdentifierSingleQuoted, input);
                     },
                     else => {
-                        if (self.on_error) |err_cb| err_cb(.MissingQuoteBeforeDOCTYPESystemIdentifier, ch);
+                        self.handleError(.MissingQuoteBeforeDOCTYPESystemIdentifier, ch);
                         self.current_doctype.force_quirks = true;
                         self.state = .BogusDOCTYPE;
                     },
@@ -1798,7 +1803,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
             // https://html.spec.whatwg.org/multipage/parsing.html#after-doctype-system-keyword-state
             .AfterDOCTYPESystemKeyword => {
                 if (is_eof) {
-                    if (self.on_error) |err_cb| err_cb(.EofInDOCTYPE, ch);
+                    self.handleError(.EofInDOCTYPE, ch);
                     self.current_doctype.force_quirks = true;
                     self.emitCurrentDoctype();
                     self.emitEof();
@@ -1807,23 +1812,23 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                 switch (ch) {
                     '\t', '\n', '\x0C', ' ' => self.setStateAndAdvanceUpdateLine(.BeforeDOCTYPESystemIdentifier, input),
                     '"' => {
-                        if (self.on_error) |err_cb| err_cb(.MissingWhitespaceAfterDOCTYPESystemKeyword, ch);
+                        self.handleError(.MissingWhitespaceAfterDOCTYPESystemKeyword, ch);
                         self.current_doctype.system_id.clear();
                         self.setStateAndAdvance(.DOCTYPESystemIdentifierDoubleQuoted, input);
                     },
                     '\'' => {
-                        if (self.on_error) |err_cb| err_cb(.MissingWhitespaceAfterDOCTYPESystemKeyword, ch);
+                        self.handleError(.MissingWhitespaceAfterDOCTYPESystemKeyword, ch);
                         self.current_doctype.system_id.clear();
                         self.setStateAndAdvance(.DOCTYPESystemIdentifierSingleQuoted, input);
                     },
                     '>' => {
-                        if (self.on_error) |err_cb| err_cb(.MissingDOCTYPESystemIdentifier, ch);
+                        self.handleError(.MissingDOCTYPESystemIdentifier, ch);
                         self.current_doctype.force_quirks = true;
                         self.setStateAndAdvance(.Data, input);
                         self.emitCurrentDoctype();
                     },
                     else => {
-                        if (self.on_error) |err_cb| err_cb(.MissingQuoteBeforeDOCTYPESystemIdentifier, ch);
+                        self.handleError(.MissingQuoteBeforeDOCTYPESystemIdentifier, ch);
                         self.current_doctype.force_quirks = true;
                         self.state = .BogusDOCTYPE;
                     },
@@ -1833,7 +1838,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
             // https://html.spec.whatwg.org/multipage/parsing.html#before-doctype-system-identifier-state
             .BeforeDOCTYPESystemIdentifier => {
                 if (is_eof) {
-                    if (self.on_error) |err_cb| err_cb(.EofInDOCTYPE, ch);
+                    self.handleError(.EofInDOCTYPE, ch);
                     self.current_doctype.force_quirks = true;
                     self.emitCurrentDoctype();
                     self.emitEof();
@@ -1855,7 +1860,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                         self.emitCurrentDoctype();
                     },
                     else => {
-                        if (self.on_error) |err_cb| err_cb(.UnexpectedCharacterAfterDOCTYPESystemIdentifier, ch);
+                        self.handleError(.UnexpectedCharacterAfterDOCTYPESystemIdentifier, ch);
                         self.state = .BogusDOCTYPE;
                     },
                 }
@@ -1864,7 +1869,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
             // https://html.spec.whatwg.org/multipage/parsing.html#doctype-system-identifier-(double-quoted)-state
             .DOCTYPESystemIdentifierDoubleQuoted => {
                 if (is_eof) {
-                    if (self.on_error) |err_cb| err_cb(.EofInDOCTYPE, ch);
+                    self.handleError(.EofInDOCTYPE, ch);
                     self.current_doctype.force_quirks = true;
                     self.emitCurrentDoctype();
                     self.emitEof();
@@ -1873,12 +1878,12 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                 switch (ch) {
                     '"' => self.setStateAndAdvance(.AfterDOCTYPESystemIdentifier, input),
                     0x0000 => {
-                        if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
+                        self.handleError(.UnexpectedNullCharacter, ch);
                         try self.current_doctype.system_id.push('\u{FFFD}');
                         _ = input.nextChar();
                     },
                     '>' => {
-                        if (self.on_error) |err_cb| err_cb(.AbruptDOCTYPESystemIdentifier, ch);
+                        self.handleError(.AbruptDOCTYPESystemIdentifier, ch);
                         self.current_doctype.force_quirks = true;
                         self.setStateAndAdvance(.Data, input);
                         self.emitCurrentDoctype();
@@ -1893,7 +1898,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
             // https://html.spec.whatwg.org/multipage/parsing.html#doctype-system-identifier-(single-quoted)-state
             .DOCTYPESystemIdentifierSingleQuoted => {
                 if (is_eof) {
-                    if (self.on_error) |err_cb| err_cb(.EofInDOCTYPE, ch);
+                    self.handleError(.EofInDOCTYPE, ch);
                     self.current_doctype.force_quirks = true;
                     self.emitCurrentDoctype();
                     self.emitEof();
@@ -1902,12 +1907,12 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                 switch (ch) {
                     '\'' => self.setStateAndAdvance(.AfterDOCTYPESystemIdentifier, input),
                     0x0000 => {
-                        if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
+                        self.handleError(.UnexpectedNullCharacter, ch);
                         try self.current_doctype.system_id.push('\u{FFFD}');
                         _ = input.nextChar();
                     },
                     '>' => {
-                        if (self.on_error) |err_cb| err_cb(.AbruptDOCTYPESystemIdentifier, ch);
+                        self.handleError(.AbruptDOCTYPESystemIdentifier, ch);
                         self.current_doctype.force_quirks = true;
                         self.setStateAndAdvance(.Data, input);
                         self.emitCurrentDoctype();
@@ -1922,7 +1927,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
             // https://html.spec.whatwg.org/multipage/parsing.html#after-doctype-system-identifier-state
             .AfterDOCTYPESystemIdentifier => {
                 if (is_eof) {
-                    if (self.on_error) |err_cb| err_cb(.EofInDOCTYPE, ch);
+                    self.handleError(.EofInDOCTYPE, ch);
                     self.current_doctype.force_quirks = true;
                     self.emitCurrentDoctype();
                     self.emitEof();
@@ -1935,7 +1940,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                         self.emitCurrentDoctype();
                     },
                     else => {
-                        if (self.on_error) |err_cb| err_cb(.UnexpectedCharacterAfterDOCTYPESystemIdentifier, ch);
+                        self.handleError(.UnexpectedCharacterAfterDOCTYPESystemIdentifier, ch);
                         self.state = .BogusDOCTYPE;
                     },
                 }
@@ -1954,7 +1959,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                         self.emitCurrentDoctype();
                     },
                     0x0000 => {
-                        if (self.on_error) |err_cb| err_cb(.UnexpectedNullCharacter, ch);
+                        self.handleError(.UnexpectedNullCharacter, ch);
                         _ = input.nextChar();
                     },
                     else => self.nextCharAndUpdateLine(input),
@@ -1964,7 +1969,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
             // https://html.spec.whatwg.org/multipage/parsing.html#cdata-section-state
             .CDATASection => {
                 if (is_eof) {
-                    if (self.on_error) |err_cb| err_cb(.EofInCDATA, ch);
+                    self.handleError(.EofInCDATA, ch);
                     self.emitEof();
                     return;
                 }
@@ -2001,12 +2006,12 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
             // https://html.spec.whatwg.org/multipage/parsing.html#processing-instruction-open-state
             .ProcessingInstructionOpen => {
                 if (is_eof) {
-                    if (self.on_error) |err_cb| err_cb(.EofInProcessingInstruction, ch);
+                    self.handleError(.EofInProcessingInstruction, ch);
                     self.emitEof();
                     return;
                 }
                 if (ascii.isAsciiAlpha(ch) or ch == '_') self.state = .ProcessingInstructionTarget else {
-                    if (self.on_error) |err_cb| err_cb(.InvalidFirstCharacterOfProcessingInstructionTarget, ch);
+                    self.handleError(.InvalidFirstCharacterOfProcessingInstructionTarget, ch);
                     self.current_comment = self.temporary_buffer;
                     self.state = .BogusComment;
                 }
@@ -2015,7 +2020,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
             // https://html.spec.whatwg.org/multipage/parsing.html#processing-instruction-target-state
             .ProcessingInstructionTarget => {
                 if (is_eof) {
-                    if (self.on_error) |err_cb| err_cb(.EofInProcessingInstruction, ch);
+                    self.handleError(.EofInProcessingInstruction, ch);
                     self.emitEof();
                     return;
                 }
@@ -2024,7 +2029,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                         var t = try BufferDeque(.utf8, .not_atomic, true).init(self.allocator);
                         try t.pushBack(self.temporary_buffer.clone());
                         if (match_insensitive(&t, "xml") or match_insensitive(&t, "xml-stylesheet")) {
-                            if (self.on_error) |err_cb| err_cb(.DisallowedProcessingInstructionTarget, ch);
+                            self.handleError(.DisallowedProcessingInstructionTarget, ch);
 
                             self.current_comment = self.temporary_buffer.clone();
                             self.temporary_buffer.clear();
@@ -2041,7 +2046,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                             try self.temporary_buffer.push(ch);
                             _ = input.nextChar();
                         } else {
-                            if (self.on_error) |err_cb| err_cb(.InvaildProcessingInstructionTarget, ch);
+                            self.handleError(.InvaildProcessingInstructionTarget, ch);
                             self.current_comment = self.temporary_buffer.clone();
                             self.temporary_buffer.clear();
                             self.state = .BogusComment;
@@ -2061,7 +2066,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
             // https://html.spec.whatwg.org/multipage/parsing.html#processing-instruction-data-state
             .ProcessingInstructionData => {
                 if (is_eof) {
-                    if (self.on_error) |err_cb| err_cb(.EofInProcessingInstruction, ch);
+                    self.handleError(.EofInProcessingInstruction, ch);
                     self.emitEof();
                 }
                 switch (ch) {
@@ -2080,7 +2085,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
             // https://html.spec.whatwg.org/multipage/parsing.html#processing-instruction-questionable-state
             .ProcessingInstructionQuestionable => {
                 if (is_eof) {
-                    if (self.on_error) |err_cb| err_cb(.EofInProcessingInstruction, ch);
+                    self.handleError(.EofInProcessingInstruction, ch);
                     self.emitEof();
                 }
                 switch (ch) {
@@ -2134,7 +2139,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                         self.setStateAndAdvanceUpdateLine(self.return_state, input);
                     } else {
                         if (!is_last_semicolon) {
-                            if (self.on_error) |err_cb| err_cb(.MissingSemicolonAfterCharacterReference, ch);
+                            self.handleError(.MissingSemicolonAfterCharacterReference, ch);
                         }
                         self.temporary_buffer.clear();
                         try self.temporary_buffer.append(matched);
@@ -2151,7 +2156,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
             .AmbiguousAmpersand => {
                 switch (ch) {
                     ';' => {
-                        if (self.on_error) |err_cb| err_cb(.UnknownNamedCharacterReference, ch);
+                        self.handleError(.UnknownNamedCharacterReference, ch);
                         self.state = self.return_state;
                     },
                     else => {
@@ -2183,7 +2188,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
             // https://html.spec.whatwg.org/multipage/parsing.html#hexadecimal-character-reference-start-state
             .HexadecimalCharacterReferenceStart => {
                 if (ascii.isAsciiHexDigit(ch)) self.state = .HexadecimalCharacterReference else {
-                    if (self.on_error) |err_cb| err_cb(.AbsenceOfDigitsInNumericCharacterReference, ch);
+                    self.handleError(.AbsenceOfDigitsInNumericCharacterReference, ch);
                     try self.flushCodePoints();
                     self.state = self.return_state;
                 }
@@ -2192,7 +2197,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
             // https://html.spec.whatwg.org/multipage/parsing.html#decimal-character-reference-start-state
             .DecimalCharacterReferenceStart => {
                 if (ascii.isAsciiDigit(ch)) self.state = .DecimalCharacterReference else {
-                    if (self.on_error) |err_cb| err_cb(.AbsenceOfDigitsInNumericCharacterReference, ch);
+                    self.handleError(.AbsenceOfDigitsInNumericCharacterReference, ch);
                     try self.flushCodePoints();
                     self.state = self.return_state;
                 }
@@ -2203,7 +2208,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                 if (ascii.isAsciiDigit(ch))
                     self.char_ref_code = self.char_ref_code * 16 + (ch - 0x0030)
                 else if (ascii.isAsciiUpperAlpha(ch)) self.char_ref_code = self.char_ref_code * 16 + (ch - 0x0037) else if (ascii.isAsciiLowerAlpha(ch)) self.char_ref_code = self.char_ref_code * 16 + (ch - 0x0057) else if (ch == ';') self.state = .NumericCharacterReferenceEnd else {
-                    if (self.on_error) |err_cb| err_cb(.MissingSemicolonAfterCharacterReference, ch);
+                    self.handleError(.MissingSemicolonAfterCharacterReference, ch);
                     self.state = .NumericCharacterReferenceEnd;
                     break :blk;
                 }
@@ -2219,7 +2224,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                             self.char_ref_code = self.char_ref_code * 10 + (ch - 0x0030);
                             _ = input.nextChar();
                         } else {
-                            if (self.on_error) |err_cb| err_cb(.MissingSemicolonAfterCharacterReference, ch);
+                            self.handleError(.MissingSemicolonAfterCharacterReference, ch);
                             self.state = .NumericCharacterReferenceEnd;
                         }
                     },
@@ -2230,18 +2235,18 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
             .NumericCharacterReferenceEnd => {
                 const code = self.char_ref_code;
                 if (code == 0x00) {
-                    if (self.on_error) |err_cb| err_cb(.NullCharacterReference, ch);
+                    self.handleError(.NullCharacterReference, ch);
                     self.char_ref_code = 0xFFFD;
                 } else if (code > 0x10FFFF) {
-                    if (self.on_error) |err_cb| err_cb(.CharacterReferenceOutsideUnicodeRange, ch);
+                    self.handleError(.CharacterReferenceOutsideUnicodeRange, ch);
                     self.char_ref_code = 0xFFFD;
                 } else if (ascii.isSurrogate(code)) {
-                    if (self.on_error) |err_cb| err_cb(.SurrogateCharacterReference, ch);
+                    self.handleError(.SurrogateCharacterReference, ch);
                     self.char_ref_code = 0xFFFD;
                 } else if (ascii.isNoneCharacter(code)) {
-                    if (self.on_error) |err_cb| err_cb(.NoncharacterCharacterReference, ch);
+                    self.handleError(.NoncharacterCharacterReference, ch);
                 } else if (code == 0x0D or (ascii.isControl(code) and !ascii.isAsciiWhitespace(code))) {
-                    if (self.on_error) |err_cb| err_cb(.ControlCharacterReference, ch);
+                    self.handleError(.ControlCharacterReference, ch);
                     self.setCodePoint();
                 }
 

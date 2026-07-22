@@ -210,6 +210,14 @@ pub fn runHtml5LibTestFile(
 
             var actual_index: usize = 0;
 
+            const description = if (test_case.get("description")) |d|
+                if (d == .string)
+                    d.string
+                else
+                    "No description"
+            else
+                "No description";
+
             for (expected_output_value.array.items) |expected_json_token| {
                 // Skip EOF tokens.
                 while (actual_index < test_ingester.tokens.items.len and
@@ -220,10 +228,11 @@ pub fn runHtml5LibTestFile(
 
                 if (actual_index >= test_ingester.tokens.items.len) {
                     std.debug.print(
-                        "\n[Failed] Test Failed in File: {s}, Case #{d}\n",
+                        "\n[Failed] Test Failed in File: {s}, Case #{d}: {s}\n",
                         .{
                             path,
                             test_case_index,
+                            description,
                         },
                     );
 
@@ -248,13 +257,7 @@ pub fn runHtml5LibTestFile(
                         .{
                             path,
                             test_case_index,
-                            if (test_case.get("description")) |description|
-                                if (description == .string)
-                                    description.string
-                                else
-                                    "No description"
-                            else
-                                "No description",
+                            description,
                         },
                     );
 
@@ -278,13 +281,7 @@ pub fn runHtml5LibTestFile(
                     .{
                         path,
                         test_case_index,
-                        if (test_case.get("description")) |description|
-                            if (description == .string)
-                                description.string
-                            else
-                                "No description"
-                        else
-                            "No description",
+                        description,
                     },
                 );
 
@@ -298,6 +295,10 @@ pub fn runHtml5LibTestFile(
 
 test "html5lib escapeFlag" {
     const alloc = testing.allocator;
-    var t = std.Io.Threaded.init_single_threaded;
-    try runHtml5LibTestFile(alloc, "src/renderer/tests/html5lib-tests/tokenizer/escapeFlag.test", std.Io.Threaded.io(&t));
+    try runHtml5LibTestFile(alloc, "src/renderer/tests/html5lib-tests/tokenizer/escapeFlag.test", testing.io);
+}
+
+test "html5lib contentModelFlags" {
+    const alloc = testing.allocator;
+    try runHtml5LibTestFile(alloc, "src/renderer/tests/html5lib-tests/tokenizer/contentModelFlags.test", testing.io);
 }

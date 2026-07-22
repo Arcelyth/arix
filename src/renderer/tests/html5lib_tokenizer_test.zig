@@ -194,15 +194,36 @@ pub fn runHtml5LibTestFile(
         const errors = test_case.get("errors") orelse null;
         if (errors) |errs| if (errs != .array) return error.InvalidErrorsField;
 
-        const initial_states = test_case.get("initialStates") orelse return error.MissingOutputField;
+        // Get tests' initial states.
+        var default_states = [_][]const u8{"Data state"};
+        var state_strings: []const []const u8 = undefined;
 
+        var allocated_states: ?[][]const u8 = null;
+        defer if (allocated_states) |s| allocator.free(s);
+
+        if (test_case.get("initialStates")) |is_val| {
+            if (is_val == .array and is_val.array.items.len > 0) {
+                const list = try allocator.alloc([]const u8, is_val.array.items.len);
+                for (is_val.array.items, 0..) |item, i| {
+                    list[i] = item.string;
+                }
+                allocated_states = list;
+                state_strings = list;
+            } else {
+                state_strings = &default_states;
+            }
+        } else {
+            state_strings = &default_states;
+        }
+
+        // Get tests' last start states.
         const l = if (test_case.get("lastStartTag")) |last| blk: {
             const s = try StraleUtf8Global.initSlice(last.string);
             break :blk s;
         } else null;
 
-        for (initial_states.array.items) |initial_state| {
-            const st = try state.stringToTokenizeState(initial_state.string);
+        for (state_strings) |initial_state| {
+            const st = try state.stringToTokenizeState(initial_state);
             // Initialize Token Ingester.
             var test_ingester = TestIngester.init(allocator);
             defer test_ingester.deinit();
@@ -247,7 +268,7 @@ pub fn runHtml5LibTestFile(
                 }
 
                 if (actual_index >= test_ingester.tokens.items.len) {
-                    printFailedMessage(path, test_case_index, description, initial_state.string);
+                    printFailedMessage(path, test_case_index, description, initial_state);
 
                     std.debug.print("Expected {} tokens, but tokenizer only emit {} tokens.\n", .{ expected_output_value.array.items.len, t_len });
                     return error.MissingActualToken;
@@ -265,7 +286,7 @@ pub fn runHtml5LibTestFile(
                     expected_token,
                     actual_token,
                 ) catch |err| {
-                    printFailedMessage(path, test_case_index, description, initial_state.string);
+                    printFailedMessage(path, test_case_index, description, initial_state);
 
                     std.debug.print("Token index: {d}\n", .{actual_index});
                     return err;
@@ -281,7 +302,7 @@ pub fn runHtml5LibTestFile(
             }
 
             if (actual_index != test_ingester.tokens.items.len) {
-                printFailedMessage(path, test_case_index, description, initial_state.string);
+                printFailedMessage(path, test_case_index, description, initial_state);
 
                 std.debug.print("Tokenizer emitted unexpected extra tokens.\n", .{});
                 return error.UnexpectedExtraTokens;
@@ -291,7 +312,7 @@ pub fn runHtml5LibTestFile(
                 for (errs.array.items) |expected_error| {
                     const e_len = err_ingester.errors.items.len;
                     if (err_actual_index >= e_len) {
-                        printFailedMessage(path, test_case_index, description, initial_state.string);
+                        printFailedMessage(path, test_case_index, description, initial_state);
 
                         std.debug.print("Expected {} errors, but tokenizer only emit {} errors.\n", .{ errs.array.items.len, e_len });
                         return error.MissingActualError;
@@ -306,8 +327,8 @@ pub fn runHtml5LibTestFile(
                         code.string,
                         @as(usize, @intCast(line.integer)),
                     ) catch |err| {
-                        printFailedMessage(path, test_case_index, description, initial_state.string);
-                        
+                        printFailedMessage(path, test_case_index, description, initial_state);
+
                         std.debug.print("Error index: {d}\n", .{err_actual_index});
                         return err;
                     };
@@ -328,3 +349,9 @@ test "html5lib contentModelFlags" {
     const alloc = testing.allocator;
     try runHtml5LibTestFile(alloc, "src/renderer/tests/html5lib-tests/tokenizer/contentModelFlags.test", testing.io);
 }
+
+test "html5lib pendingSpecChanges" {
+    const alloc = testing.allocator;
+    try runHtml5LibTestFile(alloc, "src/renderer/tests/html5lib-tests/tokenizer/pendingSpecChanges.test", testing.io);
+}
+

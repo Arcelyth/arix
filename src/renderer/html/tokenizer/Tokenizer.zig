@@ -21,7 +21,7 @@ state: TokenizerState,
 return_state: TokenizerState,
 pause_flag: bool,
 // Character reference code.
-char_ref_code: u21,
+char_ref_code: u64,
 
 current_tag_name: StraleUtf8Global,
 current_tag_kind: token.TagKind,
@@ -2180,7 +2180,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                             self.setStateAndAdvance(.HexadecimalCharacterReferenceStart, input);
                         },
                         else => {
-                            if (ascii.isAsciiDigit(ch))
+                            if (ascii.isAsciiDigit(ch) and !is_eof)
                                 self.state = .DecimalCharacterReference
                             else {
                                 self.handleError(.AbsenceOfDigitsInNumericCharacterReference, ch);
@@ -2193,7 +2193,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
 
                 // https://html.spec.whatwg.org/multipage/parsing.html#hexadecimal-character-reference-start-state
                 .HexadecimalCharacterReferenceStart => {
-                    if (ascii.isAsciiHexDigit(ch)) self.state = .HexadecimalCharacterReference else {
+                    if (ascii.isAsciiHexDigit(ch) and !is_eof) self.state = .HexadecimalCharacterReference else {
                         self.handleError(.AbsenceOfDigitsInNumericCharacterReference, ch);
                         try self.flushCodePoints_E();
                         self.state = self.return_state;
@@ -2202,7 +2202,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
 
                 // https://html.spec.whatwg.org/multipage/parsing.html#decimal-character-reference-start-state
                 .DecimalCharacterReferenceStart => {
-                    if (ascii.isAsciiDigit(ch)) self.state = .DecimalCharacterReference else {
+                    if (ascii.isAsciiDigit(ch) and !is_eof) self.state = .DecimalCharacterReference else {
                         self.handleError(.AbsenceOfDigitsInNumericCharacterReference, ch);
                         try self.flushCodePoints_E();
                         self.state = self.return_state;
@@ -2211,7 +2211,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
 
                 // https://html.spec.whatwg.org/multipage/parsing.html#hexadecimal-character-reference-state
                 .HexadecimalCharacterReference => blk: {
-                    if (ascii.isAsciiDigit(ch))
+                    if (ascii.isAsciiDigit(ch) and !is_eof)
                         self.char_ref_code = self.char_ref_code * 16 + (ch - 0x0030)
                     else if (ascii.isAsciiUpperAlpha(ch)) self.char_ref_code = self.char_ref_code * 16 + (ch - 0x0037) else if (ascii.isAsciiLowerAlpha(ch)) self.char_ref_code = self.char_ref_code * 16 + (ch - 0x0057) else if (ch == ';') self.state = .NumericCharacterReferenceEnd else {
                         self.handleError(.MissingSemicolonAfterCharacterReference, ch);
@@ -2226,7 +2226,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     switch (ch) {
                         ';' => self.setStateAndAdvance(.NumericCharacterReferenceEnd, input),
                         else => {
-                            if (ascii.isAsciiDigit(ch)) {
+                            if (ascii.isAsciiDigit(ch) and !is_eof) {
                                 self.char_ref_code = self.char_ref_code * 10 + (ch - 0x0030);
                                 _ = input.nextChar();
                             } else {
@@ -2246,18 +2246,18 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     } else if (code > 0x10FFFF) {
                         self.handleError(.CharacterReferenceOutsideUnicodeRange, ch);
                         self.char_ref_code = 0xFFFD;
-                    } else if (ascii.isSurrogate(code)) {
+                    } else if (ascii.isSurrogate(u64, code)) {
                         self.handleError(.SurrogateCharacterReference, ch);
                         self.char_ref_code = 0xFFFD;
-                    } else if (ascii.isNoneCharacter(code)) {
+                    } else if (ascii.isNoneCharacter(u64, code)) {
                         self.handleError(.NoncharacterCharacterReference, ch);
-                    } else if (code == 0x0D or (ascii.isControl(code) and !ascii.isAsciiWhitespace(code))) {
+                    } else if (code == 0x0D or (ascii.isControl(u64, code) and !ascii.isAsciiWhitespace(u64, code))) {
                         self.handleError(.ControlCharacterReference, ch);
                         self.setCodePoint();
                     }
 
                     self.temporary_buffer.clear();
-                    try self.temporary_buffer.push(self.char_ref_code);
+                    try self.temporary_buffer.push(@intCast(self.char_ref_code));
                     try self.flushCodePoints_E();
                     self.state = self.return_state;
                 },

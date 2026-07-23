@@ -246,7 +246,6 @@ pub fn runHtml5LibTestFile(
 
             try buffer.pushBackSlice(input);
             try tokenizer.step_E(&buffer);
-
             var actual_index: usize = 0;
             var err_actual_index: usize = 0;
 
@@ -353,6 +352,11 @@ test "html5lib contentModelFlags" {
 test "html5lib entities" {
     const alloc = testing.allocator;
     try runHtml5LibTestFile(alloc, "src/renderer/tests/html5lib-tests/tokenizer/entities.test", testing.io);
+}
+
+test "html5lib numericEntities" {
+    const alloc = testing.allocator;
+    try runHtml5LibTestFile(alloc, "src/renderer/tests/html5lib-tests/tokenizer/numericEntities.test", testing.io);
 }
 
 test "html5lib pendingSpecChanges" {

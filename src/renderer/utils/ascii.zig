@@ -36,24 +36,25 @@ pub inline fn isAsciiHexDigit(c: u21) bool {
 }
 
 // https://infra.spec.whatwg.org/#surrogate
-pub inline fn isSurrogate(c: u21) bool {
+pub inline fn isSurrogate(comptime T: type, c: T) bool {
     return (c >= 0xD800 and c <= 0xDBFF) or (c >= 0xDC00 and c <= 0xDFFF);
 }
 
 // https://infra.spec.whatwg.org/#noncharacter
-pub inline fn isNoneCharacter(c: u21) bool {
+pub inline fn isNoneCharacter(comptime T: type, c: T) bool {
     if (c >= 0xFDD0 and c <= 0xFDEF) return true;
     return c <= 0x10FFFF and (c & 0xFFFE) == 0xFFFE;
 }
 
 // https://infra.spec.whatwg.org/#ascii-whitespace
-pub inline fn isAsciiWhitespace(c: u21) bool {
+pub inline fn isAsciiWhitespace(comptime T: type, c: T) bool {
     return c == 0x09 or c == 0x0A or c == 0x0C or c == 0x0D or c == 0x20;
 }
 
 // https://infra.spec.whatwg.org/#control
-pub inline fn isControl(c: u21) bool {
+pub inline fn isControl(comptime T: type, c: T) bool {
     if (c == 0) return false;
-    if (isAsciiWhitespace(c)) return false;
+    if (isAsciiWhitespace(T, c)) return false;
     return (c >= 0x0001 and c <= 0x001F) or (c >= 0x007F and c <= 0x009F);
 }
+

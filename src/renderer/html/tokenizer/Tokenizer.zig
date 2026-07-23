@@ -559,7 +559,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
 
                 // https://html.spec.whatwg.org/multipage/parsing.html#rcdata-end-tag-open-state
                 .RCDATAEndTagOpen => {
-                    if (ascii.isAsciiAlpha(ch)) {
+                    if (ascii.isAsciiAlpha(ch) and !is_eof) {
                         self.createTag(.EndTag);
                         self.state = .RCDATAEndTagName;
                     } else {
@@ -621,7 +621,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
 
                 // https://html.spec.whatwg.org/multipage/parsing.html#rawtext-end-tag-open-state
                 .RAWTEXTEndTagOpen => {
-                    if (ascii.isAsciiAlpha(ch)) {
+                    if (ascii.isAsciiAlpha(ch) and !is_eof) {
                         self.createTag(.EndTag);
                         self.state = .RAWTEXTEndTagName;
                     } else {
@@ -689,7 +689,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
 
                 // https://html.spec.whatwg.org/multipage/parsing.html#script-data-end-tag-open-state
                 .ScriptDataEndTagOpen => {
-                    if (ascii.isAsciiAlpha(ch)) {
+                    if (ascii.isAsciiAlpha(ch) and !is_eof) {
                         self.createTag(.EndTag);
                         self.state = .ScriptDataEndTagName;
                     } else {
@@ -844,7 +844,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                             self.setStateAndAdvance(.ScriptDataEscapedEndTagOpen, input);
                         },
                         else => {
-                            if (ascii.isAsciiAlpha(ch)) {
+                            if (ascii.isAsciiAlpha(ch) and !is_eof) {
                                 self.temporary_buffer.clear();
                                 self.emitChar('<');
                                 self.state = .ScriptDataDoubleEscapeStart;
@@ -858,7 +858,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
 
                 // https://html.spec.whatwg.org/multipage/parsing.html#script-data-escaped-end-tag-open-state
                 .ScriptDataEscapedEndTagOpen => {
-                    if (ascii.isAsciiAlpha(ch)) {
+                    if (ascii.isAsciiAlpha(ch) and !is_eof) {
                         self.createTag(.EndTag);
                         self.state = .ScriptDataEscapedEndTagName;
                     } else {
@@ -912,11 +912,11 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                             self.emitChar(ch);
                         },
                         else => {
-                            if (ascii.isAsciiUpperAlpha(ch)) {
+                            if (ascii.isAsciiUpperAlpha(ch) and !is_eof) {
                                 try self.temporary_buffer.push(ch + 0x0020);
                                 self.emitChar(ch);
                                 _ = input.nextChar();
-                            } else if (ascii.isAsciiLowerAlpha(ch)) {
+                            } else if (ascii.isAsciiLowerAlpha(ch) and !is_eof) {
                                 try self.temporary_buffer.push(ch);
                                 self.emitChar(ch);
                                 _ = input.nextChar();
@@ -1033,11 +1033,11 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                             self.emitChar(ch);
                         },
                         else => {
-                            if (ascii.isAsciiUpperAlpha(ch)) {
+                            if (ascii.isAsciiUpperAlpha(ch) and !is_eof) {
                                 try self.temporary_buffer.push(ch);
                                 self.emitChar(ch);
                                 _ = input.nextChar();
-                            } else if (ascii.isAsciiLowerAlpha(ch)) {
+                            } else if (ascii.isAsciiLowerAlpha(ch) and !is_eof) {
                                 try self.temporary_buffer.push(ch);
                                 self.emitChar(ch);
                                 _ = input.nextChar();
@@ -2108,7 +2108,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                             self.setStateAndAdvance(.NumericCharacterReference, input);
                         },
                         else => {
-                            if (ascii.isAsciiAlphanum(ch)) self.state = .NamedCharacterReference else {
+                            if (ascii.isAsciiAlphanum(ch) and !is_eof) self.state = .NamedCharacterReference else {
                                 try self.flushCodePoints_E();
                                 self.state = self.return_state;
                             }
@@ -2158,7 +2158,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                             self.state = self.return_state;
                         },
                         else => {
-                            if (ascii.isAsciiAlphanum(ch)) {
+                            if (ascii.isAsciiAlphanum(ch) and !is_eof) {
                                 if (self.isConsumedAsPartOfAttr())
                                     try self.current_attribute_value.push(ch)
                                 else
@@ -2213,7 +2213,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                 .HexadecimalCharacterReference => blk: {
                     if (ascii.isAsciiDigit(ch) and !is_eof)
                         self.char_ref_code = self.char_ref_code * 16 + (ch - 0x0030)
-                    else if (ascii.isAsciiUpperAlpha(ch)) self.char_ref_code = self.char_ref_code * 16 + (ch - 0x0037) else if (ascii.isAsciiLowerAlpha(ch)) self.char_ref_code = self.char_ref_code * 16 + (ch - 0x0057) else if (ch == ';') self.state = .NumericCharacterReferenceEnd else {
+                    else if (ascii.isAsciiUpperAlpha(ch) and !is_eof) self.char_ref_code = self.char_ref_code * 16 + (ch - 0x0037) else if (ascii.isAsciiLowerAlpha(ch) and !is_eof) self.char_ref_code = self.char_ref_code * 16 + (ch - 0x0057) else if (ch == ';') self.state = .NumericCharacterReferenceEnd else {
                         self.handleError(.MissingSemicolonAfterCharacterReference, ch);
                         self.state = .NumericCharacterReferenceEnd;
                         break :blk;

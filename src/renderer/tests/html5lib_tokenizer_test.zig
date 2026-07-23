@@ -354,6 +354,11 @@ test "html5lib entities" {
     try runHtml5LibTestFile(alloc, "src/renderer/tests/html5lib-tests/tokenizer/entities.test", testing.io);
 }
 
+test "html5lib namedEntities" {
+    const alloc = testing.allocator;
+    try runHtml5LibTestFile(alloc, "src/renderer/tests/html5lib-tests/tokenizer/namedEntities.test", testing.io);
+}
+
 test "html5lib numericEntities" {
     const alloc = testing.allocator;
     try runHtml5LibTestFile(alloc, "src/renderer/tests/html5lib-tests/tokenizer/numericEntities.test", testing.io);

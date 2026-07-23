@@ -3,14 +3,14 @@ const ErrorIngester = @This();
 const TokenizerError = @import("error.zig").TokenizerError;
 
 ptr: *anyopaque,
-handleErrorFn: *const fn (ptr: *anyopaque, err: TokenizerError, cur_line: usize, ch: u21) void,
+handleErrorFn: *const fn (ptr: *anyopaque, err: TokenizerError, cur_line: usize) void,
 
-pub fn init(pointer: anytype, comptime handleErrorFn: fn (ptr: @TypeOf(pointer), err: TokenizerError, cur_line: usize, ch: u21) void) ErrorIngester {
+pub fn init(pointer: anytype, comptime handleErrorFn: fn (ptr: @TypeOf(pointer), err: TokenizerError, cur_line: usize) void) ErrorIngester {
     const Ptr = @TypeOf(pointer);
     const gen = struct {
-        fn handleError(ptr: *anyopaque, err: TokenizerError, line: usize, c: u21) void {
+        fn handleError(ptr: *anyopaque, err: TokenizerError, line: usize) void {
             const self: Ptr = @ptrCast(@alignCast(ptr));
-            handleErrorFn(self, err, line, c);
+            handleErrorFn(self, err, line);
         }
     };
 
@@ -20,8 +20,8 @@ pub fn init(pointer: anytype, comptime handleErrorFn: fn (ptr: @TypeOf(pointer),
     };
 }
 
-pub fn handleError(self: ErrorIngester, err: TokenizerError, cur_line: usize, ch: u21) void {
-    self.handleErrorFn(self.ptr, err, cur_line, ch);
+pub fn handleError(self: ErrorIngester, err: TokenizerError, cur_line: usize) void {
+    self.handleErrorFn(self.ptr, err, cur_line);
 }
 
 

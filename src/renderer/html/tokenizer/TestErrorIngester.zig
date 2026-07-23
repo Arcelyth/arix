@@ -25,9 +25,7 @@ pub fn deinit(self: *TestErrorIngester) void {
     self.errors.deinit(self.allocator);
 }
 
-// Not sure if ch is needed, may delete in the future.
-pub fn handleError(self: *TestErrorIngester, err: TokenizerError, cur_line: usize, ch: u21) void {
-    _ = ch;
+pub fn handleError(self: *TestErrorIngester, err: TokenizerError, cur_line: usize) void {
     self.errors.append(self.allocator, .{ .code = tokenizerErrorToString(err), .line = cur_line }) catch unreachable;
 }
 

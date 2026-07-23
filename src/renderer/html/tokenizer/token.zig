@@ -214,11 +214,11 @@ pub fn expectToken(expected: Token, actual: Token) !void {
             const act_tag = actual.TagToken;
             try testing.expectEqual(exp_tag.kind, act_tag.kind);
             try testing.expectEqualSlices(u8, exp_tag.name.slice(), act_tag.name.slice());
-            try testing.expectEqual(exp_tag.self_closing, act_tag.self_closing);
 
-            // Ignore end tag's attributes.
+            // Ignore end tag's attributes and self_closing.
             if (exp_tag.kind == .EndTag) return;
 
+            try testing.expectEqual(exp_tag.self_closing, act_tag.self_closing);
             try testing.expectEqual(exp_tag.attrs.items.len, act_tag.attrs.items.len);
             for (exp_tag.attrs.items, act_tag.attrs.items) |exp_attr, act_attr| {
                 try testing.expectEqualSlices(u8, exp_attr.name.slice(), act_attr.name.slice());

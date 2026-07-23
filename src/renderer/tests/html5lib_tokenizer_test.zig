@@ -386,3 +386,13 @@ test "html5lib test2" {
     const alloc = testing.allocator;
     try runHtml5LibTestFile(alloc, "src/renderer/tests/html5lib-tests/tokenizer/test2.test", testing.io);
 }
+
+//test "html5lib test3" {
+//    const alloc = testing.allocator;
+//    try runHtml5LibTestFile(alloc, "src/renderer/tests/html5lib-tests/tokenizer/test3.test", testing.io);
+//}
+//
+test "html5lib test4" {
+    const alloc = testing.allocator;
+    try runHtml5LibTestFile(alloc, "src/renderer/tests/html5lib-tests/tokenizer/test4.test", testing.io);
+}

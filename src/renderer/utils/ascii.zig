@@ -58,3 +58,14 @@ pub inline fn isControl(comptime T: type, c: T) bool {
     return (c >= 0x0001 and c <= 0x001F) or (c >= 0x007F and c <= 0x009F);
 }
 
+pub inline fn isNoncharacter(comptime T: type, ch: T) bool {
+    return (ch >= 0xFDD0 and ch <= 0xFDEF) or
+        ((ch & 0xFFFE) == 0xFFFE and ch <= 0x10FFFF);
+}
+
+pub inline fn isControlCharacter(comptime T: type, ch: T) bool {
+    return (ch >= 0x0001 and ch <= 0x0008) or
+        ch == 0x000B or
+        (ch >= 0x000E and ch <= 0x001F) or
+        (ch >= 0x007F and ch <= 0x009F);
+}

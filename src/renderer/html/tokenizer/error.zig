@@ -53,6 +53,8 @@ pub const TokenizerError = enum {
     InvalidFirstCharacterOfProcessingInstructionTarget,
     DisallowedProcessingInstructionTarget,
     EofInProcessingInstruction,
+    EndTagWithAttributes,
+    EndTagWithSelfClosing,
 };
 
 pub fn tokenizerErrorToString(self: TokenizerError) []const u8 {
@@ -108,6 +110,8 @@ pub fn tokenizerErrorToString(self: TokenizerError) []const u8 {
         .InvalidFirstCharacterOfProcessingInstructionTarget => "invalid-first-character-of-processing-instruction-target",
         .DisallowedProcessingInstructionTarget => "disallowed-processing-instruction-target",
         .EofInProcessingInstruction => "eof-in-processing-instruction",
+        .EndTagWithAttributes => "end-tag-with-attributes",
+        .EndTagWithSelfClosing => "end-tag-with-trailing-solidus",
     };
 }
 

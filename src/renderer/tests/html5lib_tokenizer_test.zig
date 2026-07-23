@@ -15,6 +15,7 @@ const strale = @import("strale");
 const StraleUtf8Global = strale.StraleUtf8Global;
 const BufferDeque = strale.BufferDeque;
 const testing = std.testing;
+const config = @import("config");
 
 pub fn printFailedMessage(path: []const u8, idx: usize, desc: []const u8, init_state: []const u8) void {
     std.debug.print(
@@ -244,11 +245,6 @@ pub fn runHtml5LibTestFile(
             var buffer = try BufferDeque(.utf8, .not_atomic, true).init(allocator);
             defer buffer.deinit();
 
-            try buffer.pushBackSlice(input);
-            try tokenizer.step_E(&buffer);
-            var actual_index: usize = 0;
-            var err_actual_index: usize = 0;
-
             const description = if (test_case.get("description")) |d|
                 if (d == .string)
                     d.string
@@ -256,6 +252,14 @@ pub fn runHtml5LibTestFile(
                     "No description"
             else
                 "No description";
+
+            try buffer.pushBackSlice(input);
+            if (config.debug) {
+                std.debug.print("===== {s} =====\n", .{description});
+            }
+            try tokenizer.step_E(&buffer);
+            var actual_index: usize = 0;
+            var err_actual_index: usize = 0;
 
             for (expected_output_value.array.items) |expected_json_token| {
                 // Skip EOF tokens.
@@ -304,6 +308,10 @@ pub fn runHtml5LibTestFile(
                 printFailedMessage(path, test_case_index, description, initial_state);
 
                 std.debug.print("Tokenizer emitted unexpected extra tokens.\n", .{});
+
+                for (test_ingester.tokens.items, 0..) |t, i| {
+                    std.debug.print("[{d}] {f}\n", .{ i, t });
+                }
                 return error.UnexpectedExtraTokens;
             }
 
@@ -369,3 +377,7 @@ test "html5lib pendingSpecChanges" {
     try runHtml5LibTestFile(alloc, "src/renderer/tests/html5lib-tests/tokenizer/pendingSpecChanges.test", testing.io);
 }
 
+test "html5lib test1" {
+    const alloc = testing.allocator;
+    try runHtml5LibTestFile(alloc, "src/renderer/tests/html5lib-tests/tokenizer/test1.test", testing.io);
+}

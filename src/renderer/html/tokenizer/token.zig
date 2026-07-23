@@ -13,6 +13,10 @@ pub const Attribute = struct {
         self.name.deinit();
         self.value.deinit();
     }
+
+    pub fn format(self: Attribute, writer: anytype) !void {
+        try writer.print("Attribute's name: {s}, value: {s}\n", .{ self.name.slice(), self.value.slice() });
+    }
 };
 
 pub const Doctype = struct {
@@ -117,6 +121,78 @@ pub const Token = union(TokenTag) {
 
         self.* = .UndefinedToken;
     }
+
+    pub fn format(
+        self: Token,
+        writer: anytype,
+    ) !void {
+        switch (self) {
+            .UndefinedToken => try writer.writeAll("UndefinedToken"),
+            .EofToken => try writer.writeAll("EofToken"),
+            .DoctypeToken => |doctype| {
+                try writer.print(
+                    "DoctypeToken{{ name=\"{s}\", public_id=\"{s}\", system_id=\"{s}\", force_quirks={} }}",
+                    .{
+                        doctype.name.slice(),
+                        doctype.public_id.slice(),
+                        doctype.system_id.slice(),
+                        doctype.force_quirks,
+                    },
+                );
+            },
+
+            .TagToken => |tag| {
+                try writer.print(
+                    "TagToken{{ kind={s}, name=\"{s}\", self_closing={}, attrs=[",
+                    .{
+                        @tagName(tag.kind),
+                        tag.name.slice(),
+                        tag.self_closing,
+                    },
+                );
+
+                for (tag.attrs.items, 0..) |attr, i| {
+                    if (i != 0) {
+                        try writer.writeAll(", ");
+                    }
+
+                    try writer.print(
+                        "{{name=\"{s}\", value=\"{s}\"}}",
+                        .{
+                            attr.name.slice(),
+                            attr.value.slice(),
+                        },
+                    );
+                }
+
+                try writer.writeAll("] }");
+            },
+
+            .CommentToken => |comment| {
+                try writer.print(
+                    "CommentToken{{ \"{s}\" }}",
+                    .{comment.slice()},
+                );
+            },
+
+            .CharacterToken => |character| {
+                try writer.print(
+                    "CharacterToken{{ \"{s}\" }}",
+                    .{character.slice()},
+                );
+            },
+
+            .ProcessingInstructionToken => |pi| {
+                try writer.print(
+                    "ProcessingInstructionToken{{ target=\"{s}\", data=\"{s}\" }}",
+                    .{
+                        pi.target.slice(),
+                        pi.data.slice(),
+                    },
+                );
+            },
+        }
+    }
 };
 
 pub fn expectToken(expected: Token, actual: Token) !void {
@@ -139,6 +215,9 @@ pub fn expectToken(expected: Token, actual: Token) !void {
             try testing.expectEqual(exp_tag.kind, act_tag.kind);
             try testing.expectEqualSlices(u8, exp_tag.name.slice(), act_tag.name.slice());
             try testing.expectEqual(exp_tag.self_closing, act_tag.self_closing);
+
+            // Ignore end tag's attributes.
+            if (exp_tag.kind == .EndTag) return;
 
             try testing.expectEqual(exp_tag.attrs.items.len, act_tag.attrs.items.len);
             for (exp_tag.attrs.items, act_tag.attrs.items) |exp_attr, act_attr| {

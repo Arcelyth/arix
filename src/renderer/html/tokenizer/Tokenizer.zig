@@ -110,13 +110,14 @@ pub fn emitEof(self: *Tokenizer) void {
 
 pub fn emitCurrentTag(self: *Tokenizer) void {
     self.flushCurrentChar();
+    self.sealAttr() catch return;
     switch (self.current_tag_kind) {
         .StartTag => {
-            self.sealAttr() catch return;
             self.last_start_tag_name = self.current_tag_name.clone();
         },
         .EndTag => {
-            // TODO handle errors.
+            if (self.current_tag_attrs.items.len != 0) self.handleError(.EndTagWithAttributes, 0);
+            if (self.current_tag_self_closing) self.handleError(.EndTagWithSelfClosing, 0);
         },
     }
     const tag_token = token.Tag{
@@ -183,7 +184,7 @@ pub fn createAttr_E(self: *Tokenizer, ch: ?u21) !void {
 pub fn sealAttr(self: *Tokenizer) !void {
     if (self.current_attribute_name.isEmpty()) return;
     const dup = for (self.current_tag_attrs.items) |attr| {
-        if (attr.name.cmp(&self.current_tag_name)) break true;
+        if (attr.name.cmp(&self.current_attribute_name)) break true;
     } else false;
     if (dup) {
         self.handleError(.DuplicateAttribute, 0);
@@ -302,7 +303,7 @@ pub fn consumeNamedCharRef(self: *Tokenizer, input: *BufferDeque(.utf8, .not_ato
     }
     if (matched_str) |value| {
         var i: usize = 0;
-        while (i < matched_len - 1) : (i += 1) {
+        while (i < matched_len) : (i += 1) {
             if (input.nextChar()) |ch| try self.temporary_buffer.push(ch);
         }
 
@@ -356,6 +357,19 @@ pub fn handleError(self: *Tokenizer, err: TokenizerError, ch: u21) void {
     if (self.err_ingester) |ei| ei.handleError(err, self.current_line, ch);
 }
 
+pub fn debugDetail(self: *Tokenizer) void {
+    std.debug.print("Current Character: {s}\n", .{self.current_character.slice()});
+    std.debug.print("Current Tag Attributes:\n", .{});
+    for (self.current_tag_attrs.items) |a| {
+        std.debug.print("   {f}:\n", .{a});
+    }
+    std.debug.print("Current Tag Name: {s}\n", .{self.current_tag_name.slice()});
+    std.debug.print("Current Tag Value: {}\n", .{self.current_tag_self_closing});
+    std.debug.print("Current Tag Kind: {s}\n", .{@tagName(self.current_tag_kind)});
+    std.debug.print("Current Attribute Name: {s}\n", .{self.current_attribute_name.slice()});
+    std.debug.print("Current Attribute Value: {s}\n", .{self.current_attribute_value.slice()});
+}
+
 pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !void {
     var ch: u21 = undefined;
     while (true) {
@@ -367,7 +381,8 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
         // Jump to here if is_eof already been true.
         eof: {
             if (config.debug) {
-                std.log.debug("Current state: {s}\n", .{@tagName(self.state)});
+                std.debug.print("\n[STATE]: {s}\n", .{@tagName(self.state)});
+                self.debugDetail();
             }
 
             switch (self.state) {
@@ -499,7 +514,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     switch (ch) {
                         '>' => {
                             self.handleError(.MissingEndTagName, ch);
-                            self.state = .Data;
+                            self.setStateAndAdvance(.Data, input);
                         },
                         else => {
                             if (ascii.isAsciiAlpha(ch)) {
@@ -2128,28 +2143,32 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                 // https://html.spec.whatwg.org/multipage/parsing.html#named-character-reference-state
                 .NamedCharacterReference => {
                     const res = try self.consumeNamedCharRef(input);
+
                     if (res) |r| {
                         const matched, const is_last_semicolon = r;
-                        if (self.isConsumedAsPartOfAttr() and
-                            !is_last_semicolon and (ch == '=' or ascii.isAsciiAlphanum(ch)))
-                        {
+                        var invalid_attr_entity = false;
+
+                        if (self.isConsumedAsPartOfAttr() and !is_last_semicolon) {
+                            if (input.peekCharN(0)) |next|
+                                invalid_attr_entity = next == '=' or ascii.isAsciiAlphanum(next);
+                        }
+
+                        if (invalid_attr_entity) {
                             try self.flushCodePoints_E();
                             self.state = self.return_state;
                         } else {
-                            if (!is_last_semicolon) {
-                                self.handleError(.MissingSemicolonAfterCharacterReference, ch);
-                            }
+                            if (!is_last_semicolon) self.handleError(.MissingSemicolonAfterCharacterReference, input.peekCharN(0) orelse 0);
+
                             self.temporary_buffer.clear();
                             try self.temporary_buffer.append(matched);
                             try self.flushCodePoints_E();
-                            self.setStateAndAdvanceUpdateLine(self.return_state, input);
+                            self.state = self.return_state;
                         }
                     } else {
                         try self.flushCodePoints_E();
                         self.state = .AmbiguousAmpersand;
                     }
                 },
-
                 // https://html.spec.whatwg.org/multipage/parsing.html#ambiguous-ampersand-state
                 .AmbiguousAmpersand => {
                     switch (ch) {

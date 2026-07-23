@@ -173,15 +173,15 @@ pub fn createTag(self: *Tokenizer, tag_kind: token.TagKind) void {
     self.current_tag_kind = tag_kind;
 }
 
-pub fn createAttr_E(self: *Tokenizer, ch: u21) !void {
+pub fn createAttr_E(self: *Tokenizer, ch: ?u21) !void {
     try self.sealAttr();
-    try self.current_tag_name.push(ch);
+    if (ch) |c| try self.current_tag_name.push(c);
 }
 
 // Append current attribute to current tag's attribute list and
 // clear the fields.
 pub fn sealAttr(self: *Tokenizer) !void {
-    if (self.current_tag_name.isEmpty()) return;
+    if (self.current_attribute_name.isEmpty()) return;
     const dup = for (self.current_tag_attrs.items) |attr| {
         if (attr.name.cmp(&self.current_tag_name)) break true;
     } else false;
@@ -217,9 +217,8 @@ pub inline fn nextCharAndUpdateLine(self: *Tokenizer, input: *BufferDeque(.utf8,
 }
 
 pub inline fn setCharacterReferenceStateAndAdvance(self: *Tokenizer, return_state: TokenizerState, input: *BufferDeque(.utf8, .not_atomic, true)) void {
-    self.state = .CharacterReference;
     self.return_state = return_state;
-    _ = input.nextChar();
+    self.setStateAndAdvance(.CharacterReference, input);
 }
 
 fn asciiEqIgnoreCase(a: u8, b: u8) bool {
@@ -250,11 +249,9 @@ pub fn isAppropriateEndTag(self: *const Tokenizer) bool {
 }
 
 // https://html.spec.whatwg.org/multipage/parsing.html#flush-code-points-consumed-as-a-character-reference
-pub fn flushCodePoints(self: *Tokenizer) !void {
+pub fn flushCodePoints_E(self: *Tokenizer) !void {
     const slice = self.temporary_buffer.slice();
-    for (slice) |s| {
-        if (self.isConsumedAsPartOfAttr()) try self.current_attribute_value.push(s) else self.emitChar(s);
-    }
+    try if (self.isConsumedAsPartOfAttr()) self.current_attribute_value.append(slice) else self.current_character.append(slice);
 }
 
 inline fn isConsumedAsPartOfAttr(self: *Tokenizer) bool {
@@ -264,9 +261,10 @@ inline fn isConsumedAsPartOfAttr(self: *Tokenizer) bool {
     };
 }
 
-pub fn consumeNamedCharRef(input: *BufferDeque(.utf8, .not_atomic, true)) !?struct { []const u8, bool } {
+pub fn consumeNamedCharRef(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !?struct { []const u8, bool } {
     var matched_str: ?[]const u8 = null;
     var has_semicolon = false;
+    var matched_len: usize = 0;
 
     var current_node_idx: usize = 0;
     var lookahead_idx: usize = 0;
@@ -299,13 +297,13 @@ pub fn consumeNamedCharRef(input: *BufferDeque(.utf8, .not_atomic, true)) !?stru
         if (named_char_trie[child_idx].value) |val| {
             matched_str = val;
             has_semicolon = (search_char == ';');
+            matched_len = lookahead_idx;
         }
     }
-
     if (matched_str) |value| {
         var i: usize = 0;
-        while (i < lookahead_idx - 1) : (i += 1) {
-            _ = input.nextChar();
+        while (i < matched_len - 1) : (i += 1) {
+            if (input.nextChar()) |ch| try self.temporary_buffer.push(ch);
         }
 
         return .{ value, has_semicolon };
@@ -1070,8 +1068,8 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                             self.setStateAndAdvance(.AttributeName, input);
                         },
                         else => {
-                            try self.createAttr_E(ch);
-                            self.setStateAndAdvance(.AttributeName, input);
+                            try self.createAttr_E(null);
+                            self.state = .AttributeName;
                         },
                     }
                 },
@@ -1125,8 +1123,8 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                             self.emitCurrentTag();
                         },
                         else => {
-                            try self.createAttr_E(ch);
-                            self.setStateAndAdvance(.AttributeName, input);
+                            try self.createAttr_E(null);
+                            self.state = .AttributeName;
                         },
                     }
                 },
@@ -2111,7 +2109,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                         },
                         else => {
                             if (ascii.isAsciiAlphanum(ch)) self.state = .NamedCharacterReference else {
-                                try self.flushCodePoints();
+                                try self.flushCodePoints_E();
                                 self.state = self.return_state;
                             }
                         },
@@ -2129,26 +2127,26 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
 
                 // https://html.spec.whatwg.org/multipage/parsing.html#named-character-reference-state
                 .NamedCharacterReference => {
-                    const res = try consumeNamedCharRef(input);
+                    const res = try self.consumeNamedCharRef(input);
                     if (res) |r| {
                         const matched, const is_last_semicolon = r;
                         if (self.isConsumedAsPartOfAttr() and
                             !is_last_semicolon and (ch == '=' or ascii.isAsciiAlphanum(ch)))
                         {
-                            try self.flushCodePoints();
-                            self.setStateAndAdvanceUpdateLine(self.return_state, input);
+                            try self.flushCodePoints_E();
+                            self.state = self.return_state;
                         } else {
                             if (!is_last_semicolon) {
                                 self.handleError(.MissingSemicolonAfterCharacterReference, ch);
                             }
                             self.temporary_buffer.clear();
                             try self.temporary_buffer.append(matched);
-                            try self.flushCodePoints();
+                            try self.flushCodePoints_E();
                             self.setStateAndAdvanceUpdateLine(self.return_state, input);
                         }
                     } else {
-                        try self.flushCodePoints();
-                        self.setStateAndAdvanceUpdateLine(.AmbiguousAmpersand, input);
+                        try self.flushCodePoints_E();
+                        self.state = .AmbiguousAmpersand;
                     }
                 },
 
@@ -2181,7 +2179,15 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                             try self.temporary_buffer.push(ch);
                             self.setStateAndAdvance(.HexadecimalCharacterReferenceStart, input);
                         },
-                        else => self.state = .DecimalCharacterReferenceStart,
+                        else => {
+                            if (ascii.isAsciiDigit(ch))
+                                self.state = .DecimalCharacterReference
+                            else {
+                                self.handleError(.AbsenceOfDigitsInNumericCharacterReference, ch);
+                                try self.flushCodePoints_E();
+                                self.state = self.return_state;
+                            }
+                        },
                     }
                 },
 
@@ -2189,7 +2195,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                 .HexadecimalCharacterReferenceStart => {
                     if (ascii.isAsciiHexDigit(ch)) self.state = .HexadecimalCharacterReference else {
                         self.handleError(.AbsenceOfDigitsInNumericCharacterReference, ch);
-                        try self.flushCodePoints();
+                        try self.flushCodePoints_E();
                         self.state = self.return_state;
                     }
                 },
@@ -2198,7 +2204,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                 .DecimalCharacterReferenceStart => {
                     if (ascii.isAsciiDigit(ch)) self.state = .DecimalCharacterReference else {
                         self.handleError(.AbsenceOfDigitsInNumericCharacterReference, ch);
-                        try self.flushCodePoints();
+                        try self.flushCodePoints_E();
                         self.state = self.return_state;
                     }
                 },
@@ -2252,8 +2258,8 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
 
                     self.temporary_buffer.clear();
                     try self.temporary_buffer.push(self.char_ref_code);
-                    try self.flushCodePoints();
-                    self.setStateAndAdvanceUpdateLine(self.return_state, input);
+                    try self.flushCodePoints_E();
+                    self.state = self.return_state;
                 },
             }
         }

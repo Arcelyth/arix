@@ -398,7 +398,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                         '<' => self.setStateAndAdvance(.TagOpen, input),
                         0x0000 => {
                             self.handleError(.UnexpectedNullCharacter, ch);
-                            self.emitCharAndAdvance('\u{FFFD}', input);
+                            self.emitCharAndAdvance(ch, input);
                         },
                         else => self.emitCharAndAdvanceUpdateLine(ch, input),
                     }

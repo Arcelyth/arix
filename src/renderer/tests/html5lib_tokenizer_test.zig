@@ -381,3 +381,8 @@ test "html5lib test1" {
     const alloc = testing.allocator;
     try runHtml5LibTestFile(alloc, "src/renderer/tests/html5lib-tests/tokenizer/test1.test", testing.io);
 }
+
+test "html5lib test2" {
+    const alloc = testing.allocator;
+    try runHtml5LibTestFile(alloc, "src/renderer/tests/html5lib-tests/tokenizer/test2.test", testing.io);
+}

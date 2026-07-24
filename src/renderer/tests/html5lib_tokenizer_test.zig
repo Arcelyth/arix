@@ -335,7 +335,7 @@ pub fn runHtml5LibTestFile(
                         @as(usize, @intCast(line.integer)),
                     ) catch |err| {
                         printFailedMessage(path, test_case_index, description, initial_state);
-
+                        
                         std.debug.print("Error index: {d}\n", .{err_actual_index});
                         return err;
                     };
@@ -387,12 +387,18 @@ test "html5lib test2" {
     try runHtml5LibTestFile(alloc, "src/renderer/tests/html5lib-tests/tokenizer/test2.test", testing.io);
 }
 
-//test "html5lib test3" {
-//    const alloc = testing.allocator;
-//    try runHtml5LibTestFile(alloc, "src/renderer/tests/html5lib-tests/tokenizer/test3.test", testing.io);
-//}
+test "html5lib test3" {
+    const alloc = testing.allocator;
+    try runHtml5LibTestFile(alloc, "src/renderer/tests/html5lib-tests/tokenizer/test3.test", testing.io);
+}
 
 test "html5lib test4" {
     const alloc = testing.allocator;
     try runHtml5LibTestFile(alloc, "src/renderer/tests/html5lib-tests/tokenizer/test4.test", testing.io);
 }
+
+test "html5lib unicodeChars" {
+    const alloc = testing.allocator;
+    try runHtml5LibTestFile(alloc, "src/renderer/tests/html5lib-tests/tokenizer/unicodeChars.test", testing.io);
+}
+

@@ -235,15 +235,19 @@ fn asciiEq(a: u8, b: u8) bool {
 }
 
 pub fn match_insensitive(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true), str: []const u8) bool {
-    const res = input.consume(str, asciiEqIgnoreCase);
-    self.peekChar(input);
-    return res;
+    if (input.consume(str, asciiEqIgnoreCase)) {
+        self.peekChar(input);
+        return true;
+    }
+    return false;
 }
 
 pub fn match_sensitive(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true), str: []const u8) bool {
-    const res = input.consume(str, asciiEq);
-    self.peekChar(input);
-    return res;
+    if (input.consume(str, asciiEq)) {
+        self.peekChar(input);
+        return true;
+    }
+    return false;
 }
 
 pub inline fn createDoctype(self: *Tokenizer) void {
@@ -278,7 +282,8 @@ inline fn peekChar(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, tru
 }
 
 inline fn nextChar(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) void {
-    _ = input.nextChar();
+    const raw = input.nextChar() orelse return;
+    if (raw == '\r' or raw == '\n') self.current_line += 1;
     self.peekChar(input);
     if (!self.is_eof) self.preprocessChar(input, &self.ch);
 }
@@ -396,7 +401,7 @@ pub fn preprocessChar(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, 
         self.ignore_lf = false;
 
         if (ch.* == '\n') {
-            self.nextChar(input);
+            _ = input.nextChar();
 
             if (input.peekChar()) |next|
                 ch.* = next
@@ -410,7 +415,6 @@ pub fn preprocessChar(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, 
         ch.* = '\n';
     }
 
-    if (ch.* == '\n') self.current_line += 1;
     if (ascii.isSurrogate(u21, ch.*)) self.handleError(.SurrogateInInputStream) else if (ascii.isNoncharacter(u21, ch.*)) self.handleError(.NoncharacterInInputStream) else if (ascii.isControlCharacter(u21, ch.*)) self.handleError(.ControlCharacterInInputStream);
 }
 
@@ -1349,8 +1353,10 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
             .MarkupDeclarationOpen => {
                 if (self.match_sensitive(input, "--")) {
                     self.current_comment.clear();
+                    if (!self.is_eof) self.preprocessChar(input, &self.ch);
                     self.state = .CommentStart;
                 } else if (self.match_insensitive(input, "DOCTYPE")) {
+                    if (!self.is_eof) self.preprocessChar(input, &self.ch);
                     self.state = .DOCTYPE;
                 } else if (self.match_sensitive(input, "[CDATA[")) {
                     // TODO
@@ -1432,7 +1438,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
 
             // https://html.spec.whatwg.org/multipage/parsing.html#comment-less-than-sign-state
             .CommentLessThanSign => {
-                switch (ch) {
+                if (is_eof) { self.state = .Comment; } else switch (ch) {
                     '!' => {
                         try self.current_comment.push('!');
                         self.setStateAndAdvance(.CommentLessThanSignBang, input);
@@ -1447,7 +1453,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
 
             // https://html.spec.whatwg.org/multipage/parsing.html#comment-less-than-sign-bang-state
             .CommentLessThanSignBang => {
-                switch (ch) {
+                if (is_eof) { self.state = .Comment; } else switch (ch) {
                     '-' => self.setStateAndAdvance(.CommentLessThanSignBangDash, input),
                     else => self.state = .Comment,
                 }
@@ -1455,7 +1461,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
 
             // https://html.spec.whatwg.org/multipage/parsing.html#comment-less-than-sign-bang-dash-state
             .CommentLessThanSignBangDash => {
-                switch (ch) {
+                if (is_eof) { self.state = .Comment; } else switch (ch) {
                     '-' => self.setStateAndAdvance(.CommentLessThanSignBangDashDash, input),
                     else => self.state = .CommentEndDash,
                 }
@@ -1463,7 +1469,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
 
             // https://html.spec.whatwg.org/multipage/parsing.html#comment-less-than-sign-bang-dash-dash-state
             .CommentLessThanSignBangDashDash => {
-                if (is_eof or ch == '>') self.state = .CommentEnd else {
+                if (is_eof) { self.state = .Comment; } else if (ch == '>') self.state = .CommentEnd else {
                     self.handleError(.NestedComment);
                     self.state = .CommentEnd;
                 }
@@ -1652,9 +1658,13 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                         self.emitCurrentDoctype();
                     },
                     else => {
-                        if (self.match_insensitive(input, "PUBLIC"))
-                            self.state = .AfterDOCTYPEPublicKeyword
-                        else if (self.match_insensitive(input, "SYSTEM")) self.state = .AfterDOCTYPESystemKeyword else {
+                        if (self.match_insensitive(input, "PUBLIC")) {
+                            if (!self.is_eof) self.preprocessChar(input, &self.ch);
+                            self.state = .AfterDOCTYPEPublicKeyword;
+                        } else if (self.match_insensitive(input, "SYSTEM")) {
+                            if (!self.is_eof) self.preprocessChar(input, &self.ch);
+                            self.state = .AfterDOCTYPESystemKeyword;
+                        } else {
                             self.handleError(.InvalidCharacterSequenceAfterDOCTYPEName);
                             self.current_doctype.force_quirks = true;
                             self.state = .BogusDOCTYPE;
@@ -1748,6 +1758,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     0x0000 => {
                         self.handleError(.UnexpectedNullCharacter);
                         try self.current_doctype.public_id.push('\u{FFFD}');
+                        self.nextChar(input);
                     },
                     '>' => {
                         self.handleError(.AbruptDOCTYPEPublicIdentifier);
@@ -1776,6 +1787,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     0x0000 => {
                         self.handleError(.UnexpectedNullCharacter);
                         try self.current_doctype.public_id.push('\u{FFFD}');
+                        self.nextChar(input);
                     },
                     '>' => {
                         self.handleError(.AbruptDOCTYPEPublicIdentifier);
@@ -1808,12 +1820,12 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     '"' => {
                         self.handleError(.MissingWhitespaceBetweenDOCTYPEPublicAndSystemIdentifiers);
                         self.current_doctype.system_id.clear();
-                        self.setStateAndAdvance(.DOCTYPEPublicIdentifierDoubleQuoted, input);
+                        self.setStateAndAdvance(.DOCTYPESystemIdentifierDoubleQuoted, input);
                     },
                     '\'' => {
                         self.handleError(.MissingWhitespaceBetweenDOCTYPEPublicAndSystemIdentifiers);
                         self.current_doctype.system_id.clear();
-                        self.setStateAndAdvance(.DOCTYPEPublicIdentifierSingleQuoted, input);
+                        self.setStateAndAdvance(.DOCTYPESystemIdentifierSingleQuoted, input);
                     },
                     else => {
                         self.handleError(.MissingQuoteBeforeDOCTYPESystemIdentifier);
@@ -1914,7 +1926,8 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                         self.emitCurrentDoctype();
                     },
                     else => {
-                        self.handleError(.UnexpectedCharacterAfterDOCTYPESystemIdentifier);
+                        self.handleError(.MissingQuoteBeforeDOCTYPESystemIdentifier);
+                        self.current_doctype.force_quirks = true;
                         self.state = .BogusDOCTYPE;
                     },
                 }

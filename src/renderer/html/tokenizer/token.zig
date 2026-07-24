@@ -41,6 +41,10 @@ pub const Doctype = struct {
         self.public_id.deinit();
         self.system_id.deinit();
     }
+
+    pub fn format(self: Doctype, writer: anytype) !void {
+        try writer.print("Doctype's name: {s}, public_id: {s}, system_id: {s}, force_quirks: {}\n", .{ self.name.slice(), self.public_id.slice(), self.system_id.slice(), self.force_quirks });
+    }
 };
 
 pub const TagKind = enum {

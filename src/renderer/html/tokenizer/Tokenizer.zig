@@ -18,6 +18,8 @@ const config = @import("config");
 
 allocator: std.mem.Allocator,
 state: TokenizerState,
+ch: u21,
+is_eof: bool,
 return_state: TokenizerState,
 pause_flag: bool,
 // Character reference code.
@@ -59,6 +61,8 @@ pub fn init(alloc: std.mem.Allocator, ingester: TokenIngester, err_ingester: ?Er
     return Tokenizer{
         .allocator = alloc,
         .state = opts.inital_state,
+        .ch = undefined,
+        .is_eof = false,
         .return_state = .Data,
         .pause_flag = false,
         .char_ref_code = 0,
@@ -153,7 +157,7 @@ pub fn emitCurrentDoctype(self: *Tokenizer) void {
 // Otherwise should use updateLine version.
 pub fn emitCharAndAdvance(self: *Tokenizer, ch: u21, input: *BufferDeque(.utf8, .not_atomic, true)) void {
     self.emitChar(ch);
-    _ = input.nextChar();
+    self.nextChar(input);
 }
 
 pub fn emitCharAndAdvanceUpdateLine(self: *Tokenizer, ch: u21, input: *BufferDeque(.utf8, .not_atomic, true)) void {
@@ -205,7 +209,7 @@ pub fn sealAttr(self: *Tokenizer) !void {
 // Otherwise should use updateLine version.
 pub inline fn setStateAndAdvance(self: *Tokenizer, state: TokenizerState, input: *BufferDeque(.utf8, .not_atomic, true)) void {
     self.state = state;
-    _ = input.nextChar();
+    self.nextChar(input);
 }
 
 pub inline fn setStateAndAdvanceUpdateLine(self: *Tokenizer, state: TokenizerState, input: *BufferDeque(.utf8, .not_atomic, true)) void {
@@ -214,8 +218,7 @@ pub inline fn setStateAndAdvanceUpdateLine(self: *Tokenizer, state: TokenizerSta
 }
 
 pub inline fn nextCharAndUpdateLine(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) void {
-    _ = self;
-    _ = input.nextChar();
+    self.nextChar(input);
 }
 
 pub inline fn setCharacterReferenceStateAndAdvance(self: *Tokenizer, return_state: TokenizerState, input: *BufferDeque(.utf8, .not_atomic, true)) void {
@@ -231,12 +234,16 @@ fn asciiEq(a: u8, b: u8) bool {
     return a == b;
 }
 
-pub fn match_insensitive(input: *BufferDeque(.utf8, .not_atomic, true), str: []const u8) bool {
-    return input.consume(str, asciiEqIgnoreCase);
+pub fn match_insensitive(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true), str: []const u8) bool {
+    const res = input.consume(str, asciiEqIgnoreCase);
+    self.peekChar(input);
+    return res;
 }
 
-pub fn match_sensitive(input: *BufferDeque(.utf8, .not_atomic, true), str: []const u8) bool {
-    return input.consume(str, asciiEq);
+pub fn match_sensitive(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true), str: []const u8) bool {
+    const res = input.consume(str, asciiEq);
+    self.peekChar(input);
+    return res;
 }
 
 pub inline fn createDoctype(self: *Tokenizer) void {
@@ -261,6 +268,19 @@ inline fn isConsumedAsPartOfAttr(self: *Tokenizer) bool {
         .AttributeValueSingleQuoted, .AttributeValueDoubleQuoted, .AttributeValueUnquoted => break :blk true,
         else => break :blk false,
     };
+}
+
+inline fn peekChar(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) void {
+    self.is_eof = if (input.peekChar()) |c| blk: {
+        self.ch = c;
+        break :blk false;
+    } else true;
+}
+
+inline fn nextChar(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) void {
+    _ = input.nextChar();
+    self.peekChar(input);
+    if (!self.is_eof) self.preprocessChar(input, &self.ch);
 }
 
 pub fn consumeNamedCharRef(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !?struct { []const u8, bool } {
@@ -310,7 +330,6 @@ pub fn consumeNamedCharRef(self: *Tokenizer, input: *BufferDeque(.utf8, .not_ato
 
         return .{ value, has_semicolon };
     }
-
     return null;
 }
 
@@ -369,19 +388,20 @@ pub fn debugDetail(self: *Tokenizer) void {
     std.debug.print("Current Tag Kind: {s}\n", .{@tagName(self.current_tag_kind)});
     std.debug.print("Current Attribute Name: {s}\n", .{self.current_attribute_name.slice()});
     std.debug.print("Current Attribute Value: {s}\n", .{self.current_attribute_value.slice()});
+    std.debug.print("Current Attribute Name: {f}\n", .{self.current_doctype});
 }
 
-pub fn preprocessChar(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true), ch: *u21) bool {
+pub fn preprocessChar(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true), ch: *u21) void {
     if (self.ignore_lf) {
         self.ignore_lf = false;
 
         if (ch.* == '\n') {
-            _ = input.nextChar();
+            self.nextChar(input);
 
             if (input.peekChar()) |next|
                 ch.* = next
             else
-                return true;
+                self.is_eof = true;
         }
     }
 
@@ -392,17 +412,15 @@ pub fn preprocessChar(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, 
 
     if (ch.* == '\n') self.current_line += 1;
     if (ascii.isSurrogate(u21, ch.*)) self.handleError(.SurrogateInInputStream) else if (ascii.isNoncharacter(u21, ch.*)) self.handleError(.NoncharacterInInputStream) else if (ascii.isControlCharacter(u21, ch.*)) self.handleError(.ControlCharacterInInputStream);
-
-    return false;
 }
 
 pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !void {
-    var ch: u21 = undefined;
+    self.peekChar(input);
+    self.preprocessChar(input, &self.ch);
     while (true) {
-        const is_eof = if (input.peekChar()) |c| blk: {
-            ch = c;
-            break :blk self.preprocessChar(input, &ch);
-        } else true;
+        //        self.peekChar(input);
+        const ch = self.ch;
+        const is_eof = self.is_eof;
 
         // Jump to here if is_eof already been true.
         if (config.debug) {
@@ -571,14 +589,14 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     0x0000 => {
                         self.handleError(.UnexpectedNullCharacter);
                         try self.current_tag_name.push('\u{FFFD}');
-                        _ = input.nextChar();
+                        self.nextChar(input);
                     },
                     else => {
                         if (ascii.isAsciiUpperAlpha(ch))
                             try self.current_tag_name.push(ch + 0x0020)
                         else
                             try self.current_tag_name.push(ch);
-                        _ = input.nextChar();
+                        self.nextChar(input);
                     },
                 }
             },
@@ -632,11 +650,11 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                 if (ascii.isAsciiUpperAlpha(ch) and !is_eof) {
                     try self.current_tag_name.push(ch + 0x0020);
                     try self.temporary_buffer.push(ch);
-                    _ = input.nextChar();
+                    self.nextChar(input);
                 } else if (ascii.isAsciiLowerAlpha(ch) and !is_eof) {
                     try self.current_tag_name.push(ch);
                     try self.temporary_buffer.push(ch);
-                    _ = input.nextChar();
+                    self.nextChar(input);
                 } else {
                     self.emitChar('<');
                     self.emitChar('/');
@@ -695,11 +713,11 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                 if (ascii.isAsciiUpperAlpha(ch) and !is_eof) {
                     try self.current_tag_name.push(ch + 0x0020);
                     try self.temporary_buffer.push(ch);
-                    _ = input.nextChar();
+                    self.nextChar(input);
                 } else if (ascii.isAsciiLowerAlpha(ch) and !is_eof) {
                     try self.current_tag_name.push(ch);
                     try self.temporary_buffer.push(ch);
-                    _ = input.nextChar();
+                    self.nextChar(input);
                 } else {
                     self.emitChar('<');
                     self.emitChar('/');
@@ -762,11 +780,11 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                 if (ascii.isAsciiUpperAlpha(ch) and !is_eof) {
                     try self.current_tag_name.push(ch + 0x0020);
                     try self.temporary_buffer.push(ch);
-                    _ = input.nextChar();
+                    self.nextChar(input);
                 } else if (ascii.isAsciiLowerAlpha(ch) and !is_eof) {
                     try self.current_tag_name.push(ch);
                     try self.temporary_buffer.push(ch);
-                    _ = input.nextChar();
+                    self.nextChar(input);
                 } else {
                     self.emitChar('<');
                     self.emitChar('/');
@@ -813,7 +831,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     0x0000 => {
                         self.handleError(.UnexpectedNullCharacter);
                         self.emitChar('\u{FFFD}');
-                        _ = input.nextChar();
+                        self.nextChar(input);
                     },
                     else => {
                         self.emitChar(ch);
@@ -857,7 +875,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                 switch (ch) {
                     '-' => {
                         self.emitChar('-');
-                        _ = input.nextChar();
+                        self.nextChar(input);
                     },
                     '<' => self.setStateAndAdvance(.ScriptDataEscapedLessThanSign, input),
                     '>' => {
@@ -931,11 +949,11 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                 if (ascii.isAsciiUpperAlpha(ch) and !is_eof) {
                     try self.current_tag_name.push(ch + 0x0020);
                     try self.temporary_buffer.push(ch);
-                    _ = input.nextChar();
+                    self.nextChar(input);
                 } else if (ascii.isAsciiLowerAlpha(ch) and !is_eof) {
                     try self.current_tag_name.push(ch);
                     try self.temporary_buffer.push(ch);
-                    _ = input.nextChar();
+                    self.nextChar(input);
                 } else {
                     self.emitChar('<');
                     self.emitChar('/');
@@ -955,11 +973,11 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                         if (ascii.isAsciiUpperAlpha(ch) and !is_eof) {
                             try self.temporary_buffer.push(ch + 0x0020);
                             self.emitChar(ch);
-                            _ = input.nextChar();
+                            self.nextChar(input);
                         } else if (ascii.isAsciiLowerAlpha(ch) and !is_eof) {
                             try self.temporary_buffer.push(ch);
                             self.emitChar(ch);
-                            _ = input.nextChar();
+                            self.nextChar(input);
                         } else {
                             self.state = .ScriptDataEscaped;
                         }
@@ -986,7 +1004,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     0x0000 => {
                         self.handleError(.UnexpectedNullCharacter);
                         self.emitChar('\u{FFFD}');
-                        _ = input.nextChar();
+                        self.nextChar(input);
                     },
                     else => {
                         self.emitChar(ch);
@@ -1033,7 +1051,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                 switch (ch) {
                     '-' => {
                         self.emitChar('-');
-                        _ = input.nextChar();
+                        self.nextChar(input);
                     },
                     '<' => {
                         self.setStateAndAdvance(.ScriptDataDoubleEscapedLessThanSign, input);
@@ -1076,11 +1094,11 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                         if (ascii.isAsciiUpperAlpha(ch) and !is_eof) {
                             try self.temporary_buffer.push(ch);
                             self.emitChar(ch);
-                            _ = input.nextChar();
+                            self.nextChar(input);
                         } else if (ascii.isAsciiLowerAlpha(ch) and !is_eof) {
                             try self.temporary_buffer.push(ch);
                             self.emitChar(ch);
-                            _ = input.nextChar();
+                            self.nextChar(input);
                         } else {
                             self.state = .ScriptDataDoubleEscaped;
                         }
@@ -1124,12 +1142,12 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     0x0000 => {
                         self.handleError(.UnexpectedNullCharacter);
                         try self.current_attribute_name.push('\u{FFFD}');
-                        _ = input.nextChar();
+                        self.nextChar(input);
                     },
                     '"', '\'', '<' => {
                         self.handleError(.UnexpectedCharacterInAttributeName);
                         try self.current_attribute_name.push(ch);
-                        _ = input.nextChar();
+                        self.nextChar(input);
                     },
                     else => {
                         if (ascii.isAsciiUpperAlpha(ch)) {
@@ -1137,7 +1155,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                         } else {
                             try self.current_attribute_name.push(ch);
                         }
-                        _ = input.nextChar();
+                        self.nextChar(input);
                     },
                 }
             },
@@ -1200,7 +1218,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     0x0000 => {
                         self.handleError(.UnexpectedNullCharacter);
                         try self.current_attribute_value.push('\u{FFFD}');
-                        _ = input.nextChar();
+                        self.nextChar(input);
                     },
                     else => {
                         try self.current_attribute_value.push(ch);
@@ -1222,7 +1240,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     0x0000 => {
                         self.handleError(.UnexpectedNullCharacter);
                         try self.current_attribute_value.push('\u{FFFD}');
-                        _ = input.nextChar();
+                        self.nextChar(input);
                     },
                     else => {
                         try self.current_attribute_value.push(ch);
@@ -1248,16 +1266,16 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     0x0000 => {
                         self.handleError(.UnexpectedNullCharacter);
                         try self.current_attribute_value.push('\u{FFFD}');
-                        _ = input.nextChar();
+                        self.nextChar(input);
                     },
                     '"', '\'', '<', '=', '`' => {
                         self.handleError(.UnexpectedCharacterInUnquotedAttributeValue);
                         try self.current_attribute_value.push(ch);
-                        _ = input.nextChar();
+                        self.nextChar(input);
                     },
                     else => {
                         try self.current_attribute_value.push(ch);
-                        _ = input.nextChar();
+                        self.nextChar(input);
                     },
                 }
             },
@@ -1318,7 +1336,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     0x0000 => {
                         self.handleError(.UnexpectedNullCharacter);
                         try self.current_comment.push('\u{FFFD}');
-                        _ = input.nextChar();
+                        self.nextChar(input);
                     },
                     else => {
                         try self.current_comment.push(ch);
@@ -1329,12 +1347,12 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
 
             // https://html.spec.whatwg.org/multipage/parsing.html#markup-declaration-open-state
             .MarkupDeclarationOpen => {
-                if (match_sensitive(input, "--")) {
+                if (self.match_sensitive(input, "--")) {
                     self.current_comment.clear();
                     self.state = .CommentStart;
-                } else if (match_insensitive(input, "DOCTYPE")) {
+                } else if (self.match_insensitive(input, "DOCTYPE")) {
                     self.state = .DOCTYPE;
-                } else if (match_sensitive(input, "[CDATA[")) {
+                } else if (self.match_sensitive(input, "[CDATA[")) {
                     // TODO
                     if (self.is_adjusted()) {
                         self.setStateAndAdvance(.CDATASection, input);
@@ -1403,7 +1421,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     0x0000 => {
                         self.handleError(.UnexpectedNullCharacter);
                         try self.current_comment.push('\u{FFFD}');
-                        _ = input.nextChar();
+                        self.nextChar(input);
                     },
                     else => {
                         try self.current_comment.push(ch);
@@ -1421,7 +1439,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     },
                     '<' => {
                         try self.current_comment.push('<');
-                        _ = input.nextChar();
+                        self.nextChar(input);
                     },
                     else => self.state = .Comment,
                 }
@@ -1484,7 +1502,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     '!' => self.setStateAndAdvance(.CommentEndBang, input),
                     '-' => {
                         try self.current_comment.push('-');
-                        _ = input.nextChar();
+                        self.nextChar(input);
                     },
                     else => {
                         try self.current_comment.push('-');
@@ -1601,16 +1619,16 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     },
                     'A'...'Z' => {
                         try self.current_doctype.name.push(ch + 0x0020);
-                        _ = input.nextChar();
+                        self.nextChar(input);
                     },
                     0x0000 => {
                         self.handleError(.UnexpectedNullCharacter);
                         try self.current_doctype.name.push('\u{FFFD}');
-                        _ = input.nextChar();
+                        self.nextChar(input);
                     },
                     else => {
                         try self.current_doctype.name.push(ch);
-                        _ = input.nextChar();
+                        self.nextChar(input);
                     },
                 }
             },
@@ -1634,9 +1652,9 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                         self.emitCurrentDoctype();
                     },
                     else => {
-                        if (match_insensitive(input, "PUBLIC"))
+                        if (self.match_insensitive(input, "PUBLIC"))
                             self.state = .AfterDOCTYPEPublicKeyword
-                        else if (match_insensitive(input, "SYSTEM")) self.state = .AfterDOCTYPESystemKeyword else {
+                        else if (self.match_insensitive(input, "SYSTEM")) self.state = .AfterDOCTYPESystemKeyword else {
                             self.handleError(.InvalidCharacterSequenceAfterDOCTYPEName);
                             self.current_doctype.force_quirks = true;
                             self.state = .BogusDOCTYPE;
@@ -1916,7 +1934,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     0x0000 => {
                         self.handleError(.UnexpectedNullCharacter);
                         try self.current_doctype.system_id.push('\u{FFFD}');
-                        _ = input.nextChar();
+                        self.nextChar(input);
                     },
                     '>' => {
                         self.handleError(.AbruptDOCTYPESystemIdentifier);
@@ -1945,7 +1963,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     0x0000 => {
                         self.handleError(.UnexpectedNullCharacter);
                         try self.current_doctype.system_id.push('\u{FFFD}');
-                        _ = input.nextChar();
+                        self.nextChar(input);
                     },
                     '>' => {
                         self.handleError(.AbruptDOCTYPESystemIdentifier);
@@ -1996,7 +2014,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     },
                     0x0000 => {
                         self.handleError(.UnexpectedNullCharacter);
-                        _ = input.nextChar();
+                        self.nextChar(input);
                     },
                     else => self.nextCharAndUpdateLine(input),
                 }
@@ -2064,7 +2082,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     '\t', '\n', '\x0C', ' ', '?', '>' => {
                         var t = try BufferDeque(.utf8, .not_atomic, true).init(self.allocator);
                         try t.pushBack(self.temporary_buffer.clone());
-                        if (match_insensitive(&t, "xml") or match_insensitive(&t, "xml-stylesheet")) {
+                        if (self.match_insensitive(&t, "xml") or self.match_insensitive(&t, "xml-stylesheet")) {
                             self.handleError(.DisallowedProcessingInstructionTarget);
 
                             self.current_comment = self.temporary_buffer.clone();
@@ -2080,7 +2098,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     else => {
                         if (ascii.isAsciiAlphanum(ch) or (ch == '-') or (ch == '_')) {
                             try self.temporary_buffer.push(ch);
-                            _ = input.nextChar();
+                            self.nextChar(input);
                         } else {
                             self.handleError(.InvaildProcessingInstructionTarget);
                             self.current_comment = self.temporary_buffer.clone();
@@ -2191,6 +2209,8 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     try self.flushCodePoints_E();
                     self.state = .AmbiguousAmpersand;
                 }
+
+                self.peekChar(input);
             },
             // https://html.spec.whatwg.org/multipage/parsing.html#ambiguous-ampersand-state
             .AmbiguousAmpersand => {
@@ -2205,7 +2225,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                                 try self.current_attribute_value.push(ch)
                             else
                                 self.emitChar(ch);
-                            _ = input.nextChar();
+                            self.nextChar(input);
                         } else {
                             self.state = self.return_state;
                         }
@@ -2270,7 +2290,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     else => {
                         if (ascii.isAsciiDigit(ch) and !is_eof) {
                             self.char_ref_code = self.char_ref_code *| 10 +| (ch -| 0x0030);
-                            _ = input.nextChar();
+                            self.nextChar(input);
                         } else {
                             self.handleError(.MissingSemicolonAfterCharacterReference);
                             self.state = .NumericCharacterReferenceEnd;
@@ -2293,7 +2313,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     self.char_ref_code = 0xFFFD;
                 } else if (ascii.isNoneCharacter(u64, code)) {
                     self.handleError(.NoncharacterCharacterReference);
-                } else if (code == 0x0D or (ascii.isControl(u64, code) and !ascii.isAsciiWhitespace(u64, code))) {
+                } else if (code == 0x0D or (ascii.isControlCharacter(u64, code) and !ascii.isAsciiWhitespace(u64, code))) {
                     self.handleError(.ControlCharacterReference);
                     self.setCodePoint();
                 }

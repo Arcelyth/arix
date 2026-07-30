@@ -51,6 +51,7 @@ frameset_ok: bool,
 
 pub fn init() TreeBuilder {
     return TreeBuilder{
+        .open_elements = .empty,
         .insert_mode = .Initial,
         .orig_insert_mode = .Initial,
         .temp_insert_modes = .empty,

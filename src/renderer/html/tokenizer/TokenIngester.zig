@@ -1,3 +1,4 @@
+/// A type-erased interface for consuming tokens.
 const TokenIngester = @This();
 
 const Token = @import("token.zig").Token;
@@ -23,5 +24,3 @@ pub fn init(pointer: anytype, comptime handleTokenFn: fn (ptr: @TypeOf(pointer),
 pub fn handleToken(self: TokenIngester, token: Token) void {
     self.handleTokenFn(self.ptr, token);
 }
-
-

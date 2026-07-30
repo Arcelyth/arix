@@ -153,16 +153,9 @@ pub fn emitCurrentDoctype(self: *Tokenizer) void {
     self.current_doctype = token.Doctype.init();
 }
 
-// Ensure the previous character is not '\n' when use this function.
-// Otherwise should use updateLine version.
 pub fn emitCharAndAdvance(self: *Tokenizer, ch: u21, input: *BufferDeque(.utf8, .not_atomic, true)) void {
     self.emitChar(ch);
     self.nextChar(input);
-}
-
-pub fn emitCharAndAdvanceUpdateLine(self: *Tokenizer, ch: u21, input: *BufferDeque(.utf8, .not_atomic, true)) void {
-    self.emitChar(ch);
-    self.nextCharAndUpdateLine(input);
 }
 
 pub fn emitProcessingInst(self: *Tokenizer) void {
@@ -209,15 +202,6 @@ pub fn sealAttr(self: *Tokenizer) !void {
 // Otherwise should use updateLine version.
 pub inline fn setStateAndAdvance(self: *Tokenizer, state: TokenizerState, input: *BufferDeque(.utf8, .not_atomic, true)) void {
     self.state = state;
-    self.nextChar(input);
-}
-
-pub inline fn setStateAndAdvanceUpdateLine(self: *Tokenizer, state: TokenizerState, input: *BufferDeque(.utf8, .not_atomic, true)) void {
-    self.state = state;
-    self.nextCharAndUpdateLine(input);
-}
-
-pub inline fn nextCharAndUpdateLine(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) void {
     self.nextChar(input);
 }
 
@@ -447,7 +431,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                         self.handleError(.UnexpectedNullCharacter);
                         self.emitCharAndAdvance(ch, input);
                     },
-                    else => self.emitCharAndAdvanceUpdateLine(ch, input),
+                    else => self.emitCharAndAdvance(ch, input),
                 }
             },
 
@@ -465,7 +449,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                         self.handleError(.UnexpectedNullCharacter);
                         self.emitCharAndAdvance('\u{FFFD}', input);
                     },
-                    else => self.emitCharAndAdvanceUpdateLine(ch, input),
+                    else => self.emitCharAndAdvance(ch, input),
                 }
             },
 
@@ -482,7 +466,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                         self.handleError(.UnexpectedNullCharacter);
                         self.emitCharAndAdvance('\u{FFFD}', input);
                     },
-                    else => self.emitCharAndAdvanceUpdateLine(ch, input),
+                    else => self.emitCharAndAdvance(ch, input),
                 }
             },
 
@@ -499,7 +483,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                         self.handleError(.UnexpectedNullCharacter);
                         self.emitCharAndAdvance('\u{FFFD}', input);
                     },
-                    else => self.emitCharAndAdvanceUpdateLine(ch, input),
+                    else => self.emitCharAndAdvance(ch, input),
                 }
             },
 
@@ -515,7 +499,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                         self.handleError(.UnexpectedNullCharacter);
                         self.emitCharAndAdvance('\u{FFFD}', input);
                     },
-                    else => self.emitCharAndAdvanceUpdateLine(ch, input),
+                    else => self.emitCharAndAdvance(ch, input),
                 }
             },
 
@@ -584,7 +568,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     return;
                 }
                 switch (ch) {
-                    '\t', '\n', '\x0C', ' ' => self.setStateAndAdvanceUpdateLine(.BeforeAttributeName, input),
+                    '\t', '\n', '\x0C', ' ' => self.setStateAndAdvance(.BeforeAttributeName, input),
                     '/' => self.setStateAndAdvance(.SelfClosingStartTag, input),
                     '>' => {
                         self.setStateAndAdvance(.Data, input);
@@ -636,7 +620,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                 if (self.isAppropriateEndTag()) {
                     switch (ch) {
                         '\t', '\n', '\x0C', ' ' => {
-                            self.setStateAndAdvanceUpdateLine(.BeforeAttributeName, input);
+                            self.setStateAndAdvance(.BeforeAttributeName, input);
                             break :blk;
                         },
                         '/' => {
@@ -698,7 +682,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                 if (self.isAppropriateEndTag()) {
                     switch (ch) {
                         '\t', '\n', '\x0C', ' ' => {
-                            self.setStateAndAdvanceUpdateLine(.BeforeAttributeName, input);
+                            self.setStateAndAdvance(.BeforeAttributeName, input);
                             break :blk;
                         },
 
@@ -766,7 +750,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                 if (self.isAppropriateEndTag()) {
                     switch (ch) {
                         '\t', '\n', '\x0C', ' ' => {
-                            self.setStateAndAdvanceUpdateLine(.BeforeAttributeName, input);
+                            self.setStateAndAdvance(.BeforeAttributeName, input);
                             break :blk;
                         },
                         '/' => {
@@ -839,7 +823,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     },
                     else => {
                         self.emitChar(ch);
-                        self.nextCharAndUpdateLine(input);
+                        self.nextChar(input);
                     },
                 }
             },
@@ -863,7 +847,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                         self.emitChar('\u{FFFD}');
                     },
                     else => {
-                        self.setStateAndAdvanceUpdateLine(.ScriptDataEscaped, input);
+                        self.setStateAndAdvance(.ScriptDataEscaped, input);
                         self.emitChar(ch);
                     },
                 }
@@ -892,7 +876,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                         self.emitChar('\u{FFFD}');
                     },
                     else => {
-                        self.setStateAndAdvanceUpdateLine(.ScriptDataEscaped, input);
+                        self.setStateAndAdvance(.ScriptDataEscaped, input);
                         self.emitChar(ch);
                     },
                 }
@@ -935,7 +919,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                 if (self.isAppropriateEndTag()) {
                     switch (ch) {
                         '\t', '\n', '\x0C', ' ' => {
-                            self.setStateAndAdvanceUpdateLine(.BeforeAttributeName, input);
+                            self.setStateAndAdvance(.BeforeAttributeName, input);
                             break :blk;
                         },
                         '/' => {
@@ -1012,7 +996,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     },
                     else => {
                         self.emitChar(ch);
-                        self.nextCharAndUpdateLine(input);
+                        self.nextChar(input);
                     },
                 }
             },
@@ -1039,7 +1023,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                         self.emitChar('\u{FFFD}');
                     },
                     else => {
-                        self.setStateAndAdvanceUpdateLine(.ScriptDataDoubleEscaped, input);
+                        self.setStateAndAdvance(.ScriptDataDoubleEscaped, input);
                         self.emitChar(ch);
                     },
                 }
@@ -1067,7 +1051,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                         self.emitChar('\u{FFFD}');
                     },
                     else => {
-                        self.setStateAndAdvanceUpdateLine(.ScriptDataDoubleEscaped, input);
+                        self.setStateAndAdvance(.ScriptDataDoubleEscaped, input);
                         self.emitChar(ch);
                     },
                 }
@@ -1118,7 +1102,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                 switch (ch) {
                     '\t', '\n', '\x0C', ' ' => {
                         // Ignore.
-                        self.nextCharAndUpdateLine(input);
+                        self.nextChar(input);
                     },
                     '/', '>' => {
                         self.state = .AfterAttributeName;
@@ -1174,7 +1158,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                 switch (ch) {
                     '\t', '\n', '\x0C', ' ' => {
                         // Ignore.
-                        self.nextCharAndUpdateLine(input);
+                        self.nextChar(input);
                     },
                     '/' => self.setStateAndAdvance(.SelfClosingStartTag, input),
                     '=' => self.setStateAndAdvance(.BeforeAttributeValue, input),
@@ -1194,7 +1178,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                 switch (ch) {
                     '\t', '\n', '\x0C', ' ' => {
                         // Ignore.
-                        self.nextCharAndUpdateLine(input);
+                        self.nextChar(input);
                     },
                     '"' => self.setStateAndAdvance(.AttributeValueDoubleQuoted, input),
                     '\'' => self.setStateAndAdvance(.AttributeValueSingleQuoted, input),
@@ -1226,7 +1210,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     },
                     else => {
                         try self.current_attribute_value.push(ch);
-                        self.nextCharAndUpdateLine(input);
+                        self.nextChar(input);
                     },
                 }
             },
@@ -1248,7 +1232,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     },
                     else => {
                         try self.current_attribute_value.push(ch);
-                        self.nextCharAndUpdateLine(input);
+                        self.nextChar(input);
                     },
                 }
             },
@@ -1261,7 +1245,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     return;
                 }
                 switch (ch) {
-                    '\t', '\n', '\x0C', ' ' => self.setStateAndAdvanceUpdateLine(.BeforeAttributeName, input),
+                    '\t', '\n', '\x0C', ' ' => self.setStateAndAdvance(.BeforeAttributeName, input),
                     '&' => self.setCharacterReferenceStateAndAdvance(.AttributeValueUnquoted, input),
                     '>' => {
                         self.setStateAndAdvance(.Data, input);
@@ -1292,7 +1276,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     return;
                 }
                 switch (ch) {
-                    '\t', '\n', '\x0C', ' ' => self.setStateAndAdvanceUpdateLine(.BeforeAttributeName, input),
+                    '\t', '\n', '\x0C', ' ' => self.setStateAndAdvance(.BeforeAttributeName, input),
                     '/' => self.setStateAndAdvance(.SelfClosingStartTag, input),
                     '>' => {
                         self.setStateAndAdvance(.Data, input);
@@ -1344,7 +1328,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     },
                     else => {
                         try self.current_comment.push(ch);
-                        self.nextCharAndUpdateLine(input);
+                        self.nextChar(input);
                     },
                 }
             },
@@ -1431,14 +1415,16 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     },
                     else => {
                         try self.current_comment.push(ch);
-                        self.nextCharAndUpdateLine(input);
+                        self.nextChar(input);
                     },
                 }
             },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#comment-less-than-sign-state
             .CommentLessThanSign => {
-                if (is_eof) { self.state = .Comment; } else switch (ch) {
+                if (is_eof) {
+                    self.state = .Comment;
+                } else switch (ch) {
                     '!' => {
                         try self.current_comment.push('!');
                         self.setStateAndAdvance(.CommentLessThanSignBang, input);
@@ -1453,7 +1439,9 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
 
             // https://html.spec.whatwg.org/multipage/parsing.html#comment-less-than-sign-bang-state
             .CommentLessThanSignBang => {
-                if (is_eof) { self.state = .Comment; } else switch (ch) {
+                if (is_eof) {
+                    self.state = .Comment;
+                } else switch (ch) {
                     '-' => self.setStateAndAdvance(.CommentLessThanSignBangDash, input),
                     else => self.state = .Comment,
                 }
@@ -1461,7 +1449,9 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
 
             // https://html.spec.whatwg.org/multipage/parsing.html#comment-less-than-sign-bang-dash-state
             .CommentLessThanSignBangDash => {
-                if (is_eof) { self.state = .Comment; } else switch (ch) {
+                if (is_eof) {
+                    self.state = .Comment;
+                } else switch (ch) {
                     '-' => self.setStateAndAdvance(.CommentLessThanSignBangDashDash, input),
                     else => self.state = .CommentEndDash,
                 }
@@ -1469,7 +1459,9 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
 
             // https://html.spec.whatwg.org/multipage/parsing.html#comment-less-than-sign-bang-dash-dash-state
             .CommentLessThanSignBangDashDash => {
-                if (is_eof) { self.state = .Comment; } else if (ch == '>') self.state = .CommentEnd else {
+                if (is_eof) {
+                    self.state = .Comment;
+                } else if (ch == '>') self.state = .CommentEnd else {
                     self.handleError(.NestedComment);
                     self.state = .CommentEnd;
                 }
@@ -1558,7 +1550,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     return;
                 }
                 switch (ch) {
-                    '\t', '\n', '\x0C', ' ' => self.setStateAndAdvanceUpdateLine(.BeforeDOCTYPEName, input),
+                    '\t', '\n', '\x0C', ' ' => self.setStateAndAdvance(.BeforeDOCTYPEName, input),
                     '>' => self.state = .BeforeDOCTYPEName,
                     else => {
                         self.handleError(.MissingWhitespaceBeforeDOCTYPEName);
@@ -1580,7 +1572,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                 switch (ch) {
                     '\t', '\n', '\x0C', ' ' => {
                         // Ignore.
-                        self.nextCharAndUpdateLine(input);
+                        self.nextChar(input);
                     },
                     'A'...'Z' => {
                         self.createDoctype();
@@ -1618,7 +1610,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     return;
                 }
                 switch (ch) {
-                    '\t', '\n', '\x0C', ' ' => self.setStateAndAdvanceUpdateLine(.AfterDOCTYPEName, input),
+                    '\t', '\n', '\x0C', ' ' => self.setStateAndAdvance(.AfterDOCTYPEName, input),
                     '>' => {
                         self.setStateAndAdvance(.Data, input);
                         self.emitCurrentDoctype();
@@ -1651,7 +1643,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                 switch (ch) {
                     '\t', '\n', '\x0C', ' ' => {
                         // Ignore.
-                        self.nextCharAndUpdateLine(input);
+                        self.nextChar(input);
                     },
                     '>' => {
                         self.setStateAndAdvance(.Data, input);
@@ -1683,7 +1675,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     return;
                 }
                 switch (ch) {
-                    '\t', '\n', '\x0C', ' ' => self.setStateAndAdvanceUpdateLine(.BeforeDOCTYPEPublicIdentifier, input),
+                    '\t', '\n', '\x0C', ' ' => self.setStateAndAdvance(.BeforeDOCTYPEPublicIdentifier, input),
                     '"' => {
                         self.handleError(.MissingWhitespaceAfterDOCTYPEPublicKeyword);
                         self.current_doctype.public_id.clear();
@@ -1720,7 +1712,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                 switch (ch) {
                     '\t', '\n', '\x0C', ' ' => {
                         // Ignore.
-                        self.nextCharAndUpdateLine(input);
+                        self.nextChar(input);
                     },
                     '"' => {
                         self.current_doctype.public_id.clear();
@@ -1768,7 +1760,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     },
                     else => {
                         try self.current_doctype.public_id.push(ch);
-                        self.nextCharAndUpdateLine(input);
+                        self.nextChar(input);
                     },
                 }
             },
@@ -1797,7 +1789,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     },
                     else => {
                         try self.current_doctype.public_id.push(ch);
-                        self.nextCharAndUpdateLine(input);
+                        self.nextChar(input);
                     },
                 }
             },
@@ -1812,7 +1804,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     return;
                 }
                 switch (ch) {
-                    '\t', '\n', '\x0C', ' ' => self.setStateAndAdvanceUpdateLine(.BetweenDOCTYPEPublicAndSystemIdentifiers, input),
+                    '\t', '\n', '\x0C', ' ' => self.setStateAndAdvance(.BetweenDOCTYPEPublicAndSystemIdentifiers, input),
                     '>' => {
                         self.setStateAndAdvance(.Data, input);
                         self.emitCurrentDoctype();
@@ -1845,7 +1837,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     return;
                 }
                 switch (ch) {
-                    '\t', '\n', '\x0C', ' ' => self.nextCharAndUpdateLine(input),
+                    '\t', '\n', '\x0C', ' ' => self.nextChar(input),
                     '>' => {
                         self.setStateAndAdvance(.Data, input);
                         self.emitCurrentDoctype();
@@ -1876,7 +1868,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     return;
                 }
                 switch (ch) {
-                    '\t', '\n', '\x0C', ' ' => self.setStateAndAdvanceUpdateLine(.BeforeDOCTYPESystemIdentifier, input),
+                    '\t', '\n', '\x0C', ' ' => self.setStateAndAdvance(.BeforeDOCTYPESystemIdentifier, input),
                     '"' => {
                         self.handleError(.MissingWhitespaceAfterDOCTYPESystemKeyword);
                         self.current_doctype.system_id.clear();
@@ -1911,7 +1903,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     return;
                 }
                 switch (ch) {
-                    '\t', '\n', '\x0C', ' ' => self.nextCharAndUpdateLine(input),
+                    '\t', '\n', '\x0C', ' ' => self.nextChar(input),
                     '"' => {
                         self.current_doctype.system_id.clear();
                         self.setStateAndAdvance(.DOCTYPESystemIdentifierDoubleQuoted, input);
@@ -1957,7 +1949,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     },
                     else => {
                         try self.current_doctype.system_id.push(ch);
-                        self.nextCharAndUpdateLine(input);
+                        self.nextChar(input);
                     },
                 }
             },
@@ -1986,7 +1978,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     },
                     else => {
                         try self.current_doctype.system_id.push(ch);
-                        self.nextCharAndUpdateLine(input);
+                        self.nextChar(input);
                     },
                 }
             },
@@ -2001,7 +1993,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     return;
                 }
                 switch (ch) {
-                    '\t', '\n', '\x0C', ' ' => self.nextCharAndUpdateLine(input),
+                    '\t', '\n', '\x0C', ' ' => self.nextChar(input),
                     '>' => {
                         self.setStateAndAdvance(.Data, input);
                         self.emitCurrentDoctype();
@@ -2029,7 +2021,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                         self.handleError(.UnexpectedNullCharacter);
                         self.nextChar(input);
                     },
-                    else => self.nextCharAndUpdateLine(input),
+                    else => self.nextChar(input),
                 }
             },
 
@@ -2042,7 +2034,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                 }
                 switch (ch) {
                     ']' => self.setStateAndAdvance(.CDATASectionBracket, input),
-                    else => self.emitCharAndAdvanceUpdateLine(ch, input),
+                    else => self.emitCharAndAdvance(ch, input),
                 }
             },
 
@@ -2125,7 +2117,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
             // https://html.spec.whatwg.org/multipage/parsing.html#after-processing-instruction-target-state
             .AfterProcessingInstructionTarget => {
                 switch (ch) {
-                    '\t', '\n', '\x0C', ' ' => self.nextCharAndUpdateLine(input),
+                    '\t', '\n', '\x0C', ' ' => self.nextChar(input),
                     else => self.state = .ProcessingInstructionData,
                 }
             },
@@ -2144,7 +2136,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     },
                     else => {
                         try self.current_process_inst.data.push(ch);
-                        self.nextCharAndUpdateLine(input);
+                        self.nextChar(input);
                     },
                 }
             },
@@ -2293,7 +2285,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     self.state = .NumericCharacterReferenceEnd;
                     break :blk;
                 }
-                self.nextCharAndUpdateLine(input);
+                self.nextChar(input);
             },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#decimal-character-reference-state

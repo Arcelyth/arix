@@ -1,3 +1,4 @@
+/// A simple ErrorIngester for testing.
 const TestErrorIngester = @This();
 
 const std = @import("std");

@@ -1,3 +1,4 @@
+/// A type-erased interface for consuming errors when tokenzing.
 const ErrorIngester = @This();
 
 const TokenizerError = @import("error.zig").TokenizerError;

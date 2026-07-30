@@ -1,4 +1,4 @@
-/// A Simple ingester for testing.
+/// A simple ingester for testing.
 const TestIngester = @This();
 
 const std = @import("std");

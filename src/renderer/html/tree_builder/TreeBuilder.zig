@@ -1,30 +1,33 @@
 const TreeBuilder = @This();
 
 const std = @import("std");
-const token = @import("../tokenizer/token.zig");
+const Token = @import("../tokenizer/token.zig").Token;
+const Node = @import("../../dom/Node.zig");
+const Element = @import("../../dom/Element.zig");
+const ns = @import("../../dom/namespace.zig");
 
 const InsertionMode = enum {
-    Initial,
-    BeforeHtml,
-    BeforeHead,
-    InHead,
-    InHeadNoscript,
-    AfterHead,
-    InBody,
-    Text,
-    InTable,
-    InTableText,
-    InCaption,
-    InColumnGroup,
-    InTableBody,
-    InRow,
-    InCell,
-    InTemplate,
-    AfterBody,
-    InFrameset,
-    AfterFrameset,
-    AfterAfterBody,
-    AfterAfterFrameset,
+    InitialMode,
+    BeforeHtmlMode,
+    BeforeHeadMode,
+    InHeadMode,
+    InHeadNoscriptMode,
+    AfterHeadMode,
+    InBodyMode,
+    TextMode,
+    InTableMode,
+    InTableTextMode,
+    InCaptionMode,
+    InColumnGroupMode,
+    InTableBodyMode,
+    InRowMode,
+    InCellMode,
+    InTemplateMode,
+    AfterBodyMode,
+    InFramesetMode,
+    AfterFramesetMode,
+    AfterAfterBodyMode,
+    AfterAfterFramesetMode,
 };
 
 const ScriptingMode = enum {
@@ -34,6 +37,7 @@ const ScriptingMode = enum {
     Fragment,
 };
 
+open_elements: std.ArrayList(Element),
 // InsertionMode
 insert_mode: InsertionMode,
 // Original Insertion Mode
@@ -58,7 +62,63 @@ pub fn init() TreeBuilder {
 }
 
 // Implement TokenIngester.
-pub fn handle_token(self: *TreeBuilder, tk: token.Token) void {
+pub fn handleToken(self: *TreeBuilder, tk: Token) void {
+    // Dispatch token.
+    if (self.isForeign(tk)) {
+        self.processTokenForeign(tk);
+    } else {
+        self.processToken(tk);
+    }
+}
+
+// https://html.spec.whatwg.org/#tree-construction-dispatcher
+pub fn isForeign(self: TreeBuilder, tk: Token) bool {
+    if (self.open_elements.items.len == 0 or std.meta.activeTag(tk) == .EofToken) return false;
+    const cur_el = self.adjustedCurrentNode();
+
+    if (cur_el.ns == .NS_Html) return false;
+
+    if (cur_el.isMathMLTextIntegrationPoint()) {
+        switch (tk) {
+            .TagToken => |tag| {
+                if (tag.kind == .StartTag and !tag.name.cmp("mglyph") and !tag.name.cmp("malignmark")) return false;
+            },
+            .CharacterToken => return false,
+            else => {},
+        }
+    }
+
+    if (cur_el.isMathMLAnnotationXml()) {
+        switch (tk) {
+            .TagToken => |tag| {
+                if (tag.kind == .StartTag and tag.name.cmp("svg")) return false;
+            },
+            else => {},
+        }
+    }
+
+    if (cur_el.isHtmlIntegrationPoint()) {
+        switch (tk) {
+            .TagToken => |tag| {
+                if (tag.kind == .StartTag) return false;
+            },
+            .CharacterToken => return false,
+        }
+    }
+
+    return true;
+}
+
+pub fn processToken(self: TreeBuilder, tk: Token) void {
     _ = self;
     _ = tk;
-} 
+}
+
+pub fn processTokenForeign(self: TreeBuilder, tk: Token) void {
+    _ = self;
+    _ = tk;
+}
+
+pub fn adjustedCurrentNode(self: TreeBuilder) *Node {
+    if (self.open_elements.last()) |node| return node else @panic("Stack of open elements is empty.");
+}

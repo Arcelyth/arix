@@ -12,7 +12,7 @@ pub const ErrorMessage = struct {
     line: usize,
 
     pub fn format(self: ErrorMessage, writer: anytype) !void {
-        try writer.print("ErrorMessage code: {s}, line: {}\n", .{ self.code, self.line});
+        try writer.print("ErrorMessage code: {s}, line: {}\n", .{ self.code, self.line });
     }
 };
 

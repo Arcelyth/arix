@@ -335,7 +335,7 @@ pub fn runHtml5LibTestFile(
                         @as(usize, @intCast(line.integer)),
                     ) catch |err| {
                         printFailedMessage(path, test_case_index, description, initial_state);
-                        
+
                         std.debug.print("Error index: {d}\n", .{err_actual_index});
                         return err;
                     };
@@ -401,4 +401,3 @@ test "html5lib unicodeChars" {
     const alloc = testing.allocator;
     try runHtml5LibTestFile(alloc, "src/renderer/tests/html5lib-tests/tokenizer/unicodeChars.test", testing.io);
 }
-

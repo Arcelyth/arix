@@ -47,6 +47,5 @@ pub fn build(b: *std.Build) void {
         test_step.dependOn(&run_unit_tests.step);
     }
 
-
     b.installArtifact(exe);
 }

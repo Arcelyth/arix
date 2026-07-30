@@ -24,5 +24,3 @@ pub fn init(pointer: anytype, comptime handleErrorFn: fn (ptr: @TypeOf(pointer),
 pub fn handleError(self: ErrorIngester, err: TokenizerError, cur_line: usize) void {
     self.handleErrorFn(self.ptr, err, cur_line);
 }
-
-

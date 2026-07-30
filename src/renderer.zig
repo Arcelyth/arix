@@ -6,6 +6,7 @@ pub const sniff = @import("renderer/html/encoding/sniff.zig");
 
 pub const Tokenizer = @import("renderer/html/tokenizer/Tokenizer.zig");
 pub const html5lib_tokenizer_test = @import("renderer/tests/html5lib_tokenizer_test.zig");
+pub const TreeBuilder = @import("renderer/html/tree_builder/TreeBuilder.zig");
 
 test {
     @import("std").testing.refAllDecls(@This());

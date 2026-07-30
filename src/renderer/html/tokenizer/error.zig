@@ -114,4 +114,3 @@ pub fn tokenizerErrorToString(self: TokenizerError) []const u8 {
         .EndTagWithSelfClosing => "end-tag-with-trailing-solidus",
     };
 }
-

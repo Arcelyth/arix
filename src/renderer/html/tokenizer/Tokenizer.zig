@@ -13,7 +13,7 @@ const ascii = @import("../../utils/ascii.zig");
 const token = @import("token.zig");
 const TokenIngester = @import("TokenIngester.zig");
 const ErrorIngester = @import("ErrorIngester.zig");
-const named_char_trie = @import("named_char_refs_gen.zig").named_char_trie;
+const trie_nodes = @import("named_ref").trie_nodes;
 const config = @import("config");
 
 allocator: std.mem.Allocator,
@@ -286,7 +286,7 @@ pub fn consumeNamedCharRef(self: *Tokenizer, input: *BufferDeque(.utf8, .not_ato
         if (next_ch > 127) break;
         const search_char = @as(u8, @intCast(next_ch));
 
-        const current_node = named_char_trie[current_node_idx];
+        const current_node = trie_nodes[current_node_idx];
 
         var found_child_idx: ?usize = null;
         const start = current_node.child_start;
@@ -294,7 +294,7 @@ pub fn consumeNamedCharRef(self: *Tokenizer, input: *BufferDeque(.utf8, .not_ato
 
         var i = start;
         while (i < end) : (i += 1) {
-            if (named_char_trie[i].char == search_char) {
+            if (trie_nodes[i].char == search_char) {
                 found_child_idx = i;
                 break;
             }
@@ -305,7 +305,7 @@ pub fn consumeNamedCharRef(self: *Tokenizer, input: *BufferDeque(.utf8, .not_ato
         current_node_idx = child_idx;
         lookahead_idx += 1;
 
-        if (named_char_trie[child_idx].value) |val| {
+        if (trie_nodes[child_idx].value) |val| {
             matched_str = val;
             has_semicolon = (search_char == ';');
             matched_len = lookahead_idx;

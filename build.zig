@@ -38,7 +38,7 @@ pub fn build(b: *std.Build) !void {
     try depends.append(b.allocator, .{ .name = "strale", .dep = strale, .module = "strale" });
 
     // generate
-    const named_ref = Generator.generate(b, "gen_named_ref", "./src/gen/named_ref.zig", "gen_named_ref.zig");
+    const named_ref = Generator.generate(b, "gen_named_ref", "./src/gen/named_ref.zig", &.{"./res/json/named_char_refs.json"}, "gen_named_ref.zig");
     try anon_imports.append(b.allocator, .{ .name = "named_ref", .path = named_ref });
 
     // executable

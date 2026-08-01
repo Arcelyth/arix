@@ -7,7 +7,6 @@ const StraleUtf8Global = strale.StraleUtf8Global;
 const BufferDeque = strale.BufferDeque;
 
 pub const Attribute = struct {
-//    name: StraleUtf8Global,
     name: LocalName,
     value: StraleUtf8Global,
 
@@ -56,10 +55,27 @@ pub const TagKind = enum {
 
 pub const Tag = struct {
     kind: TagKind,
-//    name: StraleUtf8Global,
     name: LocalName,
     self_closing: bool,
     attrs: std.ArrayList(Attribute),
+
+    pub fn hasAttr(
+        self: Tag,
+        name: []const u8,
+        value: []const u8,
+        is_sensitive: bool,
+    ) bool {
+        const target = LocalName.fromSlice(name);
+
+        for (self.attrs.items) |attr| {
+            if (!attr.name.eql(target)) continue;
+
+            const attr_value = attr.value.slice();
+            if (is_sensitive) return std.mem.eql(u8, attr_value, value) else return std.ascii.eqlIgnoreCase(attr_value, value);
+        }
+
+        return false;
+    }
 };
 
 pub const ProcessingInstruction = struct {

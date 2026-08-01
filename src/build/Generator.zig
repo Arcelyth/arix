@@ -1,3 +1,5 @@
+/// Generator will use a Zig program in 'src/gen' folder to 
+/// generate a Zig file and then exposes a module.
 const Generator = @This();
 
 const std = @import("std");

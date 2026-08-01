@@ -1,12 +1,12 @@
 const std = @import("std");
 
-pub const static_atom_names: []const [:0]const u8 = &.{
+pub const static_local_names: []const [:0]const u8 = &.{
     "a", "abbr", "address", "area", "article", "aside", "audio", "b", "base", "html", "div", "span"
 };
 
-pub const AtomTag = block: {
-    var values: [static_atom_names.len]u16 = undefined;
-    for (0..static_atom_names.len) |i| {
+pub const LocalTag = block: {
+    var values: [static_local_names.len]u16 = undefined;
+    for (0..static_local_names.len) |i| {
         values[i] = i;
     }
     const const_values = values;
@@ -14,31 +14,31 @@ pub const AtomTag = block: {
     break :block @Enum(
         u16,
         .exhaustive,
-        static_atom_names,
+        static_local_names,
         &const_values,
     );
 };
 
-pub const AtomNameMap = std.StaticStringMap(AtomTag).initComptime(block: {
-    var kvs: [static_atom_names.len]struct { []const u8, AtomTag } = undefined;
-    for (static_atom_names, 0..) |name, i| {
+pub const LocalNameMap = std.StaticStringMap(LocalTag).initComptime(block: {
+    var kvs: [static_local_names.len]struct { []const u8, LocalTag } = undefined;
+    for (static_local_names, 0..) |name, i| {
         kvs[i] = .{ name, @enumFromInt(i) };
     }
     break :block kvs;
 });
 
-pub const AtomName = union(enum) {
-    static: AtomTag,
+pub const LocalName = union(enum) {
+    static: LocalTag,
     dynamic: []const u8,
 
-    pub inline fn fromSlice(slice: []const u8) AtomName {
-        if (AtomNameMap.get(slice)) |tag| {
+    pub inline fn fromSlice(slice: []const u8) LocalName {
+        if (LocalNameMap.get(slice)) |tag| {
             return .{ .static = tag };
         }
         return .{ .dynamic = slice };
     }
 
-    pub inline fn eql(self: AtomName, other: AtomName) bool {
+    pub inline fn eql(self: LocalName, other: LocalName) bool {
         if (self == .static and other == .static) {
             return self.static == other.static;
         }
@@ -48,7 +48,7 @@ pub const AtomName = union(enum) {
         return false;
     }
 
-    pub inline fn is(self: AtomName, tag: AtomTag) bool {
+    pub inline fn is(self: LocalName, tag: LocalTag) bool {
         return self == .static and self.static == tag;
     }
 };

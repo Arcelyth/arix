@@ -1,11 +1,11 @@
 const std = @import("std");
 const testing = std.testing;
 
-const atom = @import("atom_name.zig");
+const local_name = @import("local_name.zig");
 
 test "static tag names" {
-    const html = atom.AtomName.fromSlice("html");
-    const div = atom.AtomName.fromSlice("div");
+    const html = local_name.LocalName.fromSlice("html");
+    const div = local_name.LocalName.fromSlice("div");
 
     try testing.expect(html == .static);
     try testing.expect(div == .static);
@@ -15,7 +15,7 @@ test "static tag names" {
 }
 
 test "unknown names are dynamic" {
-    const custom = atom.AtomName.fromSlice("custom-element");
+    const custom = local_name.LocalName.fromSlice("custom-element");
 
     try testing.expect(custom == .dynamic);
     try testing.expectEqualStrings(
@@ -25,26 +25,26 @@ test "unknown names are dynamic" {
 }
 
 test "static equality" {
-    const a = atom.AtomName.fromSlice("body");
-    const b = atom.AtomName.fromSlice("body");
+    const a = local_name.LocalName.fromSlice("body");
+    const b = local_name.LocalName.fromSlice("body");
     try testing.expect(a.eql(b));
 
-    const c = atom.AtomName.fromSlice("div");
-    const d = atom.AtomName.fromSlice("span");
+    const c = local_name.LocalName.fromSlice("div");
+    const d = local_name.LocalName.fromSlice("span");
     try testing.expect(!c.eql(d));
 }
 
 test "dynamic equality" {
-    const a = atom.AtomName.fromSlice("my-tag");
-    const b = atom.AtomName.fromSlice("my-tag");
+    const a = local_name.LocalName.fromSlice("my-tag");
+    const b = local_name.LocalName.fromSlice("my-tag");
 
     try testing.expect(a.eql(b));
 }
 
 test "static and dynamic with same bytes are not equal" {
-    const static_name = atom.AtomName.fromSlice("div");
+    const static_name = local_name.LocalName.fromSlice("div");
 
-    const dynamic_name: atom.AtomName = .{
+    const dynamic_name: local_name.LocalName = .{
         .dynamic = "div",
     };
 

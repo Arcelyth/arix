@@ -33,6 +33,8 @@ pub fn main(init: std.process.Init) !void {
 
     const args = try init.minimal.args.toSlice(arena);
 
+    if (args.len < 3) fatal("Usage: {s} <input.json> <output.zig>\n", .{args[0]});
+
     const json_path = args[1];
     const output_file_path = args[2];
 

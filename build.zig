@@ -39,7 +39,9 @@ pub fn build(b: *std.Build) !void {
 
     // generate
     const named_ref = Generator.generate(b, "gen_named_ref", "./src/gen/named_ref.zig", &.{"./res/json/named_char_refs.json"}, "gen_named_ref.zig");
+    const local_name = Generator.generate(b, "gen_local_name", "./src/gen/local_name.zig", &.{"./res/json/local_names.json"}, "gen_local_name.zig");
     try anon_imports.append(b.allocator, .{ .name = "named_ref", .path = named_ref });
+    try anon_imports.append(b.allocator, .{ .name = "local_name", .path = local_name });
 
     // executable
     const exe_module = b.createModule(.{
@@ -58,7 +60,7 @@ pub fn build(b: *std.Build) !void {
             .root_source_file = b.path("src/main.zig"),
             .target = b.resolveTargetQuery(t),
         });
-    
+
         moduleAddCommon(test_module, anon_imports, depends, options);
         const unit_tests = b.addTest(.{ .name = "tests", .root_module = test_module });
 

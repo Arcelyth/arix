@@ -1,7 +1,7 @@
 const std = @import("std");
 const testing = std.testing;
 
-const local_name = @import("local_name.zig");
+const local_name = @import("local_name");
 
 test "static tag names" {
     const html = local_name.LocalName.fromSlice("html");

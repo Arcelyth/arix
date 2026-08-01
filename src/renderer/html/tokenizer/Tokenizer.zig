@@ -14,6 +14,9 @@ const token = @import("token.zig");
 const TokenIngester = @import("TokenIngester.zig");
 const ErrorIngester = @import("ErrorIngester.zig");
 const trie_nodes = @import("named_ref").trie_nodes;
+const local_name = @import("local_name");
+const LocalName = local_name.LocalName;
+const LocalNameMap = local_name.LocalNameMap;
 const config = @import("config");
 
 allocator: std.mem.Allocator,
@@ -128,7 +131,7 @@ pub fn emitCurrentTag(self: *Tokenizer) void {
     }
     const tag_token = token.Tag{
         .kind = self.current_tag_kind,
-        .name = self.current_tag_name.clone(),
+        .name = LocalName.fromSlice(self.current_tag_name.slice()) catch return,
         .self_closing = self.current_tag_self_closing,
         .attrs = self.current_tag_attrs,
     };
@@ -182,8 +185,10 @@ pub fn createAttr_E(self: *Tokenizer, ch: ?u21) !void {
 // clear the fields.
 pub fn sealAttr(self: *Tokenizer) !void {
     if (self.current_attribute_name.isEmpty()) return;
+    const name_slice = self.current_attribute_name.slice();
+    const lc_attr = try LocalName.fromSlice(name_slice);
     const dup = for (self.current_tag_attrs.items) |attr| {
-        if (attr.name.cmp(&self.current_attribute_name)) break true;
+        if (attr.name.eql(lc_attr)) break true;
     } else false;
     if (dup) {
         self.handleError(.DuplicateAttribute);
@@ -191,8 +196,14 @@ pub fn sealAttr(self: *Tokenizer) !void {
         self.current_attribute_name.clear();
         self.current_attribute_value.clear();
     } else {
+        const final_name = if (LocalNameMap.get(name_slice)) |tag|
+            LocalName{ .static = tag }
+        else
+            LocalName{ .dynamic = self.current_attribute_name.take() };
+
+        self.current_attribute_name.clear();
         try self.current_tag_attrs.append(self.allocator, .{
-            .name = self.current_attribute_name.take(),
+            .name = final_name,
             .value = self.current_attribute_value.take(),
         });
     }

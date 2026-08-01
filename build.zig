@@ -1,19 +1,10 @@
 const std = @import("std");
 const Generator = @import("src/build/Generator.zig");
+const AnonItem = @import("src/build/AnonItem.zig");
+const DependItem = @import("src/build/DependItem.zig");
 
 const test_targets = [_]std.Target.Query{
     .{}, // native
-};
-
-const AnonItem = struct {
-    name: []const u8,
-    path: std.Build.LazyPath,
-};
-
-const DependItem = struct {
-    name: []const u8,
-    dep: *std.Build.Dependency,
-    module: []const u8,
 };
 
 pub fn build(b: *std.Build) !void {
@@ -38,10 +29,24 @@ pub fn build(b: *std.Build) !void {
     try depends.append(b.allocator, .{ .name = "strale", .dep = strale, .module = "strale" });
 
     // generate
-    const named_ref = Generator.generate(b, "gen_named_ref", "./src/gen/named_ref.zig", &.{"./res/json/named_char_refs.json"}, "gen_named_ref.zig");
-    const local_name = Generator.generate(b, "gen_local_name", "./src/gen/local_name.zig", &.{"./res/json/local_names.json"}, "gen_local_name.zig");
-    try anon_imports.append(b.allocator, .{ .name = "named_ref", .path = named_ref });
-    try anon_imports.append(b.allocator, .{ .name = "local_name", .path = local_name });
+    const named_ref_module = Generator.generate(
+        b,
+        "gen_named_ref",
+        "./src/gen/named_ref.zig",
+        &.{"./res/json/named_char_refs.json"},
+        "gen_named_ref.zig",
+        depends,
+    );
+    const local_name_module = Generator.generate(
+        b,
+        "gen_local_name",
+        "./src/gen/local_name.zig",
+        &.{"./res/json/local_names.json"},
+        "gen_local_name.zig",
+        depends,
+    );
+    try anon_imports.append(b.allocator, .{ .name = "named_ref", .module = named_ref_module });
+    try anon_imports.append(b.allocator, .{ .name = "local_name", .module = local_name_module });
 
     // executable
     const exe_module = b.createModule(.{
@@ -78,9 +83,7 @@ fn moduleAddCommon(
     options: *std.Build.Step.Options,
 ) void {
     for (anon_imports.items) |an| {
-        m.addAnonymousImport(an.name, .{
-            .root_source_file = an.path,
-        });
+        m.addImport(an.name, an.module);
     }
     for (depends.items) |depend| {
         m.addImport(depend.name, depend.dep.module(depend.module));

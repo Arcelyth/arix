@@ -16,6 +16,7 @@ const StraleUtf8Global = strale.StraleUtf8Global;
 const BufferDeque = strale.BufferDeque;
 const testing = std.testing;
 const config = @import("config");
+const LocalName = @import("local_name").LocalName;
 
 pub fn printFailedMessage(path: []const u8, idx: usize, desc: []const u8, init_state: []const u8) void {
     std.debug.print(
@@ -47,7 +48,6 @@ pub fn parseJsonToken(
         var attrs: std.ArrayList(Attribute) = .empty;
         errdefer {
             for (attrs.items) |*attr| {
-                attr.name.deinit();
                 attr.value.deinit();
             }
             attrs.deinit(allocator);
@@ -58,7 +58,7 @@ pub fn parseJsonToken(
             if (entry.value_ptr.* != .string) return error.InvalidJsonToken;
 
             try attrs.append(allocator, .{
-                .name = try StraleUtf8Global.initSlice(entry.key_ptr.*),
+                .name = try LocalName.fromSlice(entry.key_ptr.*),
                 .value = try StraleUtf8Global.initSlice(entry.value_ptr.string),
             });
         }
@@ -71,7 +71,7 @@ pub fn parseJsonToken(
         return .{
             .TagToken = .{
                 .kind = .StartTag,
-                .name = try StraleUtf8Global.initSlice(tag_name),
+                .name = try LocalName.fromSlice(tag_name),
                 .self_closing = self_closing,
                 .attrs = attrs,
             },
@@ -85,7 +85,7 @@ pub fn parseJsonToken(
         return .{
             .TagToken = .{
                 .kind = .EndTag,
-                .name = try StraleUtf8Global.initSlice(tag_name),
+                .name = try LocalName.fromSlice(tag_name),
                 .self_closing = false,
                 .attrs = .empty,
             },

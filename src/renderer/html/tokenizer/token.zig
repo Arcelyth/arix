@@ -2,11 +2,13 @@ const std = @import("std");
 const testing = std.testing;
 const u8_buffer = @import("../../utils/u8_buffer.zig");
 const strale = @import("strale");
+const LocalName = @import("local_name").LocalName;
 const StraleUtf8Global = strale.StraleUtf8Global;
 const BufferDeque = strale.BufferDeque;
 
 pub const Attribute = struct {
-    name: StraleUtf8Global,
+//    name: StraleUtf8Global,
+    name: LocalName,
     value: StraleUtf8Global,
 
     pub fn deinit(self: *Attribute) void {
@@ -15,7 +17,7 @@ pub const Attribute = struct {
     }
 
     pub fn format(self: Attribute, writer: anytype) !void {
-        try writer.print("Attribute's name: {s}, value: {s}\n", .{ self.name.slice(), self.value.slice() });
+        try writer.print("Attribute's name: {f}, value: {s}\n", .{ self.name, self.value.slice() });
     }
 };
 
@@ -54,7 +56,8 @@ pub const TagKind = enum {
 
 pub const Tag = struct {
     kind: TagKind,
-    name: StraleUtf8Global,
+//    name: StraleUtf8Global,
+    name: LocalName,
     self_closing: bool,
     attrs: std.ArrayList(Attribute),
 };
@@ -147,10 +150,10 @@ pub const Token = union(TokenTag) {
 
             .TagToken => |tag| {
                 try writer.print(
-                    "TagToken{{ kind={s}, name=\"{s}\", self_closing={}, attrs=[",
+                    "TagToken{{ kind={s}, name=\"{f}\", self_closing={}, attrs=[",
                     .{
                         @tagName(tag.kind),
-                        tag.name.slice(),
+                        tag.name,
                         tag.self_closing,
                     },
                 );
@@ -161,9 +164,9 @@ pub const Token = union(TokenTag) {
                     }
 
                     try writer.print(
-                        "{{name=\"{s}\", value=\"{s}\"}}",
+                        "{{name=\"{f}\", value=\"{s}\"}}",
                         .{
-                            attr.name.slice(),
+                            attr.name,
                             attr.value.slice(),
                         },
                     );
@@ -217,7 +220,7 @@ pub fn expectToken(expected: Token, actual: Token) !void {
         .TagToken => |exp_tag| {
             const act_tag = actual.TagToken;
             try testing.expectEqual(exp_tag.kind, act_tag.kind);
-            try testing.expectEqualSlices(u8, exp_tag.name.slice(), act_tag.name.slice());
+            try testing.expect(exp_tag.name.eql(act_tag.name));
 
             // Ignore end tag's attributes and self_closing.
             if (exp_tag.kind == .EndTag) return;
@@ -225,7 +228,7 @@ pub fn expectToken(expected: Token, actual: Token) !void {
             try testing.expectEqual(exp_tag.self_closing, act_tag.self_closing);
             try testing.expectEqual(exp_tag.attrs.items.len, act_tag.attrs.items.len);
             for (exp_tag.attrs.items, act_tag.attrs.items) |exp_attr, act_attr| {
-                try testing.expectEqualSlices(u8, exp_attr.name.slice(), act_attr.name.slice());
+                try testing.expect(exp_attr.name.eql(act_attr.name));
                 try testing.expectEqualSlices(u8, exp_attr.value.slice(), act_attr.value.slice());
             }
         },

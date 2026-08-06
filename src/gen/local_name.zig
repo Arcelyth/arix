@@ -98,6 +98,10 @@ pub fn main(init: std.process.Init) !void {
         \\        }
         \\    }
         \\
+        \\    pub inline fn fromTag(tag: LocalTag) LocalName {
+        \\        return .{.static = tag}; 
+        \\    }
+        \\
         \\    pub inline fn fromSlice(slice: []const u8) !LocalName {
         \\        if (LocalNameMap.get(slice)) |tag| {
         \\            return .{ .static = tag };

@@ -5,6 +5,9 @@ const Token = @import("../tokenizer/token.zig").Token;
 const Node = @import("../../dom/Node.zig");
 const Element = @import("../../dom/Element.zig");
 const ns = @import("../../dom/namespace.zig");
+const ln = @import("local_name");
+const LocalName = ln.LocalName;
+const LocalTag = ln.LocalTag;
 
 const InsertionMode = enum {
     InitialMode,
@@ -30,6 +33,11 @@ const InsertionMode = enum {
     AfterAfterFramesetMode,
 };
 
+const InsertionLocation = union { last_child: *Element, before_child: *Element, parent_before_child: struct {
+    parent: *Element,
+    before_child: *Element,
+} };
+
 const ScriptingMode = enum {
     Normal,
     Disabled,
@@ -37,7 +45,8 @@ const ScriptingMode = enum {
     Fragment,
 };
 
-open_elements: std.ArrayList(Element),
+allocator: std.mem.Allocator,
+open_elements: std.ArrayList(*Element),
 // InsertionMode
 insert_mode: InsertionMode,
 // Original Insertion Mode
@@ -49,11 +58,12 @@ scripting_mode: ScriptingMode,
 foster_parenting: bool,
 frameset_ok: bool,
 
-pub fn init() TreeBuilder {
+pub fn init(alloc: std.mem.Allocator) TreeBuilder {
     return TreeBuilder{
+        .allocator = alloc,
         .open_elements = .empty,
-        .insert_mode = .Initial,
-        .orig_insert_mode = .Initial,
+        .insert_mode = .InitialMode,
+        .orig_insert_mode = .InitialMode,
         .temp_insert_modes = .empty,
         .fragment_case = false,
         .scripting_mode = .Normal,
@@ -62,7 +72,11 @@ pub fn init() TreeBuilder {
     };
 }
 
-// Implement TokenIngester.
+pub fn deinit(self: *TreeBuilder) void {
+    self.open_elements.deinit(self.allocator);
+}
+
+/// Implement TokenIngester.
 pub fn handleToken(self: *TreeBuilder, tk: Token) void {
     // Dispatch token.
     if (self.isForeign(tk)) {
@@ -82,7 +96,7 @@ pub fn isForeign(self: TreeBuilder, tk: Token) bool {
     if (cur_el.isMathMLTextIntegrationPoint()) {
         switch (tk) {
             .TagToken => |tag| {
-                if (tag.kind == .StartTag and !tag.name.cmp("mglyph") and !tag.name.cmp("malignmark")) return false;
+                if (tag.kind == .StartTag and !tag.name.eql(.mglyph) and !tag.name.eql(.malignmark)) return false;
             },
             .CharacterToken => return false,
             else => {},
@@ -92,7 +106,7 @@ pub fn isForeign(self: TreeBuilder, tk: Token) bool {
     if (cur_el.isMathMLAnnotationXml()) {
         switch (tk) {
             .TagToken => |tag| {
-                if (tag.kind == .StartTag and tag.name.cmp("svg")) return false;
+                if (tag.kind == .StartTag and tag.name.eql(.svg)) return false;
             },
             else => {},
         }
@@ -120,6 +134,81 @@ pub fn processTokenForeign(self: TreeBuilder, tk: Token) void {
     _ = tk;
 }
 
-pub fn adjustedCurrentNode(self: TreeBuilder) *Node {
-    if (self.open_elements.last()) |node| return node else @panic("Stack of open elements is empty.");
+pub fn adjustedCurrentNode(self: *TreeBuilder) *Node {
+    if (self.open_elements.getLastOrNull()) |*node| return &node else @panic("Stack of open elements is empty.");
+}
+
+pub fn appropriatePlaceForInsertion(self: *TreeBuilder, override_target: ?*Element) InsertionLocation {
+    const target = override_target orelse self.currentNode();
+    if (self.foster_parenting and target.in(&.{ .table, .tbody, .tfoot, .thead, .tr })) {
+        const open_elements = self.open_elements;
+        var last_table: ?*Element = null;
+        var last_table_pos: usize = 0;
+        var idx = open_elements.items.len;
+        blk: while (idx > 0) {
+            idx -= 1;
+            if (open_elements.items[idx].local_name.is(.table)) {
+                last_table = self.open_elements.items[idx];
+                last_table_pos = idx;
+                break :blk;
+            }
+            if (open_elements.items[idx].local_name.is(.template)) {
+                return .{ .last_child = self.open_elements.items[idx] };
+            }
+        }
+
+        if (last_table) |table| {
+            if (table.asNode().parent) |p|
+                return .{ .parent_before_child = .{
+                    .parent = p.downcast(Element),
+                    .before_child = table,
+                } }
+            else if (last_table_pos > 0)
+                return .{ .last_child = self.open_elements.items[last_table_pos - 1] }
+            else
+                @panic("This should never happen: last_table_pos <= 0");
+        } else {
+            return .{ .last_child = self.htmlElement() orelse target };
+        }
+    }
+    return .{ .last_child = target };
+}
+
+pub fn createElementForToken(self: *TreeBuilder) void {
+    _ = self;
+}
+
+pub fn adjustedInsertionLocation(self: *TreeBuilder) void {
+    _ = self;
+}
+
+pub fn insertElementAtAdjustedInsertionLocation(self: *TreeBuilder) void {
+    _ = self;
+}
+
+pub fn insertForeignElement(self: *TreeBuilder) void {
+    _ = self;
+}
+
+pub fn insertHtmlElement(self: *TreeBuilder) void {
+    _ = self;
+}
+
+pub inline fn currentNode(self: *TreeBuilder) *Element {
+    if (self.open_elements.items.len == 0) @panic("Empty open elements stack.");
+    return self.open_elements.items[self.open_elements.items.len - 1];
+}
+
+pub fn lastStackElement(self: *TreeBuilder, elem: LocalTag) ?Element {
+    for (self.open_elements.items..0) |idx| {
+        if (self.open_elements.items[idx].local_name.is(elem)) {
+            return self.open_elements.items[idx];
+        }
+    }
+    return null;
+}
+
+pub inline fn htmlElement(self: *TreeBuilder) ?*Element {
+    if (self.open_elements.items.len == 0) return null;
+    return self.open_elements.items[0];
 }

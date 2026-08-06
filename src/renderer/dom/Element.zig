@@ -4,11 +4,35 @@ const Namespace = @import("namespace.zig").Namespace;
 const Node = @import("Node.zig");
 const std = @import("std");
 const token = @import("../html/tokenizer/token.zig");
-const LocalName = @import("local_name").LocalName;
+const ln = @import("local_name");
+const LocalName = ln.LocalName;
+const LocalTag = ln.LocalTag;
 
 node: Node,
 ns: Namespace,
 local_name: LocalName,
+
+pub const dom_type = .DOM_Element;
+
+pub fn init(ns: Namespace, local: LocalName) Element {
+    return .{
+        .node = Node.init(.DOM_Element),
+        .ns = ns,
+        .local_name = local,
+    };
+}
+
+pub inline fn asNode(self: *Element) *Node {
+    return &self.node;
+}
+
+/// Check if the local name of the element is included in the given elements.
+pub fn in(self: Element, elems: []const LocalTag) bool {
+    for (elems) |elem| {
+        if (self.local_name.is(elem)) return true;
+    }
+    return false;
+}
 
 pub inline fn isMathMLTextIntegrationPoint(self: Element) bool {
     if (self.ns != .NS_MathML) return false;

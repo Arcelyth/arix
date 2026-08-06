@@ -40,5 +40,3 @@ test "dynamic equality" {
 
     try testing.expect(a.eql(b));
 }
-
-

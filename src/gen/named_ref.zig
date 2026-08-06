@@ -23,7 +23,6 @@ const TempTrieNode = struct {
     }
 };
 
-
 /// Arguments:
 /// - args[1]: input JSON file containing named character references.
 /// - args[2]: output Zig source file.

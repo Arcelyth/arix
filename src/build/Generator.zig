@@ -1,4 +1,4 @@
-/// Generator will use a Zig program in 'src/gen' folder to 
+/// Generator will use a Zig program in 'src/gen' folder to
 /// generate a Zig file and then exposes a module.
 const Generator = @This();
 
@@ -12,7 +12,7 @@ pub fn generate(
     files: []const []const u8,
     output: []const u8,
     depends: std.ArrayList(DependItem),
-) *std.Build.Module{
+) *std.Build.Module {
     const gen_exe = b.addExecutable(.{
         .name = name,
         .root_module = b.createModule(.{

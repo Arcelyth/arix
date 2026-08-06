@@ -5,25 +5,33 @@ const Node = @import("Node.zig");
 const std = @import("std");
 const token = @import("../html/tokenizer/token.zig");
 const ln = @import("local_name");
+const Document = @import("Document.zig");
+const CustomElementRegistry = @import("CustomElementRegistry.zig");
 const LocalName = ln.LocalName;
 const LocalTag = ln.LocalTag;
 
 node: Node,
 ns: Namespace,
 local_name: LocalName,
+custom_element_registry: ?*CustomElementRegistry,
 
 pub const dom_type = .DOM_Element;
 
-pub fn init(ns: Namespace, local: LocalName) Element {
+pub fn init(ns: Namespace, local: LocalName, document: *Document) Element {
     return .{
-        .node = Node.init(.DOM_Element),
+        .node = Node.init(.DOM_Element, document),
         .ns = ns,
         .local_name = local,
+        .custom_element_registry = null,
     };
 }
 
 pub inline fn asNode(self: *Element) *Node {
     return &self.node;
+}
+
+pub fn fromNode(node: *Node) *Element {
+    return @fieldParentPtr("node", node);
 }
 
 /// Check if the local name of the element is included in the given elements.

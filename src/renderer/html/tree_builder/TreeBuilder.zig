@@ -4,6 +4,7 @@ const std = @import("std");
 const Token = @import("../tokenizer/token.zig").Token;
 const Node = @import("../../dom/Node.zig");
 const Element = @import("../../dom/Element.zig");
+const CustomElementRegistry = @import("../../dom/CustomElementRegistry.zig");
 const ns = @import("../../dom/namespace.zig");
 const ln = @import("local_name");
 const LocalName = ln.LocalName;
@@ -138,6 +139,7 @@ pub fn adjustedCurrentNode(self: *TreeBuilder) *Node {
     if (self.open_elements.getLastOrNull()) |*node| return &node else @panic("Stack of open elements is empty.");
 }
 
+// https://html.spec.whatwg.org/#appropriate-place-for-inserting-a-node
 pub fn appropriatePlaceForInsertion(self: *TreeBuilder, override_target: ?*Element) InsertionLocation {
     const target = override_target orelse self.currentNode();
     if (self.foster_parenting and target.in(&.{ .table, .tbody, .tfoot, .thead, .tr })) {
@@ -174,7 +176,19 @@ pub fn appropriatePlaceForInsertion(self: *TreeBuilder, override_target: ?*Eleme
     return .{ .last_child = target };
 }
 
-pub fn createElementForToken(self: *TreeBuilder) void {
+// https://html.spec.whatwg.org/#create-an-element-for-the-token
+pub fn createElementForToken(self: *TreeBuilder, tk: Token, namespace: ?ns.Namespace, intended_parent: *Node) void {
+    // Ignore the Speculative Parser and start on step 3.
+    const document = intended_parent.node_doc;
+    const local = tk.local_name;
+    const is = switch (tk) {
+        .TagToken => |tag| tag.getAttrVal("is"),
+        else => null,
+    };
+    const registry = lookingUpCustomElementRegistry(intended_parent);
+    const definition = lookingUpCustomElementDefinition(registry, namespace, local, is);
+    _ = document;
+    _ = definition;
     _ = self;
 }
 
@@ -211,4 +225,30 @@ pub fn lastStackElement(self: *TreeBuilder, elem: LocalTag) ?Element {
 pub inline fn htmlElement(self: *TreeBuilder) ?*Element {
     if (self.open_elements.items.len == 0) return null;
     return self.open_elements.items[0];
+}
+
+// https://html.spec.whatwg.org/#look-up-a-custom-element-registry
+pub fn lookingUpCustomElementRegistry(intended_parent: *Node) *CustomElementRegistry {
+    switch (intended_parent.type_id) {
+        .DOM_Element => intended_parent.downcast(.DOM_Element).custom_element_registry,
+        .DOM_Document => intended_parent.downcast(.DOM_Document).custom_element_registry,
+        .DOM_ShadowRoot => intended_parent.downcast(.DOM_ShadowRoot).custom_element_registry,
+        else => null,
+    }
+}
+
+// https://html.spec.whatwg.org/#look-up-a-custom-element-definition
+pub fn lookingUpCustomElementDefinition(registry: ?*CustomElementRegistry, namespace: ?ns.Namespace, local: LocalName, is: ?LocalName) void {
+    if (registry) |reg| {
+        if (namespace) |n| {
+            if (n != .NS_Html) return null;
+            //  TODO
+            _ = is;
+            _ = local;
+            _ = reg;
+        } else return null;
+    } else {
+        return null;
+    }
+    return null;
 }

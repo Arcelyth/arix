@@ -15,6 +15,9 @@ pub const DomTypeId = enum {
     DOM_HTMLDivElement,
     DOM_HTMLTableElement,
 
+    // Document Fragment
+    DOM_ShadowRoot,
+
     // SVG
     DOM_SVGElement,
 };

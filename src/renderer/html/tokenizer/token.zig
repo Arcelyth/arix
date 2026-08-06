@@ -76,6 +76,16 @@ pub const Tag = struct {
 
         return false;
     }
+
+    pub fn getAttrVal(self: Tag, name: []const u8) ?[]const u8 {
+        const target = LocalName.fromSlice(name);
+
+        for (self.attrs.items) |attr| {
+            if (attr.name.eql(target)) return attr.value.slice();
+        }
+
+        return null;
+    }
 };
 
 pub const ProcessingInstruction = struct {

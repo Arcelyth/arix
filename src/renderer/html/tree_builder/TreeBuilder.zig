@@ -235,6 +235,7 @@ pub fn createElementForToken(self: *TreeBuilder, tk: Token, namespace: ?ns.Names
     return element;
 }
 
+// https://html.spec.whatwg.org/multipage/parsing.html#insert-an-element-at-the-adjusted-insertion-location
 pub fn adjustedInsertionLocation(self: *TreeBuilder, pos: ?*InsertionLocation) InsertionLocation {
     const override_target = if (pos) |p| p.getElement() else null;
     const adjusted_loc = self.appropriatePlaceForInsertion(override_target);
@@ -247,6 +248,7 @@ pub fn adjustedInsertionLocation(self: *TreeBuilder, pos: ?*InsertionLocation) I
     return adjusted_loc;
 }
 
+// https://html.spec.whatwg.org/multipage/parsing.html#insert-an-element-at-the-adjusted-insertion-location
 pub fn insertElementAtAdjustedInsertionLocation(self: *TreeBuilder, el: *Element) void {
     const insertion_loc = self.adjustedInsertionLocation(null);
     // Check if it's possible to insert element at insertion_loc.
@@ -256,8 +258,18 @@ pub fn insertElementAtAdjustedInsertionLocation(self: *TreeBuilder, el: *Element
     if (true) @panic("[TODO] Step 5: need parser.");
 }
 
-pub fn insertForeignElement(self: *TreeBuilder) void {
-    _ = self;
+// https://html.spec.whatwg.org/multipage/parsing.html#insert-a-foreign-element
+pub fn insertForeignElement(self: *TreeBuilder, tk: Token, namespace: ns.Namespace, only_add_to_element_stack: bool) *Element {
+    const adjusted_loc = self.appropriatePlaceForInsertion(null);
+    const element = self.createElementForToken(tk, namespace, adjusted_loc.getElement());
+    if (!only_add_to_element_stack) self.insertElementAtAdjustedInsertionLocation(element);
+    self.open_elements.append(self.allocator, element);
+    return element;
+}
+
+// https://html.spec.whatwg.org/multipage/parsing.html#insert-an-html-element
+pub fn insertHtmlElemnt(self: *TreeBuilder, tk: Token) void {
+    self.insertForeignElement(tk, .NS_Html, false);
 }
 
 pub inline fn currentNode(self: *TreeBuilder) *Element {

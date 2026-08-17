@@ -9,11 +9,11 @@ const LocalName = ln.LocalName;
 test "appropriatePlaceForInsertion - normal insertion without foster parenting" {
     const allocator = testing.allocator;
     var doc = Document.init();
-    var builder = TreeBuilder.init(allocator);
+    var builder = TreeBuilder.init(allocator, false);
     defer builder.deinit();
 
-    var html = Element.init(.NS_Html, LocalName.fromTag(.html), &doc);
-    var div = Element.init(.NS_Html, LocalName.fromTag(.div), &doc);
+    var html = Element.init(allocator, .NS_Html, LocalName.fromTag(.html), &doc);
+    var div = Element.init(allocator, .NS_Html, LocalName.fromTag(.div), &doc);
 
     try builder.open_elements.append(allocator, &html);
     try builder.open_elements.append(allocator, &div);

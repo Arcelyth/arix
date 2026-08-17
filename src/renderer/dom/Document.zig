@@ -11,6 +11,8 @@ const LocalTag = ln.LocalTag;
 
 node: Node,
 custom_element_registry: ?*CustomElementRegistry,
+// Stands for throw-on-dynamic-markup-insertion counter.
+todmi_counter: usize,
 
 pub const dom_type = .DOM_Document;
 
@@ -18,6 +20,7 @@ pub fn init() Document {
     return .{
         .node = Node.init(.DOM_Document, null),
         .custom_element_registry = null,
+        .todmi_counter = 0,
     };
 }
 

@@ -1,10 +1,14 @@
 const TreeBuilder = @This();
 
 const std = @import("std");
-const Token = @import("../tokenizer/token.zig").Token;
+const token_ = @import("../tokenizer/token.zig");
+const Token = token_.Token;
+const Attribute = token_.Attribute;
 const Node = @import("../../dom/Node.zig");
 const Element = @import("../../dom/Element.zig");
+const Document = @import("../../dom/Document.zig");
 const CustomElementRegistry = @import("../../dom/CustomElementRegistry.zig");
+const CustomElementDefinition = @import("../../dom/CustomElementDefinition.zig");
 const ns = @import("../../dom/namespace.zig");
 const ln = @import("local_name");
 const LocalName = ln.LocalName;
@@ -54,19 +58,21 @@ insert_mode: InsertionMode,
 orig_insert_mode: InsertionMode,
 // Template Insertion Mode
 temp_insert_modes: std.ArrayList(InsertionMode),
+// Whether the parser was created as part of the 
+// HTML fragment parsing algorithm.
 fragment_case: bool,
 scripting_mode: ScriptingMode,
 foster_parenting: bool,
 frameset_ok: bool,
 
-pub fn init(alloc: std.mem.Allocator) TreeBuilder {
+pub fn init(alloc: std.mem.Allocator, fragment_case: bool) TreeBuilder {
     return TreeBuilder{
         .allocator = alloc,
         .open_elements = .empty,
         .insert_mode = .InitialMode,
         .orig_insert_mode = .InitialMode,
         .temp_insert_modes = .empty,
-        .fragment_case = false,
+        .fragment_case = fragment_case,
         .scripting_mode = .Normal,
         .foster_parenting = false,
         .frameset_ok = false,
@@ -181,15 +187,42 @@ pub fn createElementForToken(self: *TreeBuilder, tk: Token, namespace: ?ns.Names
     // Ignore the Speculative Parser and start on step 3.
     const document = intended_parent.node_doc;
     const local = tk.local_name;
+    var token_attrs: ?std.ArrayList(Attribute) = null;
     const is = switch (tk) {
-        .TagToken => |tag| tag.getAttrVal("is"),
+        .TagToken => |tag| {
+            token_attrs = tag.attr;
+            tag.getAttrVal("is");
+        },
         else => null,
     };
     const registry = lookingUpCustomElementRegistry(intended_parent);
     const definition = lookingUpCustomElementDefinition(registry, namespace, local, is);
-    _ = document;
-    _ = definition;
-    _ = self;
+    // Whether will execute script.
+    const will_exec_script = if (definition != null and !self.fragment_case) blk: {
+        break :blk true; 
+    } else false;
+
+    // Step 9.
+    if (will_exec_script) {
+        document.*.todmi_counter += 1;
+        @panic("[TODO]: This part needs JS runtime");
+    }
+    const element = self.createElement(document, local, namespace, null, is, will_exec_script, registry);
+    if (token_attrs) |ta| element.appendAttrs(ta);
+
+    // Step 12.
+    if (will_exec_script) {
+        document.*.todmi_counter += 1;
+        @panic("[TODO]: ");
+    }
+    if (!element.isXmlnsXLinkValid()) @panic("[TODO]: Handle parser error.");
+    const is_custom = element.isFormAssociatedCustomElement();
+    if (element.isResettable() and !is_custom) {
+        @panic("[TODO]: Reset algorithm");
+    }
+    if (element.isFormAssociatedElement() and !is_custom) {
+        @panic("[TODO]:");
+    }
 }
 
 pub fn adjustedInsertionLocation(self: *TreeBuilder) void {
@@ -238,17 +271,26 @@ pub fn lookingUpCustomElementRegistry(intended_parent: *Node) *CustomElementRegi
 }
 
 // https://html.spec.whatwg.org/#look-up-a-custom-element-definition
-pub fn lookingUpCustomElementDefinition(registry: ?*CustomElementRegistry, namespace: ?ns.Namespace, local: LocalName, is: ?LocalName) void {
+pub fn lookingUpCustomElementDefinition(registry: ?*CustomElementRegistry, namespace: ?ns.Namespace, local: LocalName, is: ?LocalName) ?CustomElementDefinition {
     if (registry) |reg| {
         if (namespace) |n| {
             if (n != .NS_Html) return null;
-            //  TODO
-            _ = is;
-            _ = local;
-            _ = reg;
+            if (reg.lookup(local, local)) |res| return res else if (is) |is_| {
+                if (reg.lookup(is_, local)) |res| return res;
+            }
         } else return null;
-    } else {
-        return null;
-    }
+    } 
     return null;
+}
+
+pub fn createElement(self: *TreeBuilder, document: *Document, local: LocalName, namespace: ?ns.Namespace, prefix: ?[]const u8, is: ?LocalName, sce: bool, registry: ?*CustomElementRegistry) *Element {
+    _ = self; 
+    _ = document;
+    _ = local;
+    _ = namespace;
+    _ = prefix;
+    _ = is;
+    _ = sce;
+    _ = registry;
+    @panic("[TODO]: ");
 }

@@ -8,16 +8,21 @@ const StraleUtf8Global = strale.StraleUtf8Global;
 
 // namespace
 ns: ?Namespace,
-// ns_prefix: 
-local_name: LocalName, 
+prefix: ?LocalName,
+local_name: LocalName,
 value: StraleUtf8Global,
 element: ?*Element,
 
 pub fn init(local: LocalName) Attr {
     return .{
         .ns = null,
+        .prefix = null,
         .local_name = local,
         .value = StraleUtf8Global.init(),
         .element = null,
     };
+}
+
+pub fn deinit(self: *Attr) void {
+    self.value.deinit();
 }

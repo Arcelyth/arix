@@ -1,8 +1,6 @@
 const Element = @This();
 
-const namespace_ = @import("namespace.zig");
-const Namespace = namespace_.Namespace;
-const namespaceToStr = namespace_.namespaceToStr;
+const Namespace = @import("namespace.zig").Namespace;
 const Node = @import("Node.zig");
 const std = @import("std");
 const token = @import("../html/tokenizer/token.zig");
@@ -115,8 +113,8 @@ pub fn appendAttrs(self: *Element, attrs: []Attribute) !void {
 
 pub fn isXmlnsXLinkValid(self: *const Element) bool {
     for (self.attrs.data) |attr| {
-        if (attr.namespace == .NS_Xmlns and attr.local_name.is(.xmlns) and std.mem.eql(u8, attr.value.slice(), namespaceToStr(.NS_Xmlns))) return false;
-        if (attr.namespace == .NS_Xmlns and attr.local_name.is(.xlink) and std.mem.eql(u8, attr.value.slice(), namespaceToStr(.NS_XLink))) return false;
+        if (attr.namespace == .NS_Xmlns and attr.local_name.is(.xmlns) and std.mem.eql(u8, attr.value.slice(), Namespace.Xmlns)) return false;
+        if (attr.namespace == .NS_Xmlns and attr.local_name.is(.xlink) and std.mem.eql(u8, attr.value.slice(), Namespace.XLink)) return false;
     }
     return true;
 }

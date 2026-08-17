@@ -8,4 +8,3 @@ pub fn init(el: ?*Element) NamedNodeMap {
         .owner = el,
     };
 }
-

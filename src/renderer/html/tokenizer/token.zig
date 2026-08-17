@@ -5,6 +5,9 @@ const strale = @import("strale");
 const LocalName = @import("local_name").LocalName;
 const StraleUtf8Global = strale.StraleUtf8Global;
 const BufferDeque = strale.BufferDeque;
+const Namespace = @import("../../dom/namespace.zig").Namespace;
+const Attr = @import("../../dom/Attr.zig");
+const Attrs = @import("../../dom/Attrs.zig");
 
 pub const Attribute = struct {
     name: LocalName,
@@ -85,6 +88,60 @@ pub const Tag = struct {
         }
 
         return null;
+    }
+
+    // https://html.spec.whatwg.org/multipage/parsing.html#adjust-mathml-attributes
+    pub fn adjustMathMLAttributes(self: *Tag, allocator: std.mem.Allocator) Attrs {
+        const attrs = Attrs.init(allocator);
+        for (self.attrs.items) |attr| {
+            var local = attr.name;
+            if (local.is(.definitionurl)) {
+                local.deinit();
+                local = LocalName.fromTag(.definitionURL);
+            }
+            attrs.append(.{
+                .ns = null,
+                .local_name = local,
+                .value = attr.value,
+                .element = null,
+            });
+        }
+        return attrs;
+    }
+
+    // https://html.spec.whatwg.org/multipage/parsing.html#adjust-svg-attributes
+    pub fn adjustSVGAttributes(self: *Tag, allocator: std.mem.Allocator) Attrs {
+        const attrs = Attrs.init(allocator);
+        for (self.attrs.items) |attr| {
+            const attr_slice = attr.name.slice();
+            if (svg_attribute_map.get(attr_slice)) |name| {
+                attrs.append(.{
+                    .ns = null,
+                    .local_name = name,
+                    .value = attr.value,
+                    .element = null,
+                });
+            }
+        }
+        return attrs;
+    }
+
+    // https://html.spec.whatwg.org/multipage/parsing.html#adjust-foreign-attributes
+    pub fn adjustForeignAttributes(self: *Tag, allocator: std.mem.Allocator) Attrs {
+        const attrs = Attrs.init(allocator);
+        for (self.attrs.items) |attr| {
+            const raw_name = attr.name.slice();
+            if (foreign_attribute_map.get(raw_name)) |entry| {
+                attrs.append(.{
+                    .ns = entry.namespace,
+                    .prefix = entry.prefix orelse null,
+                    .local_name = LocalName.fromSlice(entry.local_name),
+                    .value = attr.value,
+                    .element = null,
+                });
+            }
+        }
+        return attrs;
     }
 };
 
@@ -274,3 +331,84 @@ pub fn expectToken(expected: Token, actual: Token) !void {
         },
     }
 }
+
+const svg_attribute_map = std.StaticStringMap([]const u8).initComptime(.{
+    .{ "attributename", "attributeName" },
+    .{ "attributetype", "attributeType" },
+    .{ "basefrequency", "baseFrequency" },
+    .{ "baseprofile", "baseProfile" },
+    .{ "calcmode", "calcMode" },
+    .{ "clippathunits", "clipPathUnits" },
+    .{ "diffuseconstant", "diffuseConstant" },
+    .{ "edgemode", "edgeMode" },
+    .{ "filterunits", "filterUnits" },
+    .{ "glyphref", "glyphRef" },
+    .{ "gradienttransform", "gradientTransform" },
+    .{ "gradientunits", "gradientUnits" },
+    .{ "kernelmatrix", "kernelMatrix" },
+    .{ "kernelunitlength", "kernelUnitLength" },
+    .{ "keypoints", "keyPoints" },
+    .{ "keysplines", "keySplines" },
+    .{ "keytimes", "keyTimes" },
+    .{ "lengthadjust", "lengthAdjust" },
+    .{ "limitingconeangle", "limitingConeAngle" },
+    .{ "markerheight", "markerHeight" },
+    .{ "markerunits", "markerUnits" },
+    .{ "markerwidth", "markerWidth" },
+    .{ "maskcontentunits", "maskContentUnits" },
+    .{ "maskunits", "maskUnits" },
+    .{ "numoctaves", "numOctaves" },
+    .{ "pathlength", "pathLength" },
+    .{ "patterncontentunits", "patternContentUnits" },
+    .{ "patterntransform", "patternTransform" },
+    .{ "patternunits", "patternUnits" },
+    .{ "pointsatx", "pointsAtX" },
+    .{ "pointsaty", "pointsAtY" },
+    .{ "pointsatz", "pointsAtZ" },
+    .{ "preservealpha", "preserveAlpha" },
+    .{ "preserveaspectratio", "preserveAspectRatio" },
+    .{ "primitiveunits", "primitiveUnits" },
+    .{ "refx", "refX" },
+    .{ "refy", "refY" },
+    .{ "repeatcount", "repeatCount" },
+    .{ "repeatdur", "repeatDur" },
+    .{ "requiredextensions", "requiredExtensions" },
+    .{ "requiredfeatures", "requiredFeatures" },
+    .{ "specularconstant", "specularConstant" },
+    .{ "specularexponent", "specularExponent" },
+    .{ "spreadmethod", "spreadMethod" },
+    .{ "startoffset", "startOffset" },
+    .{ "stddeviation", "stdDeviation" },
+    .{ "stitchtiles", "stitchTiles" },
+    .{ "surfacescale", "surfaceScale" },
+    .{ "systemlanguage", "systemLanguage" },
+    .{ "tablevalues", "tableValues" },
+    .{ "targetx", "targetX" },
+    .{ "targety", "targetY" },
+    .{ "textlength", "textLength" },
+    .{ "viewbox", "viewBox" },
+    .{ "viewtarget", "viewTarget" },
+    .{ "xchannelselector", "xChannelSelector" },
+    .{ "ychannelselector", "yChannelSelector" },
+    .{ "zoomandpan", "zoomAndPan" },
+});
+
+pub const ForeignAttrEntry = struct {
+    prefix: ?LocalName,
+    local_name: LocalName,
+    namespace: Namespace,
+};
+
+const foreign_attribute_map = std.StaticStringMap(ForeignAttrEntry).initComptime(.{
+    .{ "xlink:actuate", .{ .prefix = LocalName.fromSlice("xlink"), .local_name = LocalName.fromSlice("actuate"), .namespace = .NS_XLink } },
+    .{ "xlink:arcrole", .{ .prefix = LocalName.fromSlice("xlink"), .local_name = LocalName.fromSlice("arcrole"), .namespace = .NS_XLink } },
+    .{ "xlink:href", .{ .prefix = LocalName.fromSlice("xlink"), .local_name = LocalName.fromSlice("href"), .namespace = .NS_XLink } },
+    .{ "xlink:role", .{ .prefix = LocalName.fromSlice("xlink"), .local_name = LocalName.fromSlice("role"), .namespace = .NS_XLink } },
+    .{ "xlink:show", .{ .prefix = LocalName.fromSlice("xlink"), .local_name = LocalName.fromSlice("show"), .namespace = .NS_XLink } },
+    .{ "xlink:title", .{ .prefix = LocalName.fromSlice("xlink"), .local_name = LocalName.fromSlice("title"), .namespace = .NS_XLink } },
+    .{ "xlink:type", .{ .prefix = LocalName.fromSlice("xlink"), .local_name = LocalName.fromSlice("type"), .namespace = .NS_XLink } },
+    .{ "xml:lang", .{ .prefix = LocalName.fromSlice("xml"), .local_name = LocalName.fromSlice("lang"), .namespace = .NS_Xml } },
+    .{ "xml:space", .{ .prefix = LocalName.fromSlice("xml"), .local_name = LocalName.fromSlice("space"), .namespace = .NS_Xml } },
+    .{ "xmlns", .{ .prefix = null, .local_name = LocalName.fromSlice("xmlns"), .namespace = .NS_Xmlns } },
+    .{ "xmlns:xlink", .{ .prefix = LocalName.fromSlice("xmlns"), .local_name = LocalName.fromSlice("xlink"), .namespace = .NS_Xmlns } },
+});

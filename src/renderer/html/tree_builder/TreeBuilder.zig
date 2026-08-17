@@ -9,7 +9,7 @@ const Element = @import("../../dom/Element.zig");
 const Document = @import("../../dom/Document.zig");
 const CustomElementRegistry = @import("../../dom/CustomElementRegistry.zig");
 const CustomElementDefinition = @import("../../dom/CustomElementDefinition.zig");
-const ns = @import("../../dom/namespace.zig");
+const Namespace = @import("../../dom/namespace.zig").Namespace;
 const ln = @import("local_name");
 const LocalName = ln.LocalName;
 const LocalTag = ln.LocalTag;
@@ -192,7 +192,7 @@ pub fn appropriatePlaceForInsertion(self: *TreeBuilder, override_target: ?*Eleme
 }
 
 // https://html.spec.whatwg.org/#create-an-element-for-the-token
-pub fn createElementForToken(self: *TreeBuilder, tk: Token, namespace: ?ns.Namespace, intended_parent: *Node) Element {
+pub fn createElementForToken(self: *TreeBuilder, tk: Token, namespace: ?Namespace, intended_parent: *Node) Element {
     // Ignore the Speculative Parser and start on step 3.
     const document = intended_parent.node_doc;
     const local = tk.local_name;
@@ -259,7 +259,7 @@ pub fn insertElementAtAdjustedInsertionLocation(self: *TreeBuilder, el: *Element
 }
 
 // https://html.spec.whatwg.org/multipage/parsing.html#insert-a-foreign-element
-pub fn insertForeignElement(self: *TreeBuilder, tk: Token, namespace: ns.Namespace, only_add_to_element_stack: bool) *Element {
+pub fn insertForeignElement(self: *TreeBuilder, tk: Token, namespace: Namespace, only_add_to_element_stack: bool) *Element {
     const adjusted_loc = self.appropriatePlaceForInsertion(null);
     const element = self.createElementForToken(tk, namespace, adjusted_loc.getElement());
     if (!only_add_to_element_stack) self.insertElementAtAdjustedInsertionLocation(element);
@@ -302,7 +302,7 @@ pub fn lookingUpCustomElementRegistry(intended_parent: *Node) *CustomElementRegi
 }
 
 // https://html.spec.whatwg.org/#look-up-a-custom-element-definition
-pub fn lookingUpCustomElementDefinition(registry: ?*CustomElementRegistry, namespace: ?ns.Namespace, local: LocalName, is: ?LocalName) ?CustomElementDefinition {
+pub fn lookingUpCustomElementDefinition(registry: ?*CustomElementRegistry, namespace: ?Namespace, local: LocalName, is: ?LocalName) ?CustomElementDefinition {
     if (registry) |reg| {
         if (namespace) |n| {
             if (n != .NS_Html) return null;
@@ -314,7 +314,7 @@ pub fn lookingUpCustomElementDefinition(registry: ?*CustomElementRegistry, names
     return null;
 }
 
-pub fn createElement(self: *TreeBuilder, document: *Document, local: LocalName, namespace: ?ns.Namespace, prefix: ?[]const u8, is: ?LocalName, sce: bool, registry: ?*CustomElementRegistry) *Element {
+pub fn createElement(self: *TreeBuilder, document: *Document, local: LocalName, namespace: ?Namespace, prefix: ?[]const u8, is: ?LocalName, sce: bool, registry: ?*CustomElementRegistry) *Element {
     _ = self;
     _ = document;
     _ = local;

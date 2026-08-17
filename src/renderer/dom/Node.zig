@@ -62,3 +62,67 @@ pub inline fn isA(self: *Node, type_id: DomTypeId) bool {
     if (self.type_id == type_id) return true;
     return false;
 }
+
+/// The child must not already have a parent.
+pub fn appendChild(self: *Node, child: *Node) void {
+    child.parent = self;
+    child.prev_sibling = self.last_child;
+    child.next_sibling = null;
+
+    if (self.last_child) |last|
+        last.next_sibling = child
+    else
+        // The node had no children.
+        self.first_child = child;
+
+    self.last_child = child;
+}
+
+/// Insert `child` immediately before `reference`.
+/// `reference` must be a child of this node.
+pub fn insertBefore(
+    self: *Node,
+    child: *Node,
+    reference: *Node,
+) void {
+    std.debug.assert(reference.?.parent == self);
+
+    child.parent = self;
+    child.next_sibling = reference;
+    child.prev_sibling = reference.prev_sibling;
+
+    if (reference.prev_sibling) |prev|
+        prev.next_sibling = child
+    else
+        self.first_child = child;
+
+    reference.prev_sibling = child;
+}
+
+/// Remove `child` from this node.
+pub fn removeChild(
+    self: *Node,
+    child: *Node,
+) void {
+    std.debug.assert(child.parent == self);
+
+    if (child.prev_sibling) |prev|
+        prev.next_sibling = child.next_sibling
+    else
+        self.first_child = child.next_sibling;
+
+    if (child.next_sibling) |next|
+        next.prev_sibling = child.prev_sibling
+    else
+        self.last_child = child.prev_sibling;
+
+    child.parent = null;
+    child.prev_sibling = null;
+    child.next_sibling = null;
+}
+
+/// Remove this node from its parent.
+pub fn remove(self: *Node) void {
+    const parent = self.parent orelse return;
+    parent.removeChild(self);
+}

@@ -38,13 +38,16 @@ const InsertionMode = enum {
     AfterAfterFramesetMode,
 };
 
-const InsertionLocation = union { last_child: *Element, before_child: *Element, parent_before_child: struct {
-    parent: *Element,
+const InsertionLocation = union {
+    last_child: *Element,
     before_child: *Element,
-}, 
+    parent_before_child: struct {
+        parent: *Element,
+        before_child: *Element,
+    },
 
     pub fn getElement(self: *InsertionLocation) *Element {
-        _ = self;                
+        _ = self;
         @panic("[TODO]:");
     }
 };
@@ -64,7 +67,7 @@ insert_mode: InsertionMode,
 orig_insert_mode: InsertionMode,
 // Template Insertion Mode
 temp_insert_modes: std.ArrayList(InsertionMode),
-// Whether the parser was created as part of the 
+// Whether the parser was created as part of the
 // HTML fragment parsing algorithm.
 fragment_case: bool,
 scripting_mode: ScriptingMode,
@@ -205,7 +208,7 @@ pub fn createElementForToken(self: *TreeBuilder, tk: Token, namespace: ?ns.Names
     const definition = lookingUpCustomElementDefinition(registry, namespace, local, is);
     // Whether will execute script.
     const will_exec_script = if (definition != null and !self.fragment_case) blk: {
-        break :blk true; 
+        break :blk true;
     } else false;
 
     // Step 9.
@@ -244,15 +247,16 @@ pub fn adjustedInsertionLocation(self: *TreeBuilder, pos: ?*InsertionLocation) I
     return adjusted_loc;
 }
 
-pub fn insertElementAtAdjustedInsertionLocation(self: *TreeBuilder) void {
-    _ = self;
+pub fn insertElementAtAdjustedInsertionLocation(self: *TreeBuilder, el: *Element) void {
+    const insertion_loc = self.adjustedInsertionLocation(null);
+    // Check if it's possible to insert element at insertion_loc.
+    if (!self.isPossibleToInsert()) return;
+    if (true) @panic("[TODO] Step 3: need parser.");
+    self.insertElementAt(el, insertion_loc);
+    if (true) @panic("[TODO] Step 5: need parser.");
 }
 
 pub fn insertForeignElement(self: *TreeBuilder) void {
-    _ = self;
-}
-
-pub fn insertHtmlElement(self: *TreeBuilder) void {
     _ = self;
 }
 
@@ -294,12 +298,12 @@ pub fn lookingUpCustomElementDefinition(registry: ?*CustomElementRegistry, names
                 if (reg.lookup(is_, local)) |res| return res;
             }
         } else return null;
-    } 
+    }
     return null;
 }
 
 pub fn createElement(self: *TreeBuilder, document: *Document, local: LocalName, namespace: ?ns.Namespace, prefix: ?[]const u8, is: ?LocalName, sce: bool, registry: ?*CustomElementRegistry) *Element {
-    _ = self; 
+    _ = self;
     _ = document;
     _ = local;
     _ = namespace;
@@ -308,4 +312,33 @@ pub fn createElement(self: *TreeBuilder, document: *Document, local: LocalName, 
     _ = sce;
     _ = registry;
     @panic("[TODO]: ");
+}
+
+// TODO:
+pub fn isPossibleToInsert(self: *const TreeBuilder) bool {
+    _ = self;
+    return true;
+}
+
+fn insertElementAt(
+    self: *TreeBuilder,
+    element: *Element,
+    location: InsertionLocation,
+) void {
+    _ = self;
+    const node = element.asNode();
+    switch (location) {
+        .last_child => |parent| {
+            parent.asNode().appendChild(node);
+        },
+
+        .before_child => |before| {
+            const parent = before.node.parent.?.asNode();
+            parent.insertBefore(node, before);
+        },
+
+        .parent_before_child => |loc| {
+            loc.parent.asNode().insertBefore(node, loc.before_child);
+        },
+    }
 }

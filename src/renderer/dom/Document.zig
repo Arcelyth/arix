@@ -18,7 +18,7 @@ pub const dom_type = .DOM_Document;
 
 pub fn init() Document {
     return .{
-        .node = Node.init(.DOM_Document, null),
+        .node = Node.init(dom_type, null),
         .custom_element_registry = null,
         .todmi_counter = 0,
     };

@@ -3,7 +3,6 @@ pub const DomTypeId = enum {
 
     DOM_Element,
     DOM_CharacterData,
-    DOM_Text,
     DOM_Comment,
     DOM_Document,
     DOM_DocumentFragment,
@@ -14,6 +13,9 @@ pub const DomTypeId = enum {
     DOM_HTMLBodyElement,
     DOM_HTMLDivElement,
     DOM_HTMLTableElement,
+
+    // CharactData
+    DOM_Text,
 
     // Document Fragment
     DOM_ShadowRoot,

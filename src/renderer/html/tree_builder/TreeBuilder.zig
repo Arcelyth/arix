@@ -6,6 +6,7 @@ const Token = token_.Token;
 const Attribute = token_.Attribute;
 const Node = @import("../../dom/Node.zig");
 const Element = @import("../../dom/Element.zig");
+const Text = @import("../../dom/Text.zig");
 const Document = @import("../../dom/Document.zig");
 const CustomElementRegistry = @import("../../dom/CustomElementRegistry.zig");
 const CustomElementDefinition = @import("../../dom/CustomElementDefinition.zig");
@@ -13,6 +14,8 @@ const Namespace = @import("../../dom/namespace.zig").Namespace;
 const ln = @import("local_name");
 const LocalName = ln.LocalName;
 const LocalTag = ln.LocalTag;
+const strale = @import("strale");
+const StraleUtf8Global = strale.StraleUtf8Global;
 
 const InsertionMode = enum {
     InitialMode,
@@ -46,9 +49,37 @@ const InsertionLocation = union {
         before_child: *Element,
     },
 
-    pub fn getElement(self: *InsertionLocation) *Element {
-        _ = self;
-        @panic("[TODO]:");
+    pub fn getParent(self: *InsertionLocation) *Element {
+        return switch (self) {
+            .last_child => |parent| parent,
+
+            .before_child => |before| blk: {
+                const p = before.asNode().parent orelse @panic("before_child has no parent");
+                break :blk p.downcast(Element);
+            },
+
+            .parent_before_child => |loc| loc.parent,
+        };
+    }
+
+    pub fn beforeNode(self: InsertionLocation) ?*Node {
+        const before = switch (self) {
+            .last_child => return null,
+            .before_child => |node| node,
+            .parent_before_child => |loc| loc.before_child,
+        };
+
+        const n = before.asNode();
+
+        return n.prev_sibling;
+    }
+
+    pub fn beforeChild(self: InsertionLocation) ?*Element {
+        return switch (self) {
+            .last_child => null,
+            .before_child => |node| node,
+            .parent_before_child => |loc| loc.before_child,
+        };
     }
 };
 
@@ -103,7 +134,7 @@ pub fn handleToken(self: *TreeBuilder, tk: Token) void {
 }
 
 // https://html.spec.whatwg.org/#tree-construction-dispatcher
-pub fn isForeign(self: TreeBuilder, tk: Token) bool {
+pub fn isForeign(self: *const TreeBuilder, tk: Token) bool {
     if (self.open_elements.items.len == 0 or std.meta.activeTag(tk) == .EofToken) return false;
     const cur_el = self.adjustedCurrentNode();
 
@@ -140,12 +171,12 @@ pub fn isForeign(self: TreeBuilder, tk: Token) bool {
     return true;
 }
 
-pub fn processToken(self: TreeBuilder, tk: Token) void {
+pub fn processToken(self: *const TreeBuilder, tk: Token) void {
     _ = self;
     _ = tk;
 }
 
-pub fn processTokenForeign(self: TreeBuilder, tk: Token) void {
+pub fn processTokenForeign(self: *const TreeBuilder, tk: Token) void {
     _ = self;
     _ = tk;
 }
@@ -237,11 +268,11 @@ pub fn createElementForToken(self: *TreeBuilder, tk: Token, namespace: ?Namespac
 
 // https://html.spec.whatwg.org/multipage/parsing.html#insert-an-element-at-the-adjusted-insertion-location
 pub fn adjustedInsertionLocation(self: *TreeBuilder, pos: ?*InsertionLocation) InsertionLocation {
-    const override_target = if (pos) |p| p.getElement() else null;
+    const override_target = if (pos) |p| p.getParent() else null;
     const adjusted_loc = self.appropriatePlaceForInsertion(override_target);
 
     // Step: 3.
-    const node = adjusted_loc.getElement();
+    const node = adjusted_loc.getParent();
     if (node == self.htmlElement()) {
         @panic("[TODO]: need parser.");
     }
@@ -261,7 +292,7 @@ pub fn insertElementAtAdjustedInsertionLocation(self: *TreeBuilder, el: *Element
 // https://html.spec.whatwg.org/multipage/parsing.html#insert-a-foreign-element
 pub fn insertForeignElement(self: *TreeBuilder, tk: Token, namespace: Namespace, only_add_to_element_stack: bool) *Element {
     const adjusted_loc = self.appropriatePlaceForInsertion(null);
-    const element = self.createElementForToken(tk, namespace, adjusted_loc.getElement());
+    const element = self.createElementForToken(tk, namespace, adjusted_loc.getParent());
     if (!only_add_to_element_stack) self.insertElementAtAdjustedInsertionLocation(element);
     self.open_elements.append(self.allocator, element);
     return element;
@@ -332,6 +363,35 @@ pub fn isPossibleToInsert(self: *const TreeBuilder) bool {
     return true;
 }
 
+// https://html.spec.whatwg.org/multipage/parsing.html#insert-a-character
+pub fn insertCharacter(self: *TreeBuilder, chars: ?[]const u8, tk: Token) void {
+    const data = StraleUtf8Global.fromSlice(chars) orelse switch (tk) {
+        .CharacterToken => |ct| ct.clone(),
+        else => {},
+    };
+
+    const insert_loc = self.adjustedInsertionLocation(null);
+    const parent = insert_loc.getParent();
+    if (parent.type_id == .DOM_Document) return;
+
+    if (insert_loc.beforeNode()) |previous| {
+        if (previous.isA(.DOM_Text)) {
+            const text = previous.downcast(Text);
+
+            text.data.append(data);
+            return;
+        }
+    }
+
+    const document = parent.asNode().node_doc;
+    const text = self.createTextNode(
+        document,
+        data,
+    );
+    _ = text;
+    @panic("[TODO]: Insert text at insert_loc.");
+}
+
 fn insertElementAt(
     self: *TreeBuilder,
     element: *Element,
@@ -353,4 +413,11 @@ fn insertElementAt(
             loc.parent.asNode().insertBefore(node, loc.before_child);
         },
     }
+}
+
+pub fn createTextNode(self: *TreeBuilder, doc: *Document, data: StraleUtf8Global) Text {
+    _ = self;
+    _ = doc;
+    _ = data;
+    @panic("[TODO]:");
 }

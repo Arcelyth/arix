@@ -41,7 +41,7 @@ pub const dom_type = .DOM_Element;
 
 pub fn init(alloc: std.mem.Allocator, ns: Namespace, local: LocalName, document: *Document) Element {
     return .{
-        .node = Node.init(.DOM_Element, document),
+        .node = Node.init(dom_type, document),
         .ns = ns,
         .local_name = local,
         .custom_element_registry = null,

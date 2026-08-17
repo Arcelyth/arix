@@ -41,7 +41,13 @@ const InsertionMode = enum {
 const InsertionLocation = union { last_child: *Element, before_child: *Element, parent_before_child: struct {
     parent: *Element,
     before_child: *Element,
-} };
+}, 
+
+    pub fn getElement(self: *InsertionLocation) *Element {
+        _ = self;                
+        @panic("[TODO]:");
+    }
+};
 
 const ScriptingMode = enum {
     Normal,
@@ -183,7 +189,7 @@ pub fn appropriatePlaceForInsertion(self: *TreeBuilder, override_target: ?*Eleme
 }
 
 // https://html.spec.whatwg.org/#create-an-element-for-the-token
-pub fn createElementForToken(self: *TreeBuilder, tk: Token, namespace: ?ns.Namespace, intended_parent: *Node) void {
+pub fn createElementForToken(self: *TreeBuilder, tk: Token, namespace: ?ns.Namespace, intended_parent: *Node) Element {
     // Ignore the Speculative Parser and start on step 3.
     const document = intended_parent.node_doc;
     const local = tk.local_name;
@@ -223,10 +229,19 @@ pub fn createElementForToken(self: *TreeBuilder, tk: Token, namespace: ?ns.Names
     if (element.isFormAssociatedElement() and !is_custom) {
         @panic("[TODO]:");
     }
+    return element;
 }
 
-pub fn adjustedInsertionLocation(self: *TreeBuilder) void {
-    _ = self;
+pub fn adjustedInsertionLocation(self: *TreeBuilder, pos: ?*InsertionLocation) InsertionLocation {
+    const override_target = if (pos) |p| p.getElement() else null;
+    const adjusted_loc = self.appropriatePlaceForInsertion(override_target);
+
+    // Step: 3.
+    const node = adjusted_loc.getElement();
+    if (node == self.htmlElement()) {
+        @panic("[TODO]: need parser.");
+    }
+    return adjusted_loc;
 }
 
 pub fn insertElementAtAdjustedInsertionLocation(self: *TreeBuilder) void {

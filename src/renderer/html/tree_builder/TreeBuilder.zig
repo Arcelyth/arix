@@ -3,10 +3,12 @@ const TreeBuilder = @This();
 const std = @import("std");
 const token_ = @import("../tokenizer/token.zig");
 const Token = token_.Token;
+const ProcessingInstruction = token_.ProcessingInstruction;
 const Attribute = token_.Attribute;
 const Node = @import("../../dom/Node.zig");
 const Element = @import("../../dom/Element.zig");
 const Text = @import("../../dom/Text.zig");
+const Comment = @import("../../dom/Comment.zig");
 const Document = @import("../../dom/Document.zig");
 const CustomElementRegistry = @import("../../dom/CustomElementRegistry.zig");
 const CustomElementDefinition = @import("../../dom/CustomElementDefinition.zig");
@@ -384,12 +386,32 @@ pub fn insertCharacter(self: *TreeBuilder, chars: ?[]const u8, tk: Token) void {
     }
 
     const document = parent.asNode().node_doc;
-    const text = self.createTextNode(
-        document,
-        data,
-    );
+    const text = Text.create(document, data);
     _ = text;
     @panic("[TODO]: Insert text at insert_loc.");
+}
+
+// https://html.spec.whatwg.org/multipage/parsing.html#insert-a-comment
+pub fn insertComment(self: *TreeBuilder, data: StraleUtf8Global, insertion_location: ?InsertionLocation) void {
+    const insert_loc = self.adjustedInsertionLocation(insertion_location);
+    const parent = insert_loc.getParent();
+    const document = parent.asNode().node_doc;
+    const comment = Comment.create(document, data);
+    _ = comment;
+    @panic("[TODO]: Insert comment at insert_loc.");
+}
+
+// https://html.spec.whatwg.org/multipage/parsing.html#insert-a-processing-instruction
+pub fn insertProcessingInstruction(self: *TreeBuilder, tk: ProcessingInstruction, insertion_location: ?InsertionLocation) void {
+    const target = tk.target;
+    const data = tk.data;
+    const insert_loc = self.adjustedInsertionLocation(insertion_location);
+
+    const parent = insert_loc.getParent();
+    const document = parent.asNode().node_doc;
+    const pi = ProcessingInstruction.create(document, target, data);
+    _ = pi;
+    @panic("[TODO]: Insert pi at insert_loc.");
 }
 
 fn insertElementAt(
@@ -415,9 +437,3 @@ fn insertElementAt(
     }
 }
 
-pub fn createTextNode(self: *TreeBuilder, doc: *Document, data: StraleUtf8Global) Text {
-    _ = self;
-    _ = doc;
-    _ = data;
-    @panic("[TODO]:");
-}

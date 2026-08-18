@@ -13,6 +13,7 @@ const Document = @import("../../dom/Document.zig");
 const CustomElementRegistry = @import("../../dom/CustomElementRegistry.zig");
 const CustomElementDefinition = @import("../../dom/CustomElementDefinition.zig");
 const Namespace = @import("../../dom/namespace.zig").Namespace;
+const Tokenizer = @import("../tokenizer/Tokenizer.zig");
 const ln = @import("local_name");
 const LocalName = ln.LocalName;
 const LocalTag = ln.LocalTag;
@@ -287,8 +288,30 @@ pub fn insertForeignElement(self: *TreeBuilder, tk: Token, namespace: Namespace,
 }
 
 // https://html.spec.whatwg.org/multipage/parsing.html#insert-an-html-element
-pub fn insertHtmlElemnt(self: *TreeBuilder, tk: Token) void {
+pub fn insertHtmlElement(self: *TreeBuilder, tk: Token) void {
     self.insertForeignElement(tk, .NS_Html, false);
+}
+
+pub const TextParsingType = enum {
+    TPT_Rawtext,
+    TPT_Rcdata,
+};
+
+// https://html.spec.whatwg.org/multipage/parsing.html#parsing-elements-that-contain-only-text
+// REFACTOR: Using *Tokenizer as parameter seem not good.
+pub fn parseGenericTextElement(self: *TreeBuilder, tk: Token, tpt: TextParsingType, tokenizer: *Tokenizer) void {
+    self.insertHtmlElement(tk);
+    switch (tpt) {
+        .TPT_Rawtext => tokenizer.state = .RAWTEXT,
+        .TPT_Rcdata => tokenizer.state = .RCDATA,
+    }
+    self.orig_insert_mode = self.insert_mode;
+    self.insert_mode = .TextMode;
+}
+
+// https://html.spec.whatwg.org/multipage/parsing.html#generate-implied-end-tags
+pub fn generateImpliedEndTags(self: *TreeBuilder) void {
+    _ = self; 
 }
 
 pub inline fn currentNode(self: *TreeBuilder) *Element {

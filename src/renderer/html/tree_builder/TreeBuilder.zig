@@ -10,6 +10,7 @@ const Element = @import("../../dom/Element.zig");
 const Text = @import("../../dom/Text.zig");
 const Comment = @import("../../dom/Comment.zig");
 const Document = @import("../../dom/Document.zig");
+const DocumentType = @import("../../dom/DocumentType.zig");
 const CustomElementRegistry = @import("../../dom/CustomElementRegistry.zig");
 const CustomElementDefinition = @import("../../dom/CustomElementDefinition.zig");
 const Namespace = @import("../../dom/namespace.zig").Namespace;
@@ -19,6 +20,7 @@ const LocalName = ln.LocalName;
 const LocalTag = ln.LocalTag;
 const strale = @import("strale");
 const StraleUtf8Global = strale.StraleUtf8Global;
+const ascii = @import("../../utils/ascii.zig");
 
 const InsertionMode = enum {
     InitialMode,
@@ -92,6 +94,7 @@ fragment_case: bool,
 scripting_mode: ScriptingMode,
 foster_parenting: bool,
 frameset_ok: bool,
+document: Document,
 
 pub fn init(alloc: std.mem.Allocator, fragment_case: bool) TreeBuilder {
     return TreeBuilder{
@@ -104,6 +107,7 @@ pub fn init(alloc: std.mem.Allocator, fragment_case: bool) TreeBuilder {
         .scripting_mode = .Normal,
         .foster_parenting = false,
         .frameset_ok = false,
+        .document = Document.init(),
     };
 }
 
@@ -160,8 +164,7 @@ pub fn isForeign(self: *const TreeBuilder, tk: Token) bool {
 }
 
 pub fn processToken(self: *const TreeBuilder, tk: Token) void {
-    _ = self;
-    _ = tk;
+    self.step(tk);
 }
 
 pub fn processTokenForeign(self: *const TreeBuilder, tk: Token) void {
@@ -433,6 +436,10 @@ pub fn insertComment(self: *TreeBuilder, data: StraleUtf8Global, insertion_locat
     self.insertNodeAt(comment.asNode(), insert_loc);
 }
 
+pub fn insertCommentToDocument(self: *TreeBuilder, data: StraleUtf8Global) void {
+    self.insertComment(data, .{ .last_child = self.document.asNode() });
+}
+
 // https://html.spec.whatwg.org/multipage/parsing.html#insert-a-processing-instruction
 pub fn insertProcessingInstruction(self: *TreeBuilder, tk: ProcessingInstruction, insertion_location: ?InsertionLocation) void {
     const target = tk.target;
@@ -443,6 +450,10 @@ pub fn insertProcessingInstruction(self: *TreeBuilder, tk: ProcessingInstruction
     const document = parent.node_doc;
     const pi = ProcessingInstruction.create(document, target, data);
     self.insertNodeAt(pi.asNode(), insert_loc);
+}
+
+pub fn insertProcessingInstructionToDocument(self: *TreeBuilder, tk: ProcessingInstruction) void {
+    self.insertProcessingInstruction(tk, .{ .last_child = self.document.asNode() });
 }
 
 fn insertElementAt(
@@ -471,6 +482,55 @@ fn insertNodeAt(
 
         .parent_before_child => |loc| {
             loc.parent.insertBefore(node, loc.before_child);
+        },
+    }
+}
+
+// Append token to document node.
+pub fn appendToDocument(self: *TreeBuilder, node: *Node) void {
+    self.insertNodeAt(node, .{ .last_child = self.document.asNode() });
+}
+
+pub fn step(self: *TreeBuilder, tk: Token) void {
+    switch (self.insert_mode) {
+        .InitialMode => blk: {
+            sw: switch (tk) {
+                .CharacterToken => |ch_tk| {
+                    for (ch_tk.slice()) |c| {
+                        if (!ascii.isAsciiWhitespace(c)) break :sw;
+                    }
+                    break :blk;
+                },
+                .CommentToken => |cmt_tk| {
+                    self.insertCommentToDocument(cmt_tk);
+                    break :blk;
+                },
+                .ProcessingInstructionToken => |pi_tk| {
+                    self.insertProcessingInstructionToDocument(pi_tk);
+                },
+                .DoctypeToken => |doc_tk| {
+                    if (!doc_tk.name.eql("html") or !doc_tk.public_id.isEmpty() or (!doc_tk.system_id.isEmpty and !doc_tk.system_id.eql("about:legacy-compat"))) @panic("[TODO]: Handle Parser Error");
+                    self.appendToDocument(DocumentType.create(self.document, doc_tk.name, doc_tk.public_id, doc_tk.system_id).asNode());
+                    if (!self.document.isIframeSrcdocDocument() and !self.document.parser_cannot_change_the_mod) {
+                        if (doc_tk.isQuirksDoctype()) {
+                            self.document.mode = .DM_Quirks;
+                        } else if (doc_tk.isLimitedQuirksDoctype()) {
+                            self.document.mode = .DM_LimitedQuirks;
+                        }
+                    }
+                    self.insert_mode = .BeforeHtmlMode;
+                },
+                else => {},
+            }
+            // Handle anything else here.
+            if (!self.document.isIframeSrcdocDocument()) @panic("[TODO]: Handle parser error");
+
+            if (!self.document.parser_cannot_change_the_mod) {
+                self.document.mode = .DM_Quirks;
+            }
+
+            self.insert_mode = .BeforeHtmlMode;
+            // TODO: reprocss token
         },
     }
 }

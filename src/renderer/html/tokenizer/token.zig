@@ -8,6 +8,7 @@ const BufferDeque = strale.BufferDeque;
 const Namespace = @import("../../dom/namespace.zig").Namespace;
 const Attr = @import("../../dom/Attr.zig");
 const Attrs = @import("../../dom/Attrs.zig");
+const ids = @import("ids.zig");
 
 pub const Attribute = struct {
     name: LocalName,
@@ -48,6 +49,52 @@ pub const Doctype = struct {
 
     pub fn format(self: Doctype, writer: anytype) !void {
         try writer.print("Doctype's name: {s}, public_id: {s}, system_id: {s}, force_quirks: {}\n", .{ self.name.slice(), self.public_id.slice(), self.system_id.slice(), self.force_quirks });
+    }
+
+    pub fn isQuirksDoctype(self: *const Doctype) bool {
+        if (self.force_quirks) return true;
+
+        if (!self.name.eqlIgnoreCase("html")) return true;
+
+        if (self.public_id.isEmpty()) return false;
+
+        if (self.system_id.eqlIgnoreCase("http://www.ibm.com/data/dtd/v11/ibmxhtml1-transitional.dtd")) return true;
+
+        const pub_slice = self.public_id.slice();
+        const first_char = std.ascii.toLower(pub_slice[0]);
+        if (first_char != '+' and first_char != '-' and first_char != 'h') {
+            return false;
+        }
+
+        for (ids.EXACT_PUBLIC_IDS) |target| {
+            if (self.public_id.eqlIgnoreCase(target)) return true;
+        }
+
+        for (ids.PREFIX_PUBLIC_IDS) |prefix| {
+            if (self.public_id.startWith(prefix, true)) return true;
+        }
+
+        if (self.system_id.isEmpty()) {
+            for (ids.CONDITIONAL_PREFIX_PUBLIC_IDS) |prefix| {
+                if (self.public_id.startWith(prefix, true)) return true;
+            }
+        }
+
+        return false;
+    }
+
+    pub fn isLimitedQuirksDoctype(self: *const Doctype) bool {
+        for (ids.LIMITED_QUIRKS_PUBLIC_IDS) |prefix| {
+            if (self.public_id.startsWith(prefix, true)) return true;
+        }
+
+        if (!self.system_id.isEmpty()) {
+            for (ids.LIMITED_QUIRKS_CONDITIONAL_PUBLIC_IDS) |prefix| {
+                if (self.public_id.startsWith(prefix, true)) return true;
+            }
+        }
+
+        return false;
     }
 };
 

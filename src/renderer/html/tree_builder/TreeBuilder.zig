@@ -310,8 +310,33 @@ pub fn parseGenericTextElement(self: *TreeBuilder, tk: Token, tpt: TextParsingTy
 }
 
 // https://html.spec.whatwg.org/multipage/parsing.html#generate-implied-end-tags
-pub fn generateImpliedEndTags(self: *TreeBuilder) void {
-    _ = self; 
+pub fn generateImpliedEndTags(self: *TreeBuilder, exclude: ?LocalTag) void {
+    while (self.open_elements.items.len > 0) {
+        const cur = self.currentNode();
+
+        if (exclude) |ex| {
+            if (cur.local_name.is(ex)) break;
+        }
+
+        if (cur.in(&.{ .dd, .dt, .li, .optgroup, .option, .p, .rb, .rp, .rt, .rtc })) {
+            _ = self.open_elements.pop();
+        } else {
+            break;
+        }
+    }
+}
+
+// https://html.spec.whatwg.org/multipage/parsing.html#generate-all-implied-end-tags-thoroughly
+pub fn generateAllImpliedEndTagsThoroughly(self: *TreeBuilder) void {
+    while (self.open_elements.items.len > 0) {
+        const cur = self.currentNode();
+
+        if (cur.in(&.{ .caption, .colgroup, .dd, .dt, .li, .optgroup, .option, .p, .rb, .rp, .rt, .rtc, .tbody, .td, .tfoot, .th, .thead, .tr })) {
+            _ = self.open_elements.pop();
+        } else {
+            break;
+        }
+    }
 }
 
 pub inline fn currentNode(self: *TreeBuilder) *Element {

@@ -44,44 +44,29 @@ const InsertionMode = enum {
 };
 
 const InsertionLocation = union {
-    last_child: *Element,
-    before_child: *Element,
+    last_child: *Node,
+    before_child: *Node,
     parent_before_child: struct {
-        parent: *Element,
-        before_child: *Element,
+        parent: *Node,
+        before_child: *Node,
     },
 
-    pub fn getParent(self: *InsertionLocation) *Element {
+    pub fn getParent(self: *InsertionLocation) *Node {
         return switch (self) {
             .last_child => |parent| parent,
-
-            .before_child => |before| blk: {
-                const p = before.asNode().parent orelse @panic("before_child has no parent");
-                break :blk p.downcast(Element);
-            },
-
+            .before_child => |before| before.parent orelse @panic("before_child has no parent"),
             .parent_before_child => |loc| loc.parent,
         };
     }
 
     pub fn beforeNode(self: InsertionLocation) ?*Node {
         const before = switch (self) {
-            .last_child => return null,
+            .last_child => |parent| return parent.last_child,
             .before_child => |node| node,
             .parent_before_child => |loc| loc.before_child,
         };
 
-        const n = before.asNode();
-
-        return n.prev_sibling;
-    }
-
-    pub fn beforeChild(self: InsertionLocation) ?*Element {
-        return switch (self) {
-            .last_child => null,
-            .before_child => |node| node,
-            .parent_before_child => |loc| loc.before_child,
-        };
+        return before.prev_sibling;
     }
 };
 
@@ -203,25 +188,26 @@ pub fn appropriatePlaceForInsertion(self: *TreeBuilder, override_target: ?*Eleme
                 break :blk;
             }
             if (open_elements.items[idx].local_name.is(.template)) {
-                return .{ .last_child = self.open_elements.items[idx] };
+                return .{ .last_child = self.open_elements.items[idx].asNode() };
             }
         }
 
         if (last_table) |table| {
-            if (table.asNode().parent) |p|
+            const table_nd = table.asNode();
+            if (table_nd.parent) |p|
                 return .{ .parent_before_child = .{
-                    .parent = p.downcast(Element),
-                    .before_child = table,
+                    .parent = p,
+                    .before_child = table_nd,
                 } }
             else if (last_table_pos > 0)
-                return .{ .last_child = self.open_elements.items[last_table_pos - 1] }
+                return .{ .last_child = self.open_elements.items[last_table_pos - 1].asNode() }
             else
                 @panic("This should never happen: last_table_pos <= 0");
         } else {
-            return .{ .last_child = self.htmlElement() orelse target };
+            return .{ .last_child = (self.htmlElement() orelse target).asNode() };
         }
     }
-    return .{ .last_child = target };
+    return .{ .last_child = target.asNode() };
 }
 
 // https://html.spec.whatwg.org/#create-an-element-for-the-token
@@ -271,12 +257,12 @@ pub fn createElementForToken(self: *TreeBuilder, tk: Token, namespace: ?Namespac
 // https://html.spec.whatwg.org/multipage/parsing.html#insert-an-element-at-the-adjusted-insertion-location
 pub fn adjustedInsertionLocation(self: *TreeBuilder, pos: ?*InsertionLocation) InsertionLocation {
     const override_target = if (pos) |p| p.getParent() else null;
-    const adjusted_loc = self.appropriatePlaceForInsertion(override_target);
+    const adjusted_loc = self.appropriatePlaceForInsertion(override_target.downcast(Element));
 
     // Step: 3.
     const node = adjusted_loc.getParent();
-    if (node == self.htmlElement()) {
-        @panic("[TODO]: need parser.");
+    if (self.htmlElement()) |html| {
+        if (node == html.asNode()) @panic("[TODO]: need parser.");
     }
     return adjusted_loc;
 }
@@ -385,20 +371,18 @@ pub fn insertCharacter(self: *TreeBuilder, chars: ?[]const u8, tk: Token) void {
         }
     }
 
-    const document = parent.asNode().node_doc;
+    const document = parent.node_doc;
     const text = Text.create(document, data);
-    _ = text;
-    @panic("[TODO]: Insert text at insert_loc.");
+    self.insertNodeAt(text.asNode(), insert_loc);
 }
 
 // https://html.spec.whatwg.org/multipage/parsing.html#insert-a-comment
 pub fn insertComment(self: *TreeBuilder, data: StraleUtf8Global, insertion_location: ?InsertionLocation) void {
     const insert_loc = self.adjustedInsertionLocation(insertion_location);
     const parent = insert_loc.getParent();
-    const document = parent.asNode().node_doc;
+    const document = parent.node_doc;
     const comment = Comment.create(document, data);
-    _ = comment;
-    @panic("[TODO]: Insert comment at insert_loc.");
+    self.insertNodeAt(comment.asNode(), insert_loc);
 }
 
 // https://html.spec.whatwg.org/multipage/parsing.html#insert-a-processing-instruction
@@ -408,10 +392,9 @@ pub fn insertProcessingInstruction(self: *TreeBuilder, tk: ProcessingInstruction
     const insert_loc = self.adjustedInsertionLocation(insertion_location);
 
     const parent = insert_loc.getParent();
-    const document = parent.asNode().node_doc;
+    const document = parent.node_doc;
     const pi = ProcessingInstruction.create(document, target, data);
-    _ = pi;
-    @panic("[TODO]: Insert pi at insert_loc.");
+    self.insertNodeAt(pi.asNode(), insert_loc);
 }
 
 fn insertElementAt(
@@ -419,21 +402,27 @@ fn insertElementAt(
     element: *Element,
     location: InsertionLocation,
 ) void {
+    self.insertNodeAt(element.asNode(), location);
+}
+
+fn insertNodeAt(
+    self: *TreeBuilder,
+    node: *Node,
+    location: InsertionLocation,
+) void {
     _ = self;
-    const node = element.asNode();
     switch (location) {
         .last_child => |parent| {
-            parent.asNode().appendChild(node);
+            parent.appendChild(node);
         },
 
         .before_child => |before| {
-            const parent = before.node.parent.?.asNode();
+            const parent = before.parent orelse return;
             parent.insertBefore(node, before);
         },
 
         .parent_before_child => |loc| {
-            loc.parent.asNode().insertBefore(node, loc.before_child);
+            loc.parent.insertBefore(node, loc.before_child);
         },
     }
 }
-

@@ -19,5 +19,5 @@ test "appropriatePlaceForInsertion - normal insertion without foster parenting" 
     try builder.open_elements.append(allocator, &div);
 
     const loc = builder.appropriatePlaceForInsertion(null);
-    try testing.expectEqual(div, loc.last_child.*);
+    try testing.expectEqual(div.asNode(), loc.last_child);
 }

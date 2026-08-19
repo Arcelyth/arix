@@ -26,7 +26,8 @@ pub const CustomElementState = enum {
 node: Node,
 // namespace
 ns: Namespace,
-// ns_prefix:
+// namespace prefix
+prefix: ?LocalName,
 local_name: LocalName,
 custom_element_registry: ?*CustomElementRegistry,
 custom_element_state: CustomElementState,
@@ -43,6 +44,7 @@ pub fn init(alloc: std.mem.Allocator, ns: Namespace, local: LocalName, document:
     return .{
         .node = Node.init(dom_type, document),
         .ns = ns,
+        .prefix = null,
         .local_name = local,
         .custom_element_registry = null,
         .custom_element_state = .CES_Undefined,
@@ -52,6 +54,18 @@ pub fn init(alloc: std.mem.Allocator, ns: Namespace, local: LocalName, document:
         .attrs = Attrs.init(alloc),
     };
 }
+
+pub fn create(document: *Document, local: LocalName, namespace: ?Namespace, prefix: ?LocalName, is: ?LocalName, sce: bool, registry: ?*CustomElementRegistry) Element {
+    _ = document;
+    _ = local;
+    _ = namespace;
+    _ = prefix;
+    _ = is;
+    _ = sce;
+    _ = registry;
+    @panic("[TODO]: ");
+}
+
 
 pub inline fn asNode(self: *Element) *Node {
     return &self.node;

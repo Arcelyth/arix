@@ -239,7 +239,7 @@ pub fn createElementForToken(self: *TreeBuilder, tk: Token, namespace: ?Namespac
         document.*.todmi_counter += 1;
         @panic("[TODO]: This part needs JS runtime");
     }
-    const element = self.createElement(document, local, namespace, null, is, will_exec_script, registry);
+    const element = Element.create(document, local, namespace, null, is, will_exec_script, registry);
     if (token_attrs) |ta| element.appendAttrs(ta);
 
     // Step 12.
@@ -384,18 +384,6 @@ pub fn lookingUpCustomElementDefinition(registry: ?*CustomElementRegistry, names
     return null;
 }
 
-pub fn createElement(self: *TreeBuilder, document: *Document, local: LocalName, namespace: ?Namespace, prefix: ?[]const u8, is: ?LocalName, sce: bool, registry: ?*CustomElementRegistry) *Element {
-    _ = self;
-    _ = document;
-    _ = local;
-    _ = namespace;
-    _ = prefix;
-    _ = is;
-    _ = sce;
-    _ = registry;
-    @panic("[TODO]: ");
-}
-
 // TODO:
 pub fn isPossibleToInsert(self: *const TreeBuilder) bool {
     _ = self;
@@ -492,45 +480,101 @@ pub fn appendToDocument(self: *TreeBuilder, node: *Node) void {
 }
 
 pub fn step(self: *TreeBuilder, tk: Token) void {
-    switch (self.insert_mode) {
-        .InitialMode => blk: {
-            sw: switch (tk) {
-                .CharacterToken => |ch_tk| {
-                    for (ch_tk.slice()) |c| {
-                        if (!ascii.isAsciiWhitespace(c)) break :sw;
-                    }
-                    break :blk;
-                },
-                .CommentToken => |cmt_tk| {
-                    self.insertCommentToDocument(cmt_tk);
-                    break :blk;
-                },
-                .ProcessingInstructionToken => |pi_tk| {
-                    self.insertProcessingInstructionToDocument(pi_tk);
-                },
-                .DoctypeToken => |doc_tk| {
-                    if (!doc_tk.name.eql("html") or !doc_tk.public_id.isEmpty() or (!doc_tk.system_id.isEmpty and !doc_tk.system_id.eql("about:legacy-compat"))) @panic("[TODO]: Handle Parser Error");
-                    self.appendToDocument(DocumentType.create(self.document, doc_tk.name, doc_tk.public_id, doc_tk.system_id).asNode());
-                    if (!self.document.isIframeSrcdocDocument() and !self.document.parser_cannot_change_the_mod) {
-                        if (doc_tk.isQuirksDoctype()) {
-                            self.document.mode = .DM_Quirks;
-                        } else if (doc_tk.isLimitedQuirksDoctype()) {
-                            self.document.mode = .DM_LimitedQuirks;
+    reprocess: while (true) {
+        switch (self.insert_mode) {
+            // https://html.spec.whatwg.org/multipage/parsing.html#the-initial-insertion-mode
+            .InitialMode => blk: {
+                sw: switch (tk) {
+                    .CharacterToken => |ch_tk| {
+                        for (ch_tk.slice()) |c| {
+                            if (!ascii.isAsciiWhitespace(c)) break :sw;
                         }
-                    }
-                    self.insert_mode = .BeforeHtmlMode;
-                },
-                else => {},
-            }
-            // Handle anything else here.
-            if (!self.document.isIframeSrcdocDocument()) @panic("[TODO]: Handle parser error");
+                        break :blk;
+                    },
+                    .CommentToken => |cmt_tk| {
+                        self.insertCommentToDocument(cmt_tk);
+                        break :blk;
+                    },
+                    .ProcessingInstructionToken => |pi_tk| {
+                        self.insertProcessingInstructionToDocument(pi_tk);
+                        break :blk;
+                    },
+                    .DoctypeToken => |doc_tk| {
+                        if (!doc_tk.name.eql("html") or !doc_tk.public_id.isEmpty() or (!doc_tk.system_id.isEmpty and !doc_tk.system_id.eql("about:legacy-compat"))) @panic("[TODO]: Handle Parser Error");
+                        self.appendToDocument(DocumentType.create(self.document, doc_tk.name, doc_tk.public_id, doc_tk.system_id).asNode());
+                        if (!self.document.isIframeSrcdocDocument() and !self.document.parser_cannot_change_the_mod) {
+                            if (doc_tk.isQuirksDoctype()) {
+                                self.document.mode = .DM_Quirks;
+                            } else if (doc_tk.isLimitedQuirksDoctype()) {
+                                self.document.mode = .DM_LimitedQuirks;
+                            }
+                        }
+                        self.insert_mode = .BeforeHtmlMode;
+                        break :blk;
+                    },
+                    else => {},
+                }
+                // Handle anything else here.
+                if (!self.document.isIframeSrcdocDocument()) @panic("[TODO]: Handle parser error");
 
-            if (!self.document.parser_cannot_change_the_mod) {
-                self.document.mode = .DM_Quirks;
-            }
+                if (!self.document.parser_cannot_change_the_mod) {
+                    self.document.mode = .DM_Quirks;
+                }
 
-            self.insert_mode = .BeforeHtmlMode;
-            // TODO: reprocss token
-        },
+                self.insert_mode = .BeforeHtmlMode;
+                continue :reprocess;
+            },
+            // https://html.spec.whatwg.org/multipage/parsing.html#the-before-html-insertion-mode
+            .BeforeHtmlMode => blk: {
+                sw: switch (tk) {
+                    .DoctypeToken => {
+                        @panic("[TODO]: Handle Parser Error");
+                    },
+                    .CommentToken => |cmt_tk| {
+                        self.insertCommentToDocument(cmt_tk);
+                        break :blk;
+                    },
+                    .ProcessingInstructionToken => |pi_tk| {
+                        self.insertProcessingInstructionToDocument(pi_tk);
+                        break :blk;
+                    },
+                    .CharacterToken => |ch_tk| {
+                        for (ch_tk.slice()) |c| {
+                            if (!ascii.isAsciiWhitespace(c)) break :sw;
+                        }
+                        break :blk;
+                    },
+                    .TagToken => |tag_tk| {
+                        switch (tag_tk.kind) {
+                            .StartTagToken => {
+                                if (tag_tk.name.is(.html)) {
+                                    const html_elem = self.createHtmlElementForToken(tag_tk, .HTML_Namespace, self.document);
+                                    self.appendToDocument(html_elem.asNode());
+                                    self.stack_of_open_elements.append(html_elem);
+                                    self.insert_mode = .BeforeHeadMode;
+                                    break :blk;
+                                }
+                                break :sw;
+                            },
+                            .EndTagToken => {
+                                if (tag_tk.name.is(.head) or tag_tk.name.is(.body) or tag_tk.name.is(.html) or tag_tk.name.is(.br)) {
+                                    break :sw;
+                                }
+                                @panic("[TODO]: Handle Parser Error");
+                            },
+                        }
+                    },
+                    else => {},
+                }
+
+                // Anything else.
+                const html_elem = Element.create(self.document, LocalName.fromTag(.html), null, null, null, false, null);
+                self.appendToDocument(html_elem.asNode());
+                self.open_elements.append(self.allocator, html_elem);
+                self.insert_mode = .BeforeHeadMode;
+                continue :reprocess;
+            },
+        }
+        break :reprocess;
     }
 }

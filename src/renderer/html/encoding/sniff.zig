@@ -8,11 +8,9 @@ const AttrName = @import("attr.zig").AttrName;
 const attr_name_map = @import("attr.zig").attr_name_map;
 const get_attr = @import("attr.zig").get_attr;
 const ascii = @import("../../utils/ascii.zig");
-
-pub const Confidence = enum(u1) {
-    Certain,
-    Tentative,
-};
+const types = @import("types.zig");
+const Confidence = types.Confidence;
+const EncodingOptions = types.EncodingOptions;
 
 pub fn prescan(input: []const u8) ?Encoding {
     const l = @min(input.len, 1024);
@@ -247,15 +245,6 @@ pub fn extractFromMeta(str: []const u8) ?Encoding {
 
     return null;
 }
-
-pub const EncodingOptions = struct {
-    override_encoding: ?[]const u8,
-    transport_encoding: ?[]const u8,
-    parent_encoding: ?[]const u8,
-    likely_encoding: ?[]const u8,
-    default_encoding: ?[]const u8,
-    same_origin_with_parent: bool,
-};
 
 pub fn encodingSniff(input: []const u8, opt: EncodingOptions) struct { Encoding, Confidence } {
     // BOM

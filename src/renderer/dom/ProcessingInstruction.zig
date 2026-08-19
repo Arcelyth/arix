@@ -9,7 +9,7 @@ pub const dom_type = .DOM_ProcessingInstruction;
 
 char_data: CharacterData,
 target: StraleUtf8Global,
-// attr_map: 
+// attr_map:
 data: StraleUtf8Global,
 
 pub fn init(document: Document) ProcessingInstruction {

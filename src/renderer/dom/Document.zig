@@ -5,12 +5,13 @@ const Node = @import("Node.zig");
 const CustomElementRegistry = @import("CustomElementRegistry.zig");
 const std = @import("std");
 const token = @import("../html/tokenizer/token.zig");
+const Encoding = @import("../html/encoding/encoding.zig").Encoding;
 const ln = @import("local_name");
 const LocalName = ln.LocalName;
 const LocalTag = ln.LocalTag;
 
 pub const DocMode = enum {
-    DM_NoQuirks, 
+    DM_NoQuirks,
     DM_Quirks,
     DM_LimitedQuirks,
 };
@@ -21,10 +22,10 @@ pub const DocType = enum {
 };
 
 node: Node,
-// TODO:
-// encoding: 
+encoding: Encoding,
 content_type: []const u8,
-// url: 
+// TODO:
+// url:
 // origin: ,
 ty: DocType,
 mode: DocMode,
@@ -41,8 +42,9 @@ pub const dom_type = .DOM_Document;
 pub fn init() Document {
     return .{
         .node = Node.init(dom_type, null),
+        .encoding = .utf8,
         .content_type = "application/xml",
-        .ty = .DT_Xml, 
+        .ty = .DT_Xml,
         .mode = .DM_NoQuirks,
         .allow_decl_shadow_roots = false,
         .custom_element_registry = null,
@@ -62,5 +64,5 @@ pub fn fromNode(node: *Node) *Document {
 pub fn isIframeSrcdocDocument(self: *Document) bool {
     _ = self;
     // TODO;
-    return false;    
+    return false;
 }

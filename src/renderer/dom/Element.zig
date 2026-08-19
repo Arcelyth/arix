@@ -66,7 +66,6 @@ pub fn create(document: *Document, local: LocalName, namespace: ?Namespace, pref
     @panic("[TODO]: ");
 }
 
-
 pub inline fn asNode(self: *Element) *Node {
     return &self.node;
 }

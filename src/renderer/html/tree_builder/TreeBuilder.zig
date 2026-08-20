@@ -11,6 +11,7 @@ const Text = @import("../../dom/Text.zig");
 const Comment = @import("../../dom/Comment.zig");
 const Document = @import("../../dom/Document.zig");
 const DocumentType = @import("../../dom/DocumentType.zig");
+const Attrs = @import("../../dom/Attrs.zig");
 const CustomElementRegistry = @import("../../dom/CustomElementRegistry.zig");
 const CustomElementDefinition = @import("../../dom/CustomElementDefinition.zig");
 const Namespace = @import("../../dom/namespace.zig").Namespace;
@@ -507,6 +508,14 @@ pub inline fn popUntilPopped(self: *TreeBuilder, tag: LocalTag) void {
     }
 }
 
+pub inline fn popUntil(self: *TreeBuilder, tag: LocalTag) void {
+    while (self.open_elements.items.len > 0) {
+        const node = self.currentNode();
+        if (node.local_name.is(tag)) break;
+        _ = self.open_elements.pop();
+    }
+}
+
 pub inline fn clearStackBack(self: *TreeBuilder, tags: []const LocalTag) void {
     while (self.open_elements.items.len > 0) {
         const node = self.currentNode();
@@ -544,6 +553,19 @@ pub fn closeCell(self: *TreeBuilder) void {
     self.insert_mode = .InRowMode;
 }
 
+pub inline fn addAttributesToElement(self: *TreeBuilder, el: *Element, attrs: Attrs) void {
+    for (attrs.data.items) |attr| {
+        const entry = el.attrs.getFromLocalName(attr.local_name.toTag().?);
+        if (entry) |e| el.attrs.append(self.allocator, .{
+            .ns = null,
+            .prefix = null,
+            .local_name = e.local_name,
+            .value = e.value,
+            .element = null,
+        });
+    }
+}
+
 /// https://html.spec.whatwg.org/multipage/parsing.html#has-an-element-in-table-scope
 pub fn hasElementInTableScope(self: *const TreeBuilder, target_tag: LocalTag) bool {
     var i: usize = self.open_elements.items.len;
@@ -556,6 +578,81 @@ pub fn hasElementInTableScope(self: *const TreeBuilder, target_tag: LocalTag) bo
         if (node.ns == .NS_Html and node.local_name.oneOf(&.{ .html, .table, .template })) return false;
     }
     return false;
+}
+
+fn hasElementInScopeCustom(
+    self: *const TreeBuilder,
+    target_tag: LocalTag,
+    comptime extra_html_tags: []const LocalTag,
+) bool {
+    var i: usize = self.open_elements.items.len;
+    while (i > 0) {
+        i -= 1;
+        const node = self.open_elements.items[i];
+        if (node.ns == .NS_Html and node.local_name.is(target_tag)) return true;
+
+        if (node.ns == .NS_Html and (node.local_name.oneOf(&.{
+            .applet,  .caption, .html,   .table,    .td, .th,
+            .marquee, .object,  .select, .template,
+        }) or node.local_name.oneOf(extra_html_tags))) return false;
+
+        if (node.ns == .NS_MathML and node.local_name.oneOf(&.{
+            .mi, .mo, .mn, .ms, .mtext, .@"annotation-xml",
+        })) return false;
+
+        if (node.ns == .NS_SVG and node.local_name.oneOf(&.{
+            .foreignObject, .desc, .title,
+        })) return false;
+    }
+    return false;
+}
+
+// https://html.spec.whatwg.org/multipage/parsing.html#has-an-element-in-scope
+pub fn hasElementInScope(self: *const TreeBuilder, target_tag: LocalTag) bool {
+    return self.hasElementInScopeCustom(target_tag, &.{});
+}
+
+// https://html.spec.whatwg.org/multipage/parsing.html#has-an-element-in-list-item-scope
+pub fn hasElementInListItemScope(self: *const TreeBuilder, target_tag: LocalTag) bool {
+    return self.hasElementInScopeCustom(target_tag, &.{ .ol, .ul });
+}
+
+// https://html.spec.whatwg.org/multipage/parsing.html#has-an-element-in-button-scope
+pub fn hasElementInButtonScope(self: *const TreeBuilder, target_tag: LocalTag) bool {
+    return self.hasElementInScopeCustom(target_tag, &.{.button});
+}
+
+pub fn parseError(self: *const TreeBuilder) void {
+    _ = self;
+    @panic("[TODO]: ");
+}
+
+pub fn reconstructActiveFormattingElements(self: *TreeBuilder) void {
+    _ = self;
+}
+
+pub fn closePElement(self: *TreeBuilder) void {
+    _ = self;
+}
+
+pub fn handleNewLine(self: *TreeBuilder) void {
+    _ = self;
+}
+
+pub fn handleListItemStartTag(self: *TreeBuilder, tk: token_.Tag, tag: LocalTag) void {
+    _ = self;
+    _ = tk;
+    _ = tag;
+}
+
+pub fn pushActiveFormattingElement(self: *TreeBuilder, el: *Element) void {
+    _ = self;
+    _ = el;
+}
+
+pub fn adoptionAgencyAlgorithm(self: *TreeBuilder, tk: token_.Tag) void {
+    _ = self;
+    _ = tk;
 }
 
 /// A `null` mode means the token is processed or reprocessed using the current
@@ -984,7 +1081,261 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
         },
 
         // https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-inbody
-        .InBodyMode => {},
+        .InBodyMode => {
+            switch (tk) {
+                .CharacterToken => |ch_tk| {
+                    if (ch_tk.eql("\u{0000}")) {
+                        self.parseError();
+                        return .PR_Done;
+                    }
+
+                    self.reconstructActiveFormattingElements();
+                    self.insertCharacter(null, tk);
+
+                    var is_all_ws = true;
+                    for (ch_tk.slice()) |c| {
+                        if (!ascii.isAsciiWhitespace(c)) {
+                            is_all_ws = false;
+                            break;
+                        }
+                    }
+
+                    if (!is_all_ws) self.frameset_ok = false;
+                    return .PR_Done;
+                },
+                .CommentToken => |cmt_tk| {
+                    self.insertComment(cmt_tk, null);
+                    return .PR_Done;
+                },
+                .ProcessingInstructionToken => |pi_tk| {
+                    self.insertProcessingInstruction(pi_tk, null);
+                    return .PR_Done;
+                },
+                .DoctypeToken => {
+                    self.parseError();
+                    return .PR_Done;
+                },
+                .TagToken => |tag_tk| {
+                    switch (tag_tk.kind) {
+                        .StartTagToken => {
+                            if (tag_tk.name.is(.html)) {
+                                self.parseError();
+                                if (self.hasElement(.template)) return .PR_Done;
+                                self.addAttributesToElement(self.open_elements.items[0], tag_tk.attrs);
+                                return .PR_Done;
+                            } else if (tag_tk.name.oneOf(&.{ .base, .basefont, .bgsound, .link, .meta, .noframes, .script, .style, .template, .title })) {
+                                return self.step_E(tk, .InHeadMode);
+                            } else if (tag_tk.name.is(.body)) {
+                                self.parseError();
+                                if (self.open_elements.items.len == 1 or !self.open_elements.items[1].local_name == .body or self.hasElement(.template)) {
+                                    return .PR_Done;
+                                }
+                                self.frameset_ok = false;
+                                self.addAttributesToElement(self.open_elements.items[1], tag_tk.attrs);
+                                return .PR_Done;
+                            } else if (tag_tk.name.is(.frameset)) {
+                                self.parseError();
+                                if (self.open_elements.items.len == 1 or !self.open_elements.items[1].local_name == .body or !self.frameset_ok) {
+                                    return .PR_Done;
+                                }
+                                if (self.open_elements.items.len >= 2) {
+                                    const second = self.open_elements.items[1];
+                                    if (second.asNode().parent()) |parent| {
+                                        parent.removeChild(second.asNode());
+                                    }
+                                }
+                                self.popUntil(.html);
+                                self.insertHtmlElement(tag_tk);
+                                self.insert_mode = .InFramesetMode;
+                                return .PR_Done;
+                            } else if (tag_tk.name.oneOf(&.{ .address, .article, .aside, .blockquote, .center, .details, .dialog, .dir, .div, .dl, .fieldset, .figcaption, .figure, .footer, .header, .hgroup, .main, .menu, .nav, .ol, .p, .search, .section, .summary, .ul })) {
+                                if (self.hasElementInButtonScope(.p)) self.closePElement();
+                                self.insertHtmlElement(tag_tk);
+                                return .PR_Done;
+                            } else if (tag_tk.name.oneOf(&.{ .h1, .h2, .h3, .h4, .h5, .h6 })) {
+                                if (self.hasElementInButtonScope(.p)) self.closePElement();
+                                const cur_node = self.currentNode();
+                                if (cur_node.ns == .NS_Html and cur_node.local_name.oneOf(&.{ .h1, .h2, .h3, .h4, .h5, .h6 })) {
+                                    self.parseError();
+                                    _ = self.open_elements.pop();
+                                }
+                                self.insertHtmlElement(tag_tk);
+                                return .PR_Done;
+                            } else if (tag_tk.name.oneOf(&.{ .pre, .listing })) {
+                                if (self.hasElementInButtonScope(.p)) self.closePElement();
+                                self.insertHtmlElement(tag_tk);
+                                // Handle newline at the start of block
+                                self.handleNewLine();
+                                self.frameset_ok = false;
+                                return .PR_Done;
+                            } else if (tag_tk.name.is(.form)) {
+                                if (self.form_el_ptr != null and !self.hasElement(.template)) {
+                                    self.parseError();
+                                    return .PR_Done;
+                                }
+                                if (self.hasElementInButtonScope(.p)) self.closePElement();
+                                const element = self.insertHtmlElement(tag_tk);
+                                if (!self.hasElement(.template)) self.form_el_ptr = element;
+                                return .PR_Done;
+                            } else if (tag_tk.name.is(.li)) {
+                                self.frameset_ok = false;
+                                self.handleListItemStartTag(tag_tk, .li);
+                                return .PR_Done;
+                            } else if (tag_tk.name.oneOf(&.{ .dd, .dt })) {
+                                self.frameset_ok = false;
+                                self.handleListItemStartTag(tag_tk, tag_tk.name.kind);
+                                return .PR_Done;
+                            } else if (tag_tk.name.is(.plaintext)) {
+                                if (self.hasElementInButtonScope(.p)) self.closePElement();
+                                self.insertHtmlElement(tag_tk);
+                                return .{ .PR_ChangeState = .PLAINTEXT };
+                            } else if (tag_tk.name.is(.button)) {
+                                if (self.hasElementInScope(.button)) {
+                                    self.parseError();
+                                    self.generateImpliedEndTags(null);
+                                    self.popUntilPopped(.button);
+                                }
+                                self.reconstructActiveFormattingElements();
+                                self.insertHtmlElement(tag_tk);
+                                self.frameset_ok = false;
+                                return .PR_Done;
+                            } else if (tag_tk.name.is(.a)) {
+                                if (true) @panic("[TODO]:");
+                                return .PR_Done;
+                            } else if (tag_tk.name.oneOf(&.{ .b, .big, .code, .em, .font, .i, .s, .small, .strike, .strong, .tt, .u })) {
+                                self.reconstructActiveFormattingElements();
+                                const element = self.insertHtmlElement(tag_tk);
+                                self.pushActiveFormattingElement(element);
+                                return .PR_Done;
+                            } else if (tag_tk.name.is(.nobr)) {
+                                self.reconstructActiveFormattingElements();
+                                if (self.hasElementInScope(.nobr)) {
+                                    self.parseError();
+                                    self.adoptionAgencyAlgorithm(tag_tk);
+                                    self.reconstructActiveFormattingElements();
+                                }
+                                const element = self.insertHtmlElement(tag_tk);
+                                self.pushActiveFormattingElement(element);
+                                return .PR_Done;
+                            } else if (tag_tk.name.oneOf(&.{ .applet, .marquee, .object })) {
+                                self.reconstructActiveFormattingElements();
+                                self.insertHtmlElement(tag_tk);
+                                self.active_fmt_els.append(self.allocator, .AFE_Marker);
+                                self.frameset_ok = false;
+                                return .PR_Done;
+                            } else if (tag_tk.name.is(.table)) {
+                                if (self.document.mode != .DM_Quirks and self.hasElementInButtonScope(.p))
+                                    self.closePElement();
+                                self.insertHtmlElement(tag_tk);
+                                self.frameset_ok = false;
+                                self.insert_mode = .InTableMode;
+                                return .PR_Done;
+                            } else if (tag_tk.name.oneOf(&.{ .area, .br, .embed, .img, .keygen, .wbr })) {
+                                self.reconstructActiveFormattingElements();
+                                self.insertHtmlElement(tag_tk);
+                                _ = self.open_elements.pop();
+                                self.frameset_ok = false;
+                                if (tag_tk.self_closing) return .PR_AckSelfClosing;
+                                return .PR_Done;
+                            } else if (tag_tk.name.is(.input)) {
+                                if (self.fragment_case and self.context.?.local_name.is(.select)) {
+                                    self.parseError();
+                                    return .PR_Done;
+                                }
+                                if (self.hasElementInScope(.select)) {
+                                    self.parseError();
+                                    self.popUntilPopped(.select);
+                                }
+                                self.reconstructActiveFormattingElements();
+                                self.insertHtmlElement(tag_tk);
+                                _ = self.open_elements.pop();
+                                if (tag_tk.self_closing) return .PR_AckSelfClosing;
+
+                                const is_hidden = if (tag_tk.attrs.getFromLocalName(.type)) |attr|
+                                    attr.value.eqlIgnoreCase("hidden")
+                                else
+                                    false;
+
+                                if (!is_hidden) self.frameset_ok = false;
+                                return .PR_Done;
+                            } else if (tag_tk.name.oneOf(&.{ .param, .source, .track })) {
+                                self.insertHtmlElement(tag_tk);
+                                _ = self.open_elements.pop();
+                                if (tag_tk.self_closing) return .PR_AckSelfClosing;
+                                return .PR_Done;
+                            } else if (tag_tk.name.is(.hr)) {
+                                if (self.hasElementInButtonScope(.p)) self.closePElement();
+                                self.insertHtmlElement(tag_tk);
+                                _ = self.open_elements.pop();
+                                if (tag_tk.self_closing) return .PR_AckSelfClosing;
+                                self.frameset_ok = false;
+                                return .PR_Done;
+                            } else if (tag_tk.name.is(.image)) {
+                                self.parseError();
+                                var mut_tk = tk;
+                                mut_tk.TagToken.name.kind = .img;
+                                return self.step_E(mut_tk, null);
+                            } else if (tag_tk.name.is(.textarea)) {
+                                if (true) @panic("[TODO]:");
+                                return .PR_Done;
+                            } else if (tag_tk.name.is(.xmp)) {
+                                if (self.hasElementInButtonScope(.p)) self.closePElement();
+                                self.reconstructActiveFormattingElements();
+                                self.frameset_ok = false;
+                                self.parseGenericTextElement(tag_tk, .TPT_Rawtext);
+                                return .PR_Done;
+                            } else if (tag_tk.name.is(.iframe)) {
+                                self.frameset_ok = false;
+                                self.parseGenericTextElement(tag_tk, .TPT_Rawtext);
+                                return .PR_Done;
+                            } else if (tag_tk.name.is(.noembed) or (tag_tk.name.is(.noscript) and !self.isScriptingDisabled())) {
+                                self.parseGenericTextElement(tag_tk, .TPT_Rawtext);
+                                return .PR_Done;
+                            } else if (tag_tk.name.is(.select)) {
+                                self.reconstructActiveFormattingElements();
+                                self.insertHtmlElement(tag_tk);
+                                self.frameset_ok = false;
+                                if (true) @panic("[TODO]:");
+                                return .PR_Done;
+                            } else if (tag_tk.name.oneOf(&.{ .option, .optgroup })) {
+                                if (self.currentNodeIs(.option)) _ = self.open_elements.pop();
+                                self.reconstructActiveFormattingElements();
+                                self.insertHtmlElement(tag_tk);
+                                return .PR_Done;
+                            } else if (tag_tk.name.oneOf(&.{ .rb, .rtc, .rp, .rt })) {
+                                if (self.hasElementInScope(.ruby)) self.generateImpliedEndTags(null);
+                                self.insertHtmlElement(tag_tk);
+                                return .PR_Done;
+                            } else if (tag_tk.name.is(.math) or tag_tk.name.is(.svg)) {
+                                if (true) @panic("[TODO]:");
+                                return .PR_Done;
+                            } else if (tag_tk.name.oneOf(&.{ .caption, .col, .colgroup, .frame, .head, .tbody, .td, .tfoot, .th, .thead, .tr })) {
+                                self.parseError();
+                                return .PR_Done;
+                            }
+
+                            // Any other start tag
+                            self.reconstructActiveFormattingElements();
+                            self.insertHtmlElement(tag_tk);
+                            return .PR_Done;
+                        },
+                        .EndTagToken => {
+                            @panic("[TODO]:");
+                        },
+                    }
+                },
+                .EofToken => {
+                    if (self.temp_insert_modes.items.len > 0) return self.step_E(tk, .InTemplateMode);
+
+                    // [TODO]: Check if specific tags (other than tbody, td, etc.) are open -> parse error
+                    return .PR_StopParsing;
+                },
+            }
+
+            // Anything else (Should be unreachable given exhaustive Enum matching, but keeping with pattern)
+            if (true) @panic("[TODO]: Handle Parser Error");
+            return .PR_Done;
+        },
 
         // https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-incdata
         .TextMode => {

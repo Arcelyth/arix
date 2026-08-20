@@ -1239,5 +1239,77 @@ pub fn step(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) ProcessResult {
             // Anything else
             return self.step(tk, .InBodyMode);
         },
+
+        // https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-incolgroup
+        .InColumnGroupMode => {
+            sw: switch (tk) {
+                .CharacterToken => |ch_tk| {
+                    for (ch_tk.slice()) |c| {
+                        if (!ascii.isAsciiWhitespace(c)) break :sw;
+                    }
+                    self.insertCharacter(null, ch_tk);
+                    return .PR_Done;
+                },
+                .CommentToken => |cmt_tk| {
+                    self.insertComment(cmt_tk, null);
+                    return .PR_Done;
+                },
+                .ProcessingInstructionToken => |pi_tk| {
+                    self.insertProcessingInstruction(pi_tk, null);
+                    return .PR_Done;
+                },
+                .DoctypeToken => {
+                    if (true) @panic("[TODO]: Handle Parser Error");
+                    return .PR_Done;
+                },
+                .TagToken => |tag_tk| {
+                    switch (tag_tk.kind) {
+                        .StartTagToken => {
+                            if (tag_tk.name.is(.html)) {
+                                return self.step(tk, .InBodyMode);
+                            } else if (tag_tk.name.is(.col)) {
+                                const col_elem = self.insertHtmlElement(tag_tk);
+                                _ = self.open_elements.pop();
+                                if (col_elem.self_closing) return .PR_AckSelfClosing;
+                                return .PR_Done;
+                            } else if (tag_tk.name.is(.template)) {
+                                return self.step(tk, .InHeadMode);
+                            }
+                        },
+                        .EndTagToken => {
+                            if (tag_tk.name.is(.colgroup)) {
+                                if (!self.currentNode().local_name.is(.colgroup)) {
+                                    if (true) @panic("[TODO]: Handle Parser Error");
+                                    return .PR_Done;
+                                } else {
+                                    _ = self.open_elements.pop();
+                                    self.insert_mode = .InTableMode;
+                                    return .PR_Done;
+                                }
+                            } else if (tag_tk.name.is(.col)) {
+                                if (true) @panic("[TODO]: Handle Parser Error");
+                                return .PR_Done;
+                            } else if (tag_tk.name.is(.template)) {
+                                return self.step(tk, .InHeadMode);
+                            }
+                        },
+                    }
+                },
+                .EofToken => {
+                    return self.step(tk, .InBodyMode);
+                },
+                else => {},
+            }
+
+            // Anything else
+            if (!self.currentNode().local_name.is(.colgroup)) {
+                if (true) @panic("[TODO]: Handle Parser Error");
+                return .PR_Done;
+            } else {
+                _ = self.open_elements.pop();
+                self.insert_mode = .InTableMode;
+                return self.step(tk, null);
+            }
+        },
     }
 }

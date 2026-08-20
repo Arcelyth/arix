@@ -842,10 +842,91 @@ pub fn step(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) ProcessResult {
                 },
             }
 
+            // Anything else
             if (true) @panic("[TODO]: handle parse error");
             _ = self.open_elements.pop();
             self.insert_mode = .InHeadMode;
             self.step(tk, null);
         },
+
+        // https://html.spec.whatwg.org/multipage/parsing.html#the-after-head-insertion-mode
+        .AfterHeadMode => {
+            sw: switch (tk) {
+                .CharacterToken => |ch_tk| {
+                    for (ch_tk.slice()) |c| {
+                        if (!ascii.isAsciiWhitespace(c)) break :sw;
+                    }
+                    self.insertCharacter(null, ch_tk);
+                    return .PR_Done;
+                },
+                .CommentToken => |cmt_tk| {
+                    self.insertComment(cmt_tk, null);
+                    return .PR_Done;
+                },
+                .ProcessingInstructionToken => |pi_tk| {
+                    self.insertProcessingInstruction(pi_tk, null);
+                    return .PR_Done;
+                },
+                .DoctypeToken => {
+                    if (true) @panic("[TODO]: Handle Parser Error");
+                    return .PR_Done;
+                },
+                .TagToken => |tag_tk| {
+                    switch (tag_tk.kind) {
+                        .StartTagToken => {
+                            if (tag_tk.name.is(.html)) {
+                                return self.step(tk, .InBodyMode);
+                            } else if (tag_tk.name.is(.body)) {
+                                _ = self.insertHtmlElement(tag_tk);
+                                self.frameset_ok = false;
+                                self.insert_mode = .InBodyMode;
+                                return .PR_Done;
+                            } else if (tag_tk.name.is(.frameset)) {
+                                _ = self.insertHtmlElement(tag_tk);
+                                self.insert_mode = .InFramesetMode;
+                                return .PR_Done;
+                            } else if (tag_tk.name.oneOf(.base, .basefont, .bgsound, .link, .meta, .noframes, .script, .style, .template, .title)) {
+                                if (true) @panic("[TODO]: Handle Parser Error");
+                                const head_el = self.head_el_ptr.?;
+                                self.open_elements.append(self.allocator, head_el) catch @panic("OOM");
+                                const res = self.step(tk, .InHeadMode);
+                                if (std.mem.indexOfScalar(*Element, self.open_elements.items, head_el)) |idx| {
+                                    _ = self.open_elements.orderedRemove(idx);
+                                }
+                                return res;
+                            } else if (tag_tk.name.is(.head)) {
+                                if (true) @panic("[TODO]: Handle Parser Error");
+                                return .PR_Done;
+                            }
+                        },
+                        .EndTagToken => {
+                            if (tag_tk.name.is(.template)) {
+                                return self.step(tk, .InHeadMode);
+                            } else if (tag_tk.name.is(.body) or tag_tk.name.is(.html) or tag_tk.name.is(.br)) {
+                                break :sw;
+                            }
+                            if (true) @panic("[TODO]: Handle Parser Error");
+                            return .PR_Done;
+                        },
+                    }
+                },
+                else => {},
+            }
+
+            // Anything else
+            _ = self.insertHtmlElement(.{
+                .TagToken = .{
+                    .kind = .StartTag,
+                    .name = LocalName.fromTag(.body),
+                    .attrs = .empty,
+                    .self_closing = false,
+                },
+            });
+            self.insert_mode = .InBodyMode;
+            return self.step(tk, null);
+        },
+
+        // https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-inbody
+        .InBodyMode => {}
     }
 }

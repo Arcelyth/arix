@@ -1711,5 +1711,130 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
             if (true) @panic("[TODO]: Handle Parser Error");
             return .PR_Done;
         },
+
+        // https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-afterframeset
+        .AfterFramesetMode => {
+            sw: switch (tk) {
+                .CharacterToken => |ch_tk| {
+                    for (ch_tk.slice()) |c| {
+                        if (!ascii.isAsciiWhitespace(c)) break :sw;
+                    }
+                    self.insertCharacter(null, tk);
+                    return .PR_Done;
+                },
+                .CommentToken => |cmt_tk| {
+                    self.insertComment(cmt_tk, null);
+                    return .PR_Done;
+                },
+                .ProcessingInstructionToken => |pi_tk| {
+                    self.insertProcessingInstruction(pi_tk, null);
+                    return .PR_Done;
+                },
+                .DoctypeToken => {
+                    if (true) @panic("[TODO]: Handle Parser Error");
+                    return .PR_Done;
+                },
+                .TagToken => |tag_tk| {
+                    switch (tag_tk.kind) {
+                        .StartTagToken => {
+                            if (tag_tk.name.is(.html)) {
+                                return self.step_E(tk, .InBodyMode);
+                            } else if (tag_tk.name.is(.noframes)) {
+                                return self.step_E(tk, .InHeadMode);
+                            }
+                        },
+                        .EndTagToken => {
+                            if (tag_tk.name.is(.html)) {
+                                self.insert_mode = .AfterAfterFramesetMode;
+                                return .PR_Done;
+                            }
+                        },
+                    }
+                },
+                .EofToken => {
+                    return .PR_StopParsing;
+                },
+                else => {},
+            }
+
+            // Anything else
+            if (true) @panic("[TODO]: Handle Parser Error");
+            return .PR_Done;
+        },
+
+        // https://html.spec.whatwg.org/multipage/parsing.html#the-after-after-body-insertion-mode
+        .AfterAfterBodyMode => {
+            sw: switch (tk) {
+                .CommentToken => |cmt_tk| {
+                    self.insertCommentToDocument(cmt_tk);
+                    return .PR_Done;
+                },
+                .ProcessingInstructionToken => |pi_tk| {
+                    self.insertProcessingInstructionToDocument(pi_tk);
+                    return .PR_Done;
+                },
+                .DoctypeToken => {
+                    return self.step_E(tk, .InBodyMode);
+                },
+                .CharacterToken => |ch_tk| {
+                    for (ch_tk.slice()) |c| {
+                        if (!ascii.isAsciiWhitespace(c)) break :sw;
+                    }
+                    return self.step_E(tk, .InBodyMode);
+                },
+                .TagToken => |tag_tk| {
+                    if (tag_tk.kind == .StartTagToken and tag_tk.name.is(.html)) {
+                        return self.step_E(tk, .InBodyMode);
+                    }
+                },
+                .EofToken => {
+                    return .PR_StopParsing;
+                },
+                else => {},
+            }
+
+            // Anything else
+            if (true) @panic("[TODO]: Handle Parser Error");
+            self.insert_mode = .InBodyMode;
+            return self.step_E(tk, null);
+        },
+
+        // https://html.spec.whatwg.org/multipage/parsing.html#the-after-after-frameset-insertion-mode
+        .AfterAfterFramesetMode => {
+            sw: switch (tk) {
+                .CommentToken => |cmt_tk| {
+                    self.insertCommentToDocument(cmt_tk);
+                    return .PR_Done;
+                },
+                .ProcessingInstructionToken => |pi_tk| {
+                    self.insertProcessingInstructionToDocument(pi_tk);
+                    return .PR_Done;
+                },
+                .DoctypeToken => {
+                    return self.step_E(tk, .InBodyMode);
+                },
+                .CharacterToken => |ch_tk| {
+                    for (ch_tk.slice()) |c| {
+                        if (!ascii.isAsciiWhitespace(c)) break :sw;
+                    }
+                    return self.step_E(tk, .InBodyMode);
+                },
+                .TagToken => |tag_tk| {
+                    if (tag_tk.kind == .StartTagToken) {
+                        if (tag_tk.name.is(.html)) {
+                            return self.step_E(tk, .InBodyMode);
+                        } else if (tag_tk.name.is(.noframes)) {
+                            return self.step_E(tk, .InHeadMode);
+                        }
+                    }
+                },
+                .EofToken => return .PR_StopParsing,
+                else => {},
+            }
+
+            // Anything else
+            if (true) @panic("[TODO]: Handle Parser Error");
+            return .PR_Done;
+        },
     }
 }

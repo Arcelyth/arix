@@ -115,6 +115,13 @@ pub fn main(init: std.process.Init) !void {
         \\            .dynamic => |dy| dy.slice(),
         \\        };
         \\    }
+        \\    
+        \\    pub inline fn toTag(self: LocalName) ?LocalTag {
+        \\        return switch (self) {
+        \\            .static => |tag| tag,
+        \\            .dynamic => null,
+        \\        }; 
+        \\    }
         \\
         \\    pub inline fn eql(self: LocalName, other: LocalName) bool {
         \\        if (self == .static and other == .static) {

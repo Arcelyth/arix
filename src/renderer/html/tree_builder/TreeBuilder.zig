@@ -537,7 +537,7 @@ pub fn closeCell(self: *TreeBuilder) void {
     while (self.open_elements.items.len > 0) {
         const el = self.open_elements.pop();
         if (el) |e| {
-            if (e.namespace == .NS_Html and e.local_name.oneOf(&.{ .td, .th })) break;
+            if (e.ns == .NS_Html and e.local_name.oneOf(&.{ .td, .th })) break;
         }
     }
     self.clearActiveFormattingElementsToLastMarker();
@@ -1382,14 +1382,9 @@ pub fn step(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) ProcessResult {
                         },
                         .EndTagToken => {
                             if (tag_tk.name.oneOf(&.{ .tbody, .tfoot, .thead })) {
-                                switch (tag_tk.name) {
-                                    .static => |s| {
-                                        if (!self.hasElementInTableScope(s)) {
-                                            if (true) @panic("[TODO]: Handle Parser Error");
-                                            return .PR_Done;
-                                        }
-                                    },
-                                    else => {},
+                                if (!self.hasElementInTableScope(tag_tk.name.toTag().?)) {
+                                    if (true) @panic("[TODO]: Handle Parser Error");
+                                    return .PR_Done;
                                 }
                                 self.clearStackBackToTableBodyContext();
                                 _ = self.open_elements.pop();
@@ -1468,14 +1463,9 @@ pub fn step(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) ProcessResult {
                                     return self.step(tk, null);
                                 }
                             } else if (tag_tk.name.oneOf(&.{ .tbody, .tfoot, .thead })) {
-                                switch (tag_tk.name) {
-                                    .static => |s| {
-                                        if (!self.hasElementInTableScope(s)) {
-                                            if (true) @panic("[TODO]: Handle Parser Error");
-                                            return .PR_Done;
-                                        }
-                                    },
-                                    else => {},
+                                if (!self.hasElementInTableScope(tag_tk.name.toTag().?)) {
+                                    if (true) @panic("[TODO]: Handle Parser Error");
+                                    return .PR_Done;
                                 }
 
                                 if (!self.hasElementInTableScope(.tr)) {
@@ -1497,6 +1487,56 @@ pub fn step(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) ProcessResult {
 
             // Anything else
             return self.step(tk, .InTableMode);
+        },
+
+        // https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-intd
+        .InCellMode => {
+            switch (tk) {
+                .TagToken => |tag_tk| {
+                    switch (tag_tk.kind) {
+                        .StartTagToken => {
+                            if (tag_tk.name.oneOf(.caption, .col, .colgroup, .tbody, .td, .tfoot, .th, .thead, .tr)) {
+                                std.debug.assert(self.hasElementInTableScope(.td) or self.hasElementInTableScope(.th));
+                                self.closeCell();
+                                return self.step(tk, null);
+                            }
+                        },
+                        .EndTagToken => {
+                            if (tag_tk.name.oneOf(.td, .th)) {
+                                const target_tag = tag_tk.name.toTag().?;
+                                if (!self.hasElementInTableScope(target_tag)) {
+                                    if (true) @panic("[TODO]: Handle Parser Error");
+                                    return .PR_Done;
+                                } else {
+                                    self.generateImpliedEndTags(null);
+                                    if (!self.currentNode().local_name.is(target_tag)) {
+                                        if (true) @panic("[TODO]: Handle Parser Error");
+                                    }
+                                    self.popUntilPopped(target_tag);
+                                    self.clearActiveFormattingElementsToLastMarker();
+                                    self.insert_mode = .InRowMode;
+                                    return .PR_Done;
+                                }
+                            } else if (tag_tk.name.oneOf(.body, .caption, .col, .colgroup, .html)) {
+                                if (true) @panic("[TODO]: Handle Parser Error");
+                                return .PR_Done;
+                            } else if (tag_tk.name.oneOf(.table, .tbody, .tfoot, .thead, .tr)) {
+                                if (!self.hasElementInTableScope(tag_tk.name.toTag().?)) {
+                                    if (true) @panic("[TODO]: Handle Parser Error");
+                                    return .PR_Done;
+                                } else {
+                                    self.closeCell();
+                                    return self.step(tk, null);
+                                }
+                            }
+                        },
+                    }
+                },
+                else => {},
+            }
+
+            // Anything else
+            return self.step(tk, .InBodyMode);
         },
     }
 }

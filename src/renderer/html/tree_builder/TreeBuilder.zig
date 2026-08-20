@@ -927,6 +927,39 @@ pub fn step(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) ProcessResult {
         },
 
         // https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-inbody
-        .InBodyMode => {}
+        .InBodyMode => {},
+
+        // https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-incdata
+        .TextMode => {
+            switch (tk) {
+                .CharacterToken => |ch_tk| {
+                    self.insertCharacter(null, ch_tk);
+                    return .PR_Done;
+                },
+                .EofToken => {
+                    if (true) @panic("[TODO]: Handle Parser Error");
+                    const node = self.currentNode();
+                    if (node.local_name.is(.script)) {
+                        node.already_started = true;
+                    }
+                    _ = self.open_elements.pop();
+                    self.insert_mode = self.orig_insert_mode;
+                    return self.step(tk, null);
+                },
+                .TagToken => |tag_tk| {
+                    if (tag_tk.kind == .EndTagToken) {
+                        if (tag_tk.name.is(.script)) {
+                            if (true) @panic("[TODO]: script");
+                            return .PR_Done;
+                        } else {
+                            _ = self.open_elements.pop();
+                            self.insert_mode = self.orig_insert_mode;
+                            return .PR_Done;
+                        }
+                    }
+                },
+                else => {},
+            }
+        },
     }
 }

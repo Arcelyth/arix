@@ -53,9 +53,10 @@ document: Document,
 context: ?*Element,
 // Element pointer: https://html.spec.whatwg.org/multipage/parsing.html#the-element-pointers
 head_el_ptr: ?*Element,
-from_el_ptr: ?*Element,
+form_el_ptr: ?*Element,
 active_fmt_els: std.ArrayList(ActiveFormatElement),
 allow_decl_shadow_roots: bool,
+pending_table_char_tks: std.ArrayList(*Token),
 
 pub fn init(alloc: std.mem.Allocator, fragment_case: bool) TreeBuilder {
     return TreeBuilder{
@@ -71,9 +72,10 @@ pub fn init(alloc: std.mem.Allocator, fragment_case: bool) TreeBuilder {
         .document = Document.init(),
         .context = null,
         .head_el_ptr = null,
-        .from_el_ptr = null,
+        .form_el_ptr = null,
         .active_fmt_els = .empty,
         .allow_decl_shadow_roots = false,
+        .pending_table_char_tks = .empty,
     };
 }
 
@@ -496,6 +498,28 @@ pub fn clearActiveFormattingElementsToLastMarker(self: *TreeBuilder) void {
 // TODO:
 pub fn resetInsertionModeAppropriately(self: *TreeBuilder) void {
     _ = self;
+}
+
+pub fn clearStackBackToTableContext(self: *TreeBuilder) void {
+    while (self.open_elements.items.len > 0) {
+        const node = self.currentNode();
+        if (node.local_name.oneOf(.table, .template, .html)) break;
+        _ = self.open_elements.pop();
+    }
+}
+
+/// https://html.spec.whatwg.org/multipage/parsing.html#has-an-element-in-table-scope
+pub fn hasElementInTableScope(self: *const TreeBuilder, target_tag: LocalTag) bool {
+    var i: usize = self.open_elements.items.len;
+    while (i > 0) {
+        i -= 1;
+        const node = self.open_elements.items[i];
+
+        if (node.ns == .NS_Html and node.local_name.is(target_tag)) return true;
+
+        if (node.ns == .NS_Html and node.local_name.oneOf(.html, .table, .template)) return false;
+    }
+    return false;
 }
 
 /// A `null` mode means the token is processed or reprocessed using the current
@@ -960,6 +984,143 @@ pub fn step(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) ProcessResult {
                 },
                 else => {},
             }
+        },
+
+        // https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-intable
+        .InTableMode => {
+            sw: switch (tk) {
+                .CharacterToken => {
+                    if (self.currentNode().local_name.oneOf(.table, .tbody, .template, .tfoot, .thead, .tr)) {
+                        self.pending_table_char_tks = .empty;
+                        self.orig_insert_mode = self.insert_mode;
+                        self.insert_mode = .InTableTextMode;
+                        return self.step(tk, null);
+                    }
+                },
+                .CommentToken => |cmt_tk| {
+                    self.insertComment(cmt_tk, null);
+                    return .PR_Done;
+                },
+                .ProcessingInstructionToken => |pi_tk| {
+                    self.insertProcessingInstruction(pi_tk, null);
+                    return .PR_Done;
+                },
+                .DoctypeToken => {
+                    if (true) @panic("[TODO]: Handle Parser Error");
+                    return .PR_Done;
+                },
+                .TagToken => |tag_tk| {
+                    switch (tag_tk.kind) {
+                        .StartTagToken => {
+                            if (tag_tk.name.is(.caption)) {
+                                self.clearStackBackToTableContext();
+                                self.active_fmt_els.append(self.allocator, .AFE_Marker) catch @panic("OOM");
+                                _ = self.insertHtmlElement(tag_tk);
+                                self.insert_mode = .InCaptionMode;
+                                return .PR_Done;
+                            } else if (tag_tk.name.is(.colgroup)) {
+                                self.clearStackBackToTableContext();
+                                _ = self.insertHtmlElement(tag_tk);
+                                self.insert_mode = .InColumnGroupMode;
+                                return .PR_Done;
+                            } else if (tag_tk.name.is(.col)) {
+                                self.clearStackBackToTableContext();
+                                _ = self.insertHtmlElement(.{
+                                    .TagToken = .{
+                                        .kind = .StartTagToken,
+                                        .name = LocalName.fromTag(.colgroup),
+                                        .attrs = .empty,
+                                        .self_closing = false,
+                                    },
+                                });
+                                self.insert_mode = .InColumnGroupMode;
+                                return self.step(tk, null);
+                            } else if (tag_tk.name.oneOf(.tbody, .tfoot, .thead)) {
+                                self.clearStackBackToTableContext();
+                                _ = self.insertHtmlElement(tag_tk);
+                                self.insert_mode = .InTableBodyMode;
+                                return .PR_Done;
+                            } else if (tag_tk.name.oneOf(.td, .th, .tr)) {
+                                self.clearStackBackToTableContext();
+                                _ = self.insertHtmlElement(.{
+                                    .TagToken = .{
+                                        .kind = .StartTagToken,
+                                        .name = LocalName.fromTag(.tbody),
+                                        .attrs = .empty,
+                                        .self_closing = false,
+                                    },
+                                });
+                                self.insert_mode = .InTableBodyMode;
+                                return self.step(tk, null);
+                            } else if (tag_tk.name.is(.table)) {
+                                if (true) @panic("[TODO]: Handle Parser Error");
+                                if (!self.hasElementInTableScope(.table)) {
+                                    return .PR_Done;
+                                } else {
+                                    self.popUntilPopped(.table);
+                                    self.resetInsertionModeAppropriately();
+                                    return self.step(tk, null);
+                                }
+                            } else if (tag_tk.name.oneOf(.style, .script, .template)) {
+                                return self.step(tk, .InHeadMode);
+                            } else if (tag_tk.name.is(.input)) {
+                                const is_hidden = if (tag_tk.attrs.getFromLocalName(.type)) |attr|
+                                    attr.value.eqlIgnoreCase("hidden")
+                                else
+                                    false;
+
+                                if (!is_hidden) break :sw;
+
+                                if (true) @panic("[TODO]: Handle Parser Error");
+                                const elem = self.insertHtmlElement(tag_tk);
+                                _ = self.open_elements.pop();
+                                if (elem.self_closing) return .PR_AckSelfClosing;
+                                return .PR_Done;
+                            } else if (tag_tk.name.is(.form)) {
+                                if (true) @panic("[TODO]: Handle Parser Error");
+                                if (self.hasElement(.template) or self.form_el_ptr != null) {
+                                    return .PR_Done;
+                                } else {
+                                    const form_elem = self.insertHtmlElement(tag_tk);
+                                    self.form_el_ptr = form_elem;
+                                    _ = self.open_elements.pop();
+                                    return .PR_Done;
+                                }
+                            }
+                        },
+                        .EndTagToken => {
+                            if (tag_tk.name.is(.table)) {
+                                if (!self.hasElementInTableScope(.table)) {
+                                    if (true) @panic("[TODO]: Handle Parser Error");
+                                    return .PR_Done;
+                                } else {
+                                    while (self.open_elements.items.len > 0) {
+                                        const el = self.open_elements.pop();
+                                        if (el) |e| if (e.local_name.is(.table)) break;
+                                    }
+                                    self.resetInsertionModeAppropriately();
+                                    return .PR_Done;
+                                }
+                            } else if (tag_tk.name.is(.template)) {
+                                return self.step(tk, .InHeadMode);
+                            } else if (tag_tk.name.oneOf(.body, .caption, .col, .colgroup, .html, .tbody, .td, .tfoot, .th, .thead, .tr)) {
+                                if (true) @panic("[TODO]: Handle Parser Error");
+                                return .PR_Done;
+                            }
+                        },
+                    }
+                },
+                .EofToken => {
+                    return self.step(tk, .InBodyMode);
+                },
+            }
+
+            // Anything else
+            if (true) @panic("[TODO]: Handle Parser Error");
+            self.foster_parenting = true;
+            const res = self.step(tk, .InBodyMode);
+            self.foster_parenting = false;
+            return res;
         },
     }
 }

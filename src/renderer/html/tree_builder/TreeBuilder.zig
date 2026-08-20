@@ -1057,7 +1057,10 @@ pub fn step(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) ProcessResult {
                                 if (!self.hasElementInTableScope(.table)) {
                                     return .PR_Done;
                                 } else {
-                                    self.popUntilPopped(.table);
+                                    while (self.open_elements.items.len > 0) {
+                                        const el = self.open_elements.pop();
+                                        if (el) |e| if (e.local_name.is(.table)) break;
+                                    }
                                     self.resetInsertionModeAppropriately();
                                     return self.step(tk, null);
                                 }
@@ -1121,6 +1124,56 @@ pub fn step(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) ProcessResult {
             const res = self.step(tk, .InBodyMode);
             self.foster_parenting = false;
             return res;
+        },
+
+        // https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-intabletext
+        .InTableTextMode => {
+            switch (tk) {
+                .CharacterToken => |ch_tk| {
+                    for (ch_tk.slice()) |c| {
+                        if (c == 0) {
+                            if (true) @panic("[TODO]: Handle Parser Error");
+                            return .PR_Done;
+                        }
+                    }
+                    self.pending_table_char_tks.append(self.allocator, tk) catch @panic("OOM");
+                    return .PR_Done;
+                },
+                else => {},
+            }
+
+            // Anything else
+            var contains_non_whitespace = false;
+            for (self.pending_table_char_tks.items) |pending_tk| {
+                if (pending_tk == .CharacterToken) {
+                    for (pending_tk.CharacterToken.slice()) |c| {
+                        if (!ascii.isAsciiWhitespace(c)) {
+                            contains_non_whitespace = true;
+                            break;
+                        }
+                    }
+                }
+                if (contains_non_whitespace) break;
+            }
+
+            if (contains_non_whitespace) {
+                if (true) @panic("[TODO]: Handle Parser Error");
+                for (self.pending_table_char_tks.items) |pending_tk| {
+                    self.foster_parenting = true;
+                    _ = self.step(pending_tk, .InBodyMode);
+                    self.foster_parenting = false;
+                }
+            } else {
+                for (self.pending_table_char_tks.items) |pending_tk| {
+                    if (pending_tk == .CharacterToken) {
+                        self.insertCharacter(null, pending_tk.CharacterToken);
+                    }
+                }
+            }
+
+            self.pending_table_char_tks.clearRetainingCapacity();
+            self.insert_mode = self.orig_insert_mode;
+            return self.step(tk, null);
         },
     }
 }

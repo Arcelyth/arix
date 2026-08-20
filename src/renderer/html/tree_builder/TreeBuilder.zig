@@ -27,64 +27,13 @@ const StraleUtf8Global = strale.StraleUtf8Global;
 const ascii = @import("../../utils/ascii.zig");
 const types = @import("types.zig");
 const ProcessResult = types.ProcessResult;
-
-const InsertionMode = enum {
-    InitialMode,
-    BeforeHtmlMode,
-    BeforeHeadMode,
-    InHeadMode,
-    InHeadNoscriptMode,
-    AfterHeadMode,
-    InBodyMode,
-    TextMode,
-    InTableMode,
-    InTableTextMode,
-    InCaptionMode,
-    InColumnGroupMode,
-    InTableBodyMode,
-    InRowMode,
-    InCellMode,
-    InTemplateMode,
-    AfterBodyMode,
-    InFramesetMode,
-    AfterFramesetMode,
-    AfterAfterBodyMode,
-    AfterAfterFramesetMode,
-};
-
-const InsertionLocation = union {
-    last_child: *Node,
-    before_child: *Node,
-    parent_before_child: struct {
-        parent: *Node,
-        before_child: *Node,
-    },
-
-    pub fn getParent(self: *InsertionLocation) *Node {
-        return switch (self) {
-            .last_child => |parent| parent,
-            .before_child => |before| before.parent orelse @panic("before_child has no parent"),
-            .parent_before_child => |loc| loc.parent,
-        };
-    }
-
-    pub fn beforeNode(self: InsertionLocation) ?*Node {
-        const before = switch (self) {
-            .last_child => |parent| return parent.last_child,
-            .before_child => |node| node,
-            .parent_before_child => |loc| loc.before_child,
-        };
-
-        return before.prev_sibling;
-    }
-};
-
-const ScriptingMode = enum {
-    Normal,
-    Disabled,
-    Inert,
-    Fragment,
-};
+const ActiveFormatElement = types.ActiveFormatElement;
+const InsertionMode = types.InsertionMode;
+const InsertionLocation = types.InsertionLocation;
+const ScriptingMode = types.ScriptingMode;
+const dom_type = @import("../../dom/type.zig");
+const ShadowRootMode = dom_type.ShadowRootMode;
+const SlotAssignment = dom_type.SlotAssignment;
 
 allocator: std.mem.Allocator,
 open_elements: std.ArrayList(*Element),
@@ -101,9 +50,12 @@ scripting_mode: ScriptingMode,
 foster_parenting: bool,
 frameset_ok: bool,
 document: Document,
+context: ?*Element,
 // Element pointer: https://html.spec.whatwg.org/multipage/parsing.html#the-element-pointers
 head_el_ptr: ?*Element,
 from_el_ptr: ?*Element,
+active_fmt_els: std.ArrayList(ActiveFormatElement),
+allow_decl_shadow_roots: bool,
 
 pub fn init(alloc: std.mem.Allocator, fragment_case: bool) TreeBuilder {
     return TreeBuilder{
@@ -115,10 +67,13 @@ pub fn init(alloc: std.mem.Allocator, fragment_case: bool) TreeBuilder {
         .fragment_case = fragment_case,
         .scripting_mode = .Normal,
         .foster_parenting = false,
-        .frameset_ok = false,
+        .frameset_ok = true,
         .document = Document.init(),
+        .context = null,
         .head_el_ptr = null,
         .from_el_ptr = null,
+        .active_fmt_els = .empty,
+        .allow_decl_shadow_roots = false,
     };
 }
 
@@ -194,8 +149,19 @@ pub fn processTokenForeign(self: *const TreeBuilder, tk: Token) ProcessResult {
     @panic("[TODO]");
 }
 
-pub fn adjustedCurrentNode(self: *TreeBuilder) *Node {
-    if (self.open_elements.getLastOrNull()) |*node| return &node else @panic("Stack of open elements is empty.");
+pub inline fn adjustedCurrentNode(self: *TreeBuilder) *Node {
+    if (self.fragment_case and self.open_elements.items.len == 1) {
+        return (self.context orelse @panic("Context no set.")).asNode();
+    }
+
+    return self.currentNode();
+}
+
+pub inline fn isAdjustedCurrentNodeTopmost(self: *TreeBuilder) bool {
+    if (self.fragment_case and self.open_elements.items.len == 1) {
+        return false;
+    }
+    return true;
 }
 
 // https://html.spec.whatwg.org/#appropriate-place-for-inserting-a-node
@@ -500,9 +466,36 @@ fn insertNodeAt(
     }
 }
 
+pub inline fn currentTemplateInsertionMode(self: *TreeBuilder) ?InsertionMode {
+    if (self.temp_insert_modes.items.len == 0) return null;
+    return self.temp_insert_modes.items[self.temp_insert_modes.items.len - 1];
+}
+
 // Append token to document node.
 pub fn appendToDocument(self: *TreeBuilder, node: *Node) void {
     self.insertNodeAt(node, .{ .last_child = self.document.asNode() });
+}
+
+pub fn hasElement(self: *const TreeBuilder, name: LocalTag) bool {
+    for (self.open_elements.items) |el| {
+        if (el.local_name.is(name)) return true;
+    }
+    return false;
+}
+
+pub fn clearActiveFormattingElementsToLastMarker(self: *TreeBuilder) void {
+    while (self.active_fmt_els.items.len > 0) {
+        const entry = self.active_fmt_els.pop();
+        if (entry) |e| switch (e) {
+            .AFE_Marker => return,
+            else => {},
+        };
+    }
+}
+
+// TODO:
+pub fn resetInsertionModeAppropriately(self: *TreeBuilder) void {
+    _ = self;
 }
 
 /// A `null` mode means the token is processed or reprocessed using the current
@@ -577,7 +570,7 @@ pub fn step(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) ProcessResult {
                     switch (tag_tk.kind) {
                         .StartTagToken => {
                             if (tag_tk.name.is(.html)) {
-                                const html_elem = self.createElementForToken(tag_tk, .HTML_Namespace, self.document);
+                                const html_elem = self.createElementForToken(tag_tk, .NS_Html, self.document);
                                 self.appendToDocument(html_elem.asNode());
                                 self.open_elements.append(html_elem);
                                 self.insert_mode = .BeforeHeadMode;
@@ -718,9 +711,57 @@ pub fn step(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) ProcessResult {
                                 self.insert_mode = .InHeadNoscriptMode;
                                 return .PR_Done;
                             } else if (tag_tk.name.is(.script)) {
-                                @panic("[TODO]: ");
+                                const adjust_loc = self.appropriatePlaceForInsertion(null);
+                                const parent = adjust_loc.getParent();
+                                const document = parent.node_doc;
+                                const el = self.createElementForToken(tag_tk, .NS_Html, document);
+                                if (self.scripting_mode != .Fragment) el.parser_doc = self.document;
+                                el.force_async = false;
+                                if (self.scripting_mode == .Inert) el.already_started = true;
+                                // TODO: Here ignore the step 6.
+                                self.insertNodeAt(el.asNode(), adjust_loc);
+                                self.open_elements.append(self.allocator, el);
+                                self.orig_insert_mode = self.insert_mode;
+                                self.insert_mode = .TextMode;
+                                return .{ .PR_ChangeState = .ScriptData };
                             } else if (tag_tk.name.is(.template)) {
-                                @panic("[TODO]: ");
+                                const tmp_tag = tag_tk;
+                                self.active_fmt_els.append(self.allocator, .AFE_Marker);
+                                self.frameset_ok = false;
+                                self.insert_mode = .InTemplateMode;
+                                self.temp_insert_modes.append(self.allocator, .InTemplateMode);
+                                const adjust_loc = self.appropriatePlaceForInsertion(null);
+                                const intended_parent = adjust_loc.getParent();
+                                self.document = intended_parent.node_doc;
+                                if (tmp_tag.shadowRootMode != .SRM_None or !self.allow_decl_shadow_roots or self.isAdjustedCurrentNodeTopmost()) {
+                                    self.insertHtmlElement(tag_tk);
+                                } else {
+                                    const decl_she = self.adjustedCurrentNode();
+                                    const temp = self.insertForeignElement(tmp_tag, .NS_Html, true);
+                                    const sr_mode = tmp_tag.shadowRootMode();
+                                    const slot_ass = .SA_Named;
+                                    if (tmp_tag.shadowRootSlotAssignment() == .SA_Manual) slot_ass = .SA_Manual;
+                                    const clonable = tmp_tag.hasAttrName("shadowrootclonable");
+                                    const serializable = tmp_tag.hasAttrName("shadowrootserializable");
+                                    const delegate_focus = tmp_tag.hasAttrName("shadowrootdelegatesfocus");
+                                    if (decl_she.shadow_root != null) {
+                                        self.insertElementAtAdjustedInsertionLocation(temp);
+                                    } else {
+                                        const registry = if (tmp_tag.hasAttrName("shadowrootcustomelementregistry")) null else {
+                                            decl_she.node_doc.custom_element_registry;
+                                        };
+                                        decl_she.attachShadowRoot(sr_mode, clonable, serializable, delegate_focus, slot_ass, registry) catch {
+                                            self.insertElementAtAdjustedInsertionLocation(temp);
+                                            // TODO: Optionally report the error.
+                                            return;
+                                        };
+                                        const shadow = decl_she.shadow_root;
+                                        shadow.declarative = true;
+                                        temp.temp_contents = shadow;
+                                        shadow.available = true;
+                                        shadow.keep_cer_null = tmp_tag.hasAttrName("shadowrootcustomelementregistry");
+                                    }
+                                }
                             } else if (tag_tk.name.is(.head)) {
                                 @panic("[TODO]: Handle Parser Error");
                             }
@@ -731,7 +772,19 @@ pub fn step(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) ProcessResult {
                                 self.insert_mode = .AfterHeadMode;
                                 return .PR_Done;
                             } else if (tag_tk.name.is(.template)) {
-                                @panic("[TODO]:");
+                                if (!self.hasElement(.template)) {
+                                    if (true) @panic("[TODO]: handle parse error");
+                                    return;
+                                }
+                                self.generateAllImpliedEndTagsThoroughly();
+                                if (self.currentNode().local_name.is(.template)) @panic("[TODO]: handle parse error");
+                                while (self.open_elements.items.len > 0) {
+                                    const el = self.open_elements.pop();
+                                    if (el) |e| if (e.local_name.is(.template)) break;
+                                }
+                                self.clearActiveFormattingElementsToLastMarker();
+                                _ = self.temp_insert_modes.pop();
+                                self.resetInsertionModeAppropriately();
                             } else if (tag_tk.name.is(.body) or tag_tk.name.is(.html) or tag_tk.name.is(.br)) {
                                 break :sw;
                             }

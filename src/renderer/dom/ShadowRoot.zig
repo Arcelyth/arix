@@ -7,6 +7,7 @@ const Node = @import("Node.zig");
 const Document = @import("Document.zig");
 
 pub const ShadowRootMode = enum {
+    SR_None,
     SR_Open,
     SR_Closed,
 };

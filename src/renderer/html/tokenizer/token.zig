@@ -8,6 +8,10 @@ const BufferDeque = strale.BufferDeque;
 const Namespace = @import("../../dom/namespace.zig").Namespace;
 const Attr = @import("../../dom/Attr.zig");
 const Attrs = @import("../../dom/Attrs.zig");
+const dom_type = @import("../../dom/type.zig");
+const ShadowRootMode = dom_type.ShadowRootMode;
+const SlotAssignment = dom_type.SlotAssignment;
+
 const ids = @import("ids.zig");
 
 pub const Attribute = struct {
@@ -110,7 +114,7 @@ pub const Tag = struct {
     attrs: std.ArrayList(Attribute),
 
     pub fn hasAttr(
-        self: Tag,
+        self: *const Tag,
         name: []const u8,
         value: []const u8,
         is_sensitive: bool,
@@ -127,7 +131,20 @@ pub const Tag = struct {
         return false;
     }
 
-    pub fn getAttrVal(self: Tag, name: []const u8) ?[]const u8 {
+    pub fn hasAttrName(
+        self: *const Tag,
+        name: []const u8,
+    ) bool {
+        const target = LocalName.fromSlice(name);
+
+        for (self.attrs.items) |attr| {
+            if (attr.name.eql(target)) return true;
+        }
+
+        return false;
+    }
+
+    pub fn getAttrVal(self: *const Tag, name: []const u8) ?[]const u8 {
         const target = LocalName.fromSlice(name);
 
         for (self.attrs.items) |attr| {
@@ -135,6 +152,20 @@ pub const Tag = struct {
         }
 
         return null;
+    }
+
+    pub fn shadowRootMode(self: *const Tag) ShadowRootMode {
+        const val = self.getAttrVal("shadowrootmode") orelse return .SRM_None;
+        if (val.eqlIgnoreCase("open")) return .SRM_Open;
+        if (val.eqlIgnoreCase("closed")) return .SRM_Closed;
+        return .SRM_None;
+    }
+
+    pub fn shadowRootSlotAssignment(self: *const Tag) shadowRootSlotAssignment {
+        const val = self.getAttrVal("shadowrootslotassignment") orelse return .SA_Named;
+        if (val.eqlIgnoreCase("named")) return .SA_Named;
+        if (val.eqlIgnoreCase("manual")) return .SA_Manual;
+        return .SRM_Named;
     }
 
     // https://html.spec.whatwg.org/multipage/parsing.html#adjust-mathml-attributes

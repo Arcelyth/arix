@@ -6,6 +6,7 @@ const std = @import("std");
 const token = @import("../html/tokenizer/token.zig");
 const ln = @import("local_name");
 const Document = @import("Document.zig");
+const DocumentFragment = @import("DocumentFragment.zig");
 const NamedNodeMap = @import("NamedNodeMap.zig");
 const Attr = @import("Attr.zig");
 const Attribute = token.Attribute;
@@ -14,6 +15,7 @@ const CustomElementRegistry = @import("CustomElementRegistry.zig");
 const CustomElementDefinition = @import("CustomElementDefinition.zig");
 const LocalName = ln.LocalName;
 const LocalTag = ln.LocalTag;
+const ShadowRoot = @import("ShadowRoot.zig");
 
 pub const CustomElementState = enum {
     CES_Undefined,
@@ -21,6 +23,13 @@ pub const CustomElementState = enum {
     CES_Uncustomized,
     CES_Precustomized,
     CES_Custom,
+};
+
+const ScriptElementType = enum { SET_Classic, SET_Module, SET_Importmap, SET_Speculationrules };
+
+const ScriptResult = union(enum) {
+    SR_Uninitialized,
+    // TODO:
 };
 
 node: Node,
@@ -34,9 +43,24 @@ custom_element_state: CustomElementState,
 custom_element_definition: ?*CustomElementDefinition,
 // TODO: Since it stand for custom name, might need to changed to Strale.
 is: ?LocalName,
-// shadow_root:
+shadow_root: ?*ShadowRoot,
 attr_list: NamedNodeMap,
 attrs: Attrs,
+// -- Script element's field:
+// Parser document.
+parser_doc: ?*Document,
+prep_time_doc: ?*Document,
+force_async: bool,
+from_ext_file: bool,
+// ready to be parser-executed
+parser_exec_ready: bool,
+already_started: bool,
+delaying_the_load_event: bool,
+ty: ?ScriptElementType,
+result: ?ScriptResult,
+// --
+// -- Template element's field:
+temp_contents: ?*DocumentFragment,
 
 pub const dom_type = .DOM_Element;
 
@@ -50,8 +74,19 @@ pub fn init(alloc: std.mem.Allocator, ns: Namespace, local: LocalName, document:
         .custom_element_state = .CES_Undefined,
         .custom_element_definition = null,
         .is = null,
+        .shadow_root = null,
         .attr_list = NamedNodeMap.init(null),
         .attrs = Attrs.init(alloc),
+        .parser_doc = null,
+        .prep_time_doc = null,
+        .force_async = true,
+        .from_ext_file = false,
+        .parser_exec_ready = false,
+        .already_started = false,
+        .delaying_the_load_event = false,
+        .ty = null,
+        .result = .SR_Uninitialized,
+        .temp_contents = null,
     };
 }
 
@@ -148,4 +183,15 @@ pub fn isFormAssociatedCustomElement(self: *const Element) bool {
 pub fn isFormAssociatedElement(self: *const Element) bool {
     _ = self;
     return false;
+}
+
+pub fn attachShadowRoot(self: *Element, mode: ShadowRoot.ShadowRootMode, clonable: bool, serializable: bool, delegates_focus: bool, slot_ass: ShadowRoot.ShadowRootSlotAssignment, registry: ?*CustomElementRegistry) void {
+    //TODO
+    _ = self;
+    _ = mode;
+    _ = clonable;
+    _ = delegates_focus;
+    _ = slot_ass;
+    _ = serializable;
+    _ = registry;
 }

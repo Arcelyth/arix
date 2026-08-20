@@ -1645,5 +1645,71 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
             self.insert_mode = .InBodyMode;
             return self.step_E(tk, null);
         },
+
+        // https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-inframeset
+        .InFramesetMode => {
+            sw: switch (tk) {
+                .CharacterToken => |ch_tk| {
+                    for (ch_tk.slice()) |c| {
+                        if (!ascii.isAsciiWhitespace(c)) break :sw;
+                    }
+                    return self.step_E(ch_tk, .InBodyMode);
+                },
+
+                .CommentToken => |cmt_tk| {
+                    self.insertComment(cmt_tk);
+                    return .PR_Done;
+                },
+                .ProcessingInstructionToken => |pi_tk| {
+                    self.insertProcessingInstruction(pi_tk);
+                    return .PR_Done;
+                },
+                .DoctypeToken => {
+                    if (true) @panic("[TODO]: Handle Parser Error");
+                    return .PR_Done;
+                },
+                .TagToken => |tag_tk| {
+                    switch (tag_tk.kind) {
+                        .StartTagToken => {
+                            if (tag_tk.name.is(.html)) {
+                                return self.step_E(tk, .InBodyMode);
+                            } else if (tag_tk.name.is(.frameset)) {
+                                _ = self.insertHtmlElement(tag_tk);
+                                return .PR_Done;
+                            } else if (tag_tk.name.is(.frame)) {
+                                _ = self.insertHtmlElement(tag_tk);
+                                _ = self.open_elements.pop();
+                                return .PR_AckSelfClosing;
+                            } else if (tag_tk.name.is(.noframes)) {
+                                return self.step_E(tk, .InHeadMode);
+                            }
+                        },
+                        .EndTagToken => {
+                            if (tag_tk.name.is(.frameset)) {
+                                if (self.currentNode().local_name.is(.html)) {
+                                    if (true) @panic("[TODO]: Handle Parser Error");
+                                    return .PR_Done;
+                                }
+                                _ = self.open_elements.pop();
+                                if (!self.frameset_ok and !self.currentNode().local_name.is(.frameset)) {
+                                    self.insert_mode = .AfterFramesetMode;
+                                }
+                                return .PR_Done;
+                            }
+                        },
+                    }
+                },
+                .EofToken => {
+                    if (!self.currentNode().local_name.is(.html)) {
+                        if (true) @panic("[TODO]: Handle Parser Error");
+                    }
+                    return .PR_StopParsing;
+                },
+            }
+
+            // Anything else
+            if (true) @panic("[TODO]: Handle Parser Error");
+            return .PR_Done;
+        },
     }
 }

@@ -40,3 +40,8 @@ test "dynamic equality" {
 
     try testing.expect(a.eql(b));
 }
+
+test "one of" {
+    const a = try local_name.LocalName.fromSlice("body");
+    try testing.expect(a.oneOf(&.{ .body, .table, .tr }));
+}

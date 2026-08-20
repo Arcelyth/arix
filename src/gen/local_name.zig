@@ -131,7 +131,7 @@ pub fn main(init: std.process.Init) !void {
         \\    }
         \\
         \\    pub inline fn oneOf(self: LocalName, tags: []const LocalTag) bool{
-        \\        for (tags.items) |tag| {
+        \\        for (tags) |tag| {
         \\            if (self.is(tag)) return true;
         \\        }
         \\        return false;

@@ -102,11 +102,18 @@ pub fn main(init: std.process.Init) !void {
         \\        return .{.static = tag}; 
         \\    }
         \\
-        \\    pub inline fn fromSlice(slice: []const u8) !LocalName {
-        \\        if (LocalNameMap.get(slice)) |tag| {
+        \\    pub inline fn fromSlice(s: []const u8) !LocalName {
+        \\        if (LocalNameMap.get(s)) |tag| {
         \\            return .{ .static = tag };
         \\        }
-        \\        return .{ .dynamic = try StraleUtf8Global.initSlice(slice) };
+        \\        return .{ .dynamic = try StraleUtf8Global.initSlice(s) };
+        \\    }
+        \\
+        \\    pub inline fn slice(self: LocalName) []const u8 {
+        \\        return switch (self) {
+        \\            .static => |tag| static_local_names[@intFromEnum(tag)],
+        \\            .dynamic => |dy| dy.slice(),
+        \\        };
         \\    }
         \\
         \\    pub inline fn eql(self: LocalName, other: LocalName) bool {
@@ -121,6 +128,13 @@ pub fn main(init: std.process.Init) !void {
         \\
         \\    pub inline fn is(self: LocalName, tag: LocalTag) bool {
         \\        return self == .static and self.static == tag;
+        \\    }
+        \\
+        \\    pub inline fn oneOf(self: LocalName, tags: []const LocalTag) bool{
+        \\        for (tags.items) |tag| {
+        \\            if (self.is(tag)) return true;
+        \\        }
+        \\        return false;
         \\    }
         \\
         \\    pub fn format(self: LocalName, writer: anytype) !void {

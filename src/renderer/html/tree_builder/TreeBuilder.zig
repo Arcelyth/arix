@@ -800,5 +800,52 @@ pub fn step(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) ProcessResult {
             self.insert_mode = .AfterHeadMode;
             return self.step(tk, null);
         },
+
+        // https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-inheadnoscript
+        .InHeadNoscriptMode => {
+            switch (tk) {
+                .DoctypeToken => {
+                    if (true) @panic("[TODO]: handle parse error");
+                    return .PR_Done;
+                },
+                .TagToken => |tag_tk| {
+                    switch (tag_tk.kind) {
+                        .StartTag => {
+                            if (tag_tk.name.is(.html)) {
+                                return self.step(tag_tk, .InBodyMode);
+                            }
+                            if (tag_tk.name.oneOf(.basefont, .bgsound, .link, .meta, .noframes)) return self.step(tag_tk, .InHeadMode);
+                        },
+                        .EndTag => {
+                            if (tag_tk.name.is(.noscript)) {
+                                _ = self.open_elements.pop();
+                                self.insert_mode = .InHeadMode;
+                                return .PR_Done;
+                            }
+                            if (!tag_tk.name.is(.br)) {
+                                if (true) @panic("[TODO]: handle parse error");
+                                return .PR_Done;
+                            }
+                        },
+                    }
+                },
+                .CharacterToken => |ch_tk| {
+                    for (ch_tk.slice()) |c| {
+                        if (!ascii.isAsciiWhitespace(c)) return self.step(ch_tk, .InHeadMode);
+                    }
+                },
+                .CommentToken => |cmt_tk| {
+                    return self.step(cmt_tk, .InHeadMode);
+                },
+                .ProcessingInstructionToken => |pi_tk| {
+                    return self.step(pi_tk, .InHeadMode);
+                },
+            }
+
+            if (true) @panic("[TODO]: handle parse error");
+            _ = self.open_elements.pop();
+            self.insert_mode = .InHeadMode;
+            self.step(tk, null);
+        },
     }
 }

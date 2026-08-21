@@ -33,11 +33,12 @@ const InsertionMode = types.InsertionMode;
 const InsertionLocation = types.InsertionLocation;
 const ScriptingMode = types.ScriptingMode;
 const dom_type = @import("../../dom/type.zig");
+const OpenElementStack = @import("OpenElementStack.zig");
 const ShadowRootMode = dom_type.ShadowRootMode;
 const SlotAssignment = dom_type.SlotAssignment;
 
 allocator: std.mem.Allocator,
-open_elements: std.ArrayList(*Element),
+open_elements: OpenElementStack,
 // InsertionMode
 insert_mode: InsertionMode,
 // Original Insertion Mode
@@ -62,7 +63,7 @@ pending_table_char_tks: std.ArrayList(*Token),
 pub fn init(alloc: std.mem.Allocator, fragment_case: bool) TreeBuilder {
     return TreeBuilder{
         .allocator = alloc,
-        .open_elements = .empty,
+        .open_elements = OpenElementStack.init(alloc),
         .insert_mode = .InitialMode,
         .orig_insert_mode = .InitialMode,
         .temp_insert_modes = .empty,
@@ -81,7 +82,7 @@ pub fn init(alloc: std.mem.Allocator, fragment_case: bool) TreeBuilder {
 }
 
 pub fn deinit(self: *TreeBuilder) void {
-    self.open_elements.deinit(self.allocator);
+    self.open_elements.deinit();
 }
 
 /// Implement TokenIngester.
@@ -106,7 +107,7 @@ pub fn handleToken(self: *TreeBuilder, tk: Token) void {
 
 // https://html.spec.whatwg.org/#tree-construction-dispatcher
 pub fn isForeign(self: *const TreeBuilder, tk: Token) bool {
-    if (self.open_elements.items.len == 0 or std.meta.activeTag(tk) == .EofToken) return false;
+    if (self.open_elements.len() == 0 or std.meta.activeTag(tk) == .EofToken) return false;
     const cur_el = self.adjustedCurrentNode();
 
     if (cur_el.ns == .NS_Html) return false;
@@ -153,7 +154,7 @@ pub fn processTokenForeign(self: *const TreeBuilder, tk: Token) ProcessResult {
 }
 
 pub inline fn adjustedCurrentNode(self: *TreeBuilder) *Node {
-    if (self.fragment_case and self.open_elements.items.len == 1) {
+    if (self.fragment_case and self.open_elements.len() == 1) {
         return (self.context orelse @panic("Context no set.")).asNode();
     }
 
@@ -161,7 +162,7 @@ pub inline fn adjustedCurrentNode(self: *TreeBuilder) *Node {
 }
 
 pub inline fn isAdjustedCurrentNodeTopmost(self: *TreeBuilder) bool {
-    if (self.fragment_case and self.open_elements.items.len == 1) {
+    if (self.fragment_case and self.open_elements.len() == 1) {
         return false;
     }
     return true;
@@ -174,16 +175,17 @@ pub fn appropriatePlaceForInsertion(self: *TreeBuilder, override_target: ?*Eleme
         const open_elements = self.open_elements;
         var last_table: ?*Element = null;
         var last_table_pos: usize = 0;
-        var idx = open_elements.items.len;
+        var idx = open_elements.len();
         blk: while (idx > 0) {
             idx -= 1;
-            if (open_elements.items[idx].local_name.is(.table)) {
-                last_table = self.open_elements.items[idx];
+            const el = self.open_elements.at(idx);
+            if (el.local_name.is(.table)) {
+                last_table = el;
                 last_table_pos = idx;
                 break :blk;
             }
-            if (open_elements.items[idx].local_name.is(.template)) {
-                return .{ .last_child = self.open_elements.items[idx].asNode() };
+            if (el.local_name.is(.template)) {
+                return .{ .last_child = el.asNode() };
             }
         }
 
@@ -195,7 +197,7 @@ pub fn appropriatePlaceForInsertion(self: *TreeBuilder, override_target: ?*Eleme
                     .before_child = table_nd,
                 } }
             else if (last_table_pos > 0)
-                return .{ .last_child = self.open_elements.items[last_table_pos - 1].asNode() }
+                return .{ .last_child = self.open_elements.at(last_table_pos - 1).asNode() }
             else
                 @panic("This should never happen: last_table_pos <= 0");
         } else {
@@ -308,52 +310,25 @@ pub fn parseGenericTextElement(
 }
 
 // https://html.spec.whatwg.org/multipage/parsing.html#generate-implied-end-tags
-pub fn generateImpliedEndTags(self: *TreeBuilder, exclude: ?LocalTag) void {
-    while (self.open_elements.items.len > 0) {
-        const cur = self.currentNode();
-
-        if (exclude) |ex| {
-            if (cur.local_name.is(ex)) break;
-        }
-
-        if (cur.in(&.{ .dd, .dt, .li, .optgroup, .option, .p, .rb, .rp, .rt, .rtc })) {
-            _ = self.open_elements.pop();
-        } else {
-            break;
-        }
-    }
+pub inline fn generateImpliedEndTags(self: *TreeBuilder, exclude: ?LocalTag) void {
+    self.open_elements.generateImpliedEndTags(exclude);
 }
 
 // https://html.spec.whatwg.org/multipage/parsing.html#generate-all-implied-end-tags-thoroughly
-pub fn generateAllImpliedEndTagsThoroughly(self: *TreeBuilder) void {
-    while (self.open_elements.items.len > 0) {
-        const cur = self.currentNode();
-
-        if (cur.in(&.{ .caption, .colgroup, .dd, .dt, .li, .optgroup, .option, .p, .rb, .rp, .rt, .rtc, .tbody, .td, .tfoot, .th, .thead, .tr })) {
-            _ = self.open_elements.pop();
-        } else {
-            break;
-        }
-    }
+pub inline fn generateAllImpliedEndTagsThoroughly(self: *TreeBuilder) void {
+    self.open_elements.generateAllImpliedEndTagsThoroughly();
 }
 
 pub inline fn currentNode(self: *TreeBuilder) *Element {
-    if (self.open_elements.items.len == 0) @panic("Empty open elements stack.");
-    return self.open_elements.items[self.open_elements.items.len - 1];
+    return self.open_elements.currentNode();
 }
 
-pub fn lastStackElement(self: *TreeBuilder, elem: LocalTag) ?Element {
-    for (self.open_elements.items..0) |idx| {
-        if (self.open_elements.items[idx].local_name.is(elem)) {
-            return self.open_elements.items[idx];
-        }
-    }
-    return null;
+pub inline fn lastStackElement(self: *TreeBuilder, elem: LocalTag) ?Element {
+    return self.open_elements.lastStackElement(elem);
 }
 
 pub inline fn htmlElement(self: *TreeBuilder) ?*Element {
-    if (self.open_elements.items.len == 0) return null;
-    return self.open_elements.items[0];
+    return self.open_elements.htmlElement();
 }
 
 // https://html.spec.whatwg.org/#look-up-a-custom-element-registry
@@ -479,11 +454,12 @@ pub fn appendToDocument(self: *TreeBuilder, node: *Node) void {
     self.insertNodeAt(node, .{ .last_child = self.document.asNode() });
 }
 
-pub fn hasElement(self: *const TreeBuilder, name: LocalTag) bool {
-    for (self.open_elements.items) |el| {
-        if (el.local_name.is(name)) return true;
-    }
-    return false;
+pub inline fn hasElement(self: *const TreeBuilder, name: LocalTag) bool {
+    self.open_elements.hasElement(name);
+}
+
+pub inline fn allElementsOneOf(self: *const TreeBuilder, tags: []const LocalTag) bool {
+    self.open_elements.allElementsOneOf(tags);
 }
 
 pub fn clearActiveFormattingElementsToLastMarker(self: *TreeBuilder) void {
@@ -502,48 +478,39 @@ pub fn resetInsertionModeAppropriately(self: *TreeBuilder) void {
 }
 
 pub inline fn popUntilPopped(self: *TreeBuilder, tag: LocalTag) void {
-    while (self.open_elements.items.len > 0) {
-        const el = self.open_elements.pop();
-        if (el) |e| if (e.local_name.is(tag)) break;
-    }
+    self.open_elements.popUntilPopped(tag);
 }
 
 pub inline fn popUntil(self: *TreeBuilder, tag: LocalTag) void {
-    while (self.open_elements.items.len > 0) {
-        const node = self.currentNode();
-        if (node.local_name.is(tag)) break;
-        _ = self.open_elements.pop();
-    }
+    self.open_elements.popUntil(tag);
+}
+
+pub inline fn popUntilOneOfPopped(self: *TreeBuilder, tags: []const LocalTag) void {
+    self.open_elements.popUntilOneOfPopped(tags);
 }
 
 pub inline fn clearStackBack(self: *TreeBuilder, tags: []const LocalTag) void {
-    while (self.open_elements.items.len > 0) {
-        const node = self.currentNode();
-        if (node.ns == .NS_Html and node.local_name.oneOf(tags)) {
-            break;
-        }
-        _ = self.open_elements.pop();
-    }
+    self.open_elements.clearStackBack(tags);
 }
 
 pub fn clearStackBackToTableContext(self: *TreeBuilder) void {
-    self.clearStackBack(&.{ .table, .template, .html });
+    self.open_elements.clearStackBack(&.{ .table, .template, .html });
 }
 
 pub fn clearStackBackToTableBodyContext(self: *TreeBuilder) void {
-    self.clearStackBack(&.{ .tbody, .tfoot, .thead, .template, .html });
+    self.open_elements.clearStackBack(&.{ .tbody, .tfoot, .thead, .template, .html });
 }
 
 pub fn clearStackBackToTableRowContext(self: *TreeBuilder) void {
-    self.clearStackBack(&.{ .tr, .template, .html });
+    self.open_elements.clearStackBack(&.{ .tr, .template, .html });
 }
 
 pub fn closeCell(self: *TreeBuilder) void {
-    self.generateImpliedEndTags(null);
+    self.open_elements.generateImpliedEndTags(null);
     if (!self.currentNode().local_name.oneOf(&.{ .td, .th })) {
         if (true) @panic("[TODO]: Handle Parser Error");
     }
-    while (self.open_elements.items.len > 0) {
+    while (self.open_elements.len() > 0) {
         const el = self.open_elements.pop();
         if (el) |e| {
             if (e.ns == .NS_Html and e.local_name.oneOf(&.{ .td, .th })) break;
@@ -567,58 +534,30 @@ pub inline fn addAttributesToElement(self: *TreeBuilder, el: *Element, attrs: At
 }
 
 /// https://html.spec.whatwg.org/multipage/parsing.html#has-an-element-in-table-scope
-pub fn hasElementInTableScope(self: *const TreeBuilder, target_tag: LocalTag) bool {
-    var i: usize = self.open_elements.items.len;
-    while (i > 0) {
-        i -= 1;
-        const node = self.open_elements.items[i];
-
-        if (node.ns == .NS_Html and node.local_name.is(target_tag)) return true;
-
-        if (node.ns == .NS_Html and node.local_name.oneOf(&.{ .html, .table, .template })) return false;
-    }
-    return false;
+pub inline fn hasElementInTableScope(self: *const TreeBuilder, target_tag: LocalTag) bool {
+    return self.open_elements.hasElementInTableScope(target_tag);
 }
 
-fn hasElementInScopeCustom(
+inline fn hasElementInScopeCustom(
     self: *const TreeBuilder,
     target_tag: LocalTag,
     comptime extra_html_tags: []const LocalTag,
 ) bool {
-    var i: usize = self.open_elements.items.len;
-    while (i > 0) {
-        i -= 1;
-        const node = self.open_elements.items[i];
-        if (node.ns == .NS_Html and node.local_name.is(target_tag)) return true;
-
-        if (node.ns == .NS_Html and (node.local_name.oneOf(&.{
-            .applet,  .caption, .html,   .table,    .td, .th,
-            .marquee, .object,  .select, .template,
-        }) or node.local_name.oneOf(extra_html_tags))) return false;
-
-        if (node.ns == .NS_MathML and node.local_name.oneOf(&.{
-            .mi, .mo, .mn, .ms, .mtext, .@"annotation-xml",
-        })) return false;
-
-        if (node.ns == .NS_SVG and node.local_name.oneOf(&.{
-            .foreignObject, .desc, .title,
-        })) return false;
-    }
-    return false;
+    return self.open_elements.hasElementInScopeCustom(target_tag, extra_html_tags);
 }
 
 // https://html.spec.whatwg.org/multipage/parsing.html#has-an-element-in-scope
-pub fn hasElementInScope(self: *const TreeBuilder, target_tag: LocalTag) bool {
+pub inline fn hasElementInScope(self: *const TreeBuilder, target_tag: LocalTag) bool {
     return self.hasElementInScopeCustom(target_tag, &.{});
 }
 
 // https://html.spec.whatwg.org/multipage/parsing.html#has-an-element-in-list-item-scope
-pub fn hasElementInListItemScope(self: *const TreeBuilder, target_tag: LocalTag) bool {
+pub inline fn hasElementInListItemScope(self: *const TreeBuilder, target_tag: LocalTag) bool {
     return self.hasElementInScopeCustom(target_tag, &.{ .ol, .ul });
 }
 
 // https://html.spec.whatwg.org/multipage/parsing.html#has-an-element-in-button-scope
-pub fn hasElementInButtonScope(self: *const TreeBuilder, target_tag: LocalTag) bool {
+pub inline fn hasElementInButtonScope(self: *const TreeBuilder, target_tag: LocalTag) bool {
     return self.hasElementInScopeCustom(target_tag, &.{.button});
 }
 
@@ -653,6 +592,11 @@ pub fn pushActiveFormattingElement(self: *TreeBuilder, el: *Element) void {
 pub fn adoptionAgencyAlgorithm(self: *TreeBuilder, tk: token_.Tag) void {
     _ = self;
     _ = tk;
+}
+
+pub fn removeFromStack(self: *TreeBuilder, el: *Element) void {
+    _ = self;
+    _ = el;
 }
 
 /// A `null` mode means the token is processed or reprocessed using the current
@@ -1127,7 +1071,7 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                                 return self.step_E(tk, .InHeadMode);
                             } else if (tag_tk.name.is(.body)) {
                                 self.parseError();
-                                if (self.open_elements.items.len == 1 or !self.open_elements.items[1].local_name == .body or self.hasElement(.template)) {
+                                if (self.open_elements.len() == 1 or !self.open_elements.items[1].local_name == .body or self.hasElement(.template)) {
                                     return .PR_Done;
                                 }
                                 self.frameset_ok = false;
@@ -1135,10 +1079,10 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                                 return .PR_Done;
                             } else if (tag_tk.name.is(.frameset)) {
                                 self.parseError();
-                                if (self.open_elements.items.len == 1 or !self.open_elements.items[1].local_name == .body or !self.frameset_ok) {
+                                if (self.open_elements.len() == 1 or !self.open_elements.items[1].local_name == .body or !self.frameset_ok) {
                                     return .PR_Done;
                                 }
-                                if (self.open_elements.items.len >= 2) {
+                                if (self.open_elements.len() >= 2) {
                                     const second = self.open_elements.items[1];
                                     if (second.asNode().parent()) |parent| {
                                         parent.removeChild(second.asNode());
@@ -1320,7 +1264,123 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                             return .PR_Done;
                         },
                         .EndTagToken => {
-                            @panic("[TODO]:");
+                            if (tag_tk.name.is(.template)) {
+                                return self.step_E(tk, .InHeadMode);
+                            } else if (tag_tk.name.is(.body)) {
+                                if (!self.hasElementInScope(.body)) {
+                                    self.parseError();
+                                    return .PR_Done;
+                                }
+                                if (self.allElementsOneOf(&.{ .dd, .dt, .li, .optgroup, .option, .p, .rb, .rp, .rt, .rtc, .tbody, .td, .tfoot, .th, .thead, .tr, .body, .html }))
+                                    self.insert_mode = .AfterBodyMode;
+                                return .PR_Done;
+                            } else if (tag_tk.name.is(.html)) {
+                                if (!self.hasElementInScope(.body)) {
+                                    self.parseError();
+                                    return .PR_Done;
+                                }
+                                self.insert_mode = .AfterBodyMode;
+                                return self.step_E(tk, null);
+                            } else if (tag_tk.name.oneOf(&.{ .address, .article, .aside, .blockquote, .button, .center, .details, .dialog, .dir, .div, .dl, .fieldset, .figcaption, .figure, .footer, .header, .hgroup, .listing, .main, .menu, .nav, .ol, .pre, .search, .section, .select, .summary, .ul })) {
+                                const tag = tag_tk.name.asTag().?;
+                                if (!self.hasElementInScope(tag)) {
+                                    self.parseError();
+                                    return .PR_Done;
+                                }
+                                self.generateImpliedEndTags(null);
+                                if (!self.currentNode().local_name.is(tag)) self.parseError();
+                                self.popUntilPopped(tag);
+                                return .PR_Done;
+                            } else if (tag_tk.name.is(.form)) {
+                                if (!self.hasElement(.template)) {
+                                    const node = self.form_el_ptr;
+                                    self.form_el_ptr = null;
+                                    if (node == null or !self.hasElementInScope(node.?)) {
+                                        self.parseError();
+                                        return .PR_Done;
+                                    }
+                                    self.generateImpliedEndTags(null);
+                                    if (self.currentNode() != node.?) self.parseError();
+                                    self.removeFromStack(node.?);
+                                } else {
+                                    if (!self.hasElementInScope(.form)) {
+                                        self.parseError();
+                                        return .PR_Done;
+                                    }
+                                    self.generateImpliedEndTags(null);
+                                    if (!self.currentNode().local_name.is(.form)) self.parseError();
+                                    self.popUntilPopped(.form);
+                                }
+                                return .PR_Done;
+                            } else if (tag_tk.name.is(.p)) {
+                                if (!self.hasElementInButtonScope(.p)) {
+                                    self.parseError();
+                                    self.insertHtmlElement(.{
+                                        .TagToken = .{
+                                            .kind = .StartTagToken,
+                                            .name = LocalName.fromTag(.p),
+                                            .attrs = .empty,
+                                            .self_closing = false,
+                                        },
+                                    });
+                                }
+                                self.closePElement();
+                                return .PR_Done;
+                            } else if (tag_tk.name.is(.li)) {
+                                if (!self.hasElementInListItemScope(.li)) {
+                                    self.parseError();
+                                    return .PR_Done;
+                                }
+                                self.generateImpliedEndTags(.li);
+                                if (!self.currentNode().local_name.is(.li)) self.parseError();
+                                self.popUntilPopped(.li);
+                                return .PR_Done;
+                            } else if (tag_tk.name.oneOf(&.{ .dd, .dt })) {
+                                const tag = tag_tk.name.asTag().?;
+                                if (!self.hasElementInScope(tag)) {
+                                    self.parseError();
+                                    return .PR_Done;
+                                }
+                                self.generateImpliedEndTags(tag);
+                                if (!self.currentNode().local_name.is(tag)) self.parseError();
+                                self.popUntilPopped(tag);
+                                return .PR_Done;
+                            } else if (tag_tk.name.oneOf(&.{ .h1, .h2, .h3, .h4, .h5, .h6 })) {
+                                if (!self.allElementsOneOf(&.{ .h1, .h2, .h3, .h4, .h5, .h6 })) {
+                                    self.parseError();
+                                    return .PR_Done;
+                                }
+                                self.generateImpliedEndTags(null);
+                                if (!self.currentNode().local_name.is(tag_tk.name.asTag().?)) self.parseError();
+                                self.popUntilOneOfPopped(&.{ .h1, .h2, .h3, .h4, .h5, .h6 });
+                                return .PR_Done;
+                            }
+                            // else if (tag_tk.name.is(.sarcasm)) {
+                            // Take a deep breath -> Fallthrough to "any other end tag"
+                            //  }
+                            else if (tag_tk.name.oneOf(&.{ .a, .b, .big, .code, .em, .font, .i, .nobr, .s, .small, .strike, .strong, .tt, .u })) {
+                                self.adoptionAgencyAlgorithm(tag_tk);
+                                return .PR_Done;
+                            } else if (tag_tk.name.oneOf(&.{ .applet, .marquee, .object })) {
+                                const tag = tag_tk.name.asTag().?;
+                                if (!self.hasElementInScope(tag)) {
+                                    self.parseError();
+                                    return .PR_Done;
+                                }
+                                self.generateImpliedEndTags(null);
+                                if (!self.currentNode().local_name.is(tag)) self.parseError();
+                                self.popUntilPopped(tag);
+                                self.clearActiveFormattingElementsToLastMarker();
+                                return .PR_Done;
+                            } else if (tag_tk.name.is(.br)) {
+                                self.parseError();
+                                var mut_tk = tk;
+                                mut_tk.TagToken.kind = .StartTagToken;
+                                return self.step_E(mut_tk, null);
+                            }
+
+                            if (true) @panic("[TODO]:");
+                            return .PR_Done;
                         },
                     }
                 },

@@ -15,8 +15,8 @@ test "appropriatePlaceForInsertion - normal insertion without foster parenting" 
     var html = Element.init(allocator, .NS_Html, LocalName.fromTag(.html), &doc);
     var div = Element.init(allocator, .NS_Html, LocalName.fromTag(.div), &doc);
 
-    try builder.open_elements.append(allocator, &html);
-    try builder.open_elements.append(allocator, &div);
+    try builder.open_elements.append(&html);
+    try builder.open_elements.append(&div);
 
     const loc = builder.appropriatePlaceForInsertion(null);
     try testing.expectEqual(div.asNode(), loc.last_child);

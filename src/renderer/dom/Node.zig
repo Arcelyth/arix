@@ -126,3 +126,20 @@ pub fn remove(self: *Node) void {
     const parent = self.parent orelse return;
     parent.removeChild(self);
 }
+
+// https://dom.spec.whatwg.org/#concept-node-ensure-pre-insertion-validity
+pub fn ensurePreInsertValidity(node: *Node, parent: *Node, child: ?*Node, exclude_children: []*Node) void {
+    _ = node;
+    _ = parent;
+    _ = child;
+    _ = exclude_children;
+}
+
+pub fn hasChild(self: *const Node, type_id: DomTypeId) bool {
+    var child = self.first_child;
+
+    while (child) |node| : (child = node.next_sibling)
+        if (node.type_id == type_id) return true;
+
+    return false;
+}

@@ -269,9 +269,15 @@ pub fn insertElementAtAdjustedInsertionLocation(self: *TreeBuilder, el: *Element
     const insertion_loc = self.adjustedInsertionLocation(null);
     // Check if it's possible to insert element at insertion_loc.
     if (!self.isPossibleToInsert()) return;
-    if (true) @panic("[TODO] Step 3: need parser.");
+    const node = insertion_loc.getParent();
+    if (node.type_id == .DOM_Document) {
+        const document = Document.fromNode(insertion_loc);
+        if (document.asNode().hasChild(.DOM_Element)) return;
+    }
+    Node.ensurePreInsertValidity(el.asNode(), node, null, &.{});
+    // TODO: Step 4: Need relevant agent.
     self.insertElementAt(el, insertion_loc);
-    if (true) @panic("[TODO] Step 5: need parser.");
+    // TODO: Step 6: Need relevant agent.
 }
 
 // https://html.spec.whatwg.org/multipage/parsing.html#insert-a-foreign-element
@@ -1387,14 +1393,10 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                 .EofToken => {
                     if (self.temp_insert_modes.items.len > 0) return self.step_E(tk, .InTemplateMode);
 
-                    // [TODO]: Check if specific tags (other than tbody, td, etc.) are open -> parse error
+                    if (self.allElementsOneOf(&.{ .dd, .dt, .li, .optgroup, .option, .p, .rb, .rp, .rt, .rtc, .tbody, .td, .tfoot, .th, .thead, .tr, .body, .html })) if (true) @panic("[TODO]: handle parse error");
                     return .PR_StopParsing;
                 },
             }
-
-            // Anything else (Should be unreachable given exhaustive Enum matching, but keeping with pattern)
-            if (true) @panic("[TODO]: Handle Parser Error");
-            return .PR_Done;
         },
 
         // https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-incdata

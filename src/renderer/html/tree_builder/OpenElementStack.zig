@@ -2,6 +2,7 @@ const OpenElementStack = @This();
 
 const std = @import("std");
 const Element = @import("../../dom/Element.zig");
+const Namespace = @import("../../dom/namespace.zig").Namespace;
 const ln = @import("local_name");
 const LocalName = ln.LocalName;
 const LocalTag = ln.LocalTag;
@@ -42,15 +43,13 @@ pub fn generateImpliedEndTags(self: *OpenElementStack, exclude: ?LocalTag) void 
     while (self.els.items.len > 0) {
         const cur = self.currentNode();
 
-        if (exclude) |ex| {
+        if (exclude) |ex|
             if (cur.local_name.is(ex)) break;
-        }
 
-        if (cur.in(&.{ .dd, .dt, .li, .optgroup, .option, .p, .rb, .rp, .rt, .rtc })) {
-            _ = self.els.pop();
-        } else {
+        if (cur.in(&.{ .dd, .dt, .li, .optgroup, .option, .p, .rb, .rp, .rt, .rtc }))
+            _ = self.els.pop()
+        else
             break;
-        }
     }
 }
 
@@ -59,20 +58,18 @@ pub fn generateAllImpliedEndTagsThoroughly(self: *OpenElementStack) void {
     while (self.els.items.len > 0) {
         const cur = self.currentNode();
 
-        if (cur.in(&.{ .caption, .colgroup, .dd, .dt, .li, .optgroup, .option, .p, .rb, .rp, .rt, .rtc, .tbody, .td, .tfoot, .th, .thead, .tr })) {
-            _ = self.els.pop();
-        } else {
+        if (cur.in(&.{ .caption, .colgroup, .dd, .dt, .li, .optgroup, .option, .p, .rb, .rp, .rt, .rtc, .tbody, .td, .tfoot, .th, .thead, .tr }))
+            _ = self.els.pop()
+        else
             break;
-        }
     }
 }
 
-pub fn lastStackElement(self: *OpenElementStack, elem: LocalTag) ?Element {
-    for (self.els.items..0) |idx| {
-        if (self.els.items[idx].local_name.is(elem)) {
-            return self.els.items[idx];
-        }
-    }
+pub fn lastStackElement(self: *OpenElementStack, elem: LocalTag) ?*Element {
+    var i = self.els.items.len - 1;
+    while (i > 0) : (i -= 1)
+        if (self.els.items[i].local_name.is(elem)) return self.els.items[i];
+
     return null;
 }
 
@@ -107,32 +104,31 @@ pub inline fn popUntilOneOfPopped(self: *OpenElementStack, tags: []const LocalTa
 pub inline fn clearStackBack(self: *OpenElementStack, tags: []const LocalTag) void {
     while (self.len() > 0) {
         const node = self.currentNode();
-        if (node.ns == .NS_Html and node.local_name.oneOf(tags)) {
+        if (node.ns == .NS_Html and node.local_name.oneOf(tags))
             break;
-        }
+
         _ = self.els.pop();
     }
 }
 
 pub inline fn hasElement(self: *const OpenElementStack, name: LocalTag) bool {
-    for (self.els.items) |el| {
+    for (self.els.items) |el|
         if (el.local_name.is(name)) return true;
-    }
+
     return false;
 }
 
 pub inline fn allElementsOneOf(self: *const OpenElementStack, tags: []const LocalTag) bool {
-    for (self.els.items) |el| {
-        for (tags) |tag| {
+    for (self.els.items) |el|
+        for (tags) |tag|
             if (!el.local_name.is(tag)) return false;
-        }
-    }
+
     return true;
 }
 
 /// https://html.spec.whatwg.org/multipage/parsing.html#has-an-element-in-table-scope
 pub fn hasElementInTableScope(self: *const OpenElementStack, target_tag: LocalTag) bool {
-    var i: usize = self.els.len();
+    var i: usize = self.len();
     while (i > 0) {
         i -= 1;
         const node = self.els.items[i];
@@ -149,7 +145,7 @@ pub fn hasElementInScopeCustom(
     target_tag: LocalTag,
     comptime extra_html_tags: []const LocalTag,
 ) bool {
-    var i: usize = self.els.len();
+    var i: usize = self.len();
     while (i > 0) {
         i -= 1;
         const node = self.els.items[i];
@@ -160,13 +156,206 @@ pub fn hasElementInScopeCustom(
             .marquee, .object,  .select, .template,
         }) or node.local_name.oneOf(extra_html_tags))) return false;
 
-        if (node.ns == .NS_MathML and node.local_name.oneOf(&.{
+        if (node.ns == .NS_Math and node.local_name.oneOf(&.{
             .mi, .mo, .mn, .ms, .mtext, .@"annotation-xml",
         })) return false;
 
-        if (node.ns == .NS_SVG and node.local_name.oneOf(&.{
+        if (node.ns == .NS_Svg and node.local_name.oneOf(&.{
             .foreignObject, .desc, .title,
         })) return false;
     }
     return false;
 }
+
+// --- Tests ---
+const testing = std.testing;
+const Document = @import("../../dom/Document.zig");
+
+test "generate implied end tags" {
+    const allocator = std.testing.allocator;
+    var doc = Document.init();
+
+    var stack = OpenElementStack.init(allocator);
+    defer stack.deinit();
+
+    var html = Element.init(allocator, .NS_Html, LocalName.fromTag(.html), &doc);
+    var body = Element.init(allocator, .NS_Html, LocalName.fromTag(.body), &doc);
+    var p = Element.init(allocator, .NS_Html, LocalName.fromTag(.p), &doc);
+    var li = Element.init(allocator, .NS_Html, LocalName.fromTag(.li), &doc);
+
+    try stack.append(&html);
+    try stack.append(&body);
+    try stack.append(&p);
+    try stack.append(&li);
+
+    stack.generateImpliedEndTags(null);
+
+    try testing.expectEqual(2, stack.len());
+    try testing.expect(stack.currentNode().local_name.is(.body));
+}
+
+test "generate implied end tags exclude" {
+    const allocator = std.testing.allocator;
+
+    var doc = Document.init();
+
+    var stack = OpenElementStack.init(allocator);
+    defer stack.deinit();
+
+    var html = Element.init(allocator, .NS_Html, LocalName.fromTag(.html), &doc);
+    var body = Element.init(allocator, .NS_Html, LocalName.fromTag(.body), &doc);
+    var p = Element.init(allocator, .NS_Html, LocalName.fromTag(.p), &doc);
+    var li = Element.init(allocator, .NS_Html, LocalName.fromTag(.li), &doc);
+
+    try stack.append(&html);
+    try stack.append(&body);
+    try stack.append(&p);
+    try stack.append(&li);
+
+    stack.generateImpliedEndTags(.p);
+
+    try testing.expectEqual(3, stack.len());
+    try testing.expect(stack.currentNode().local_name.is(.p));
+}
+
+test "last stack element" {
+    const allocator = std.testing.allocator;
+
+    var doc = Document.init();
+
+    var html = Element.init(allocator, .NS_Html, LocalName.fromTag(.html), &doc);
+    var body = Element.init(allocator, .NS_Html, LocalName.fromTag(.body), &doc);
+    var first_p = Element.init(allocator, .NS_Html, LocalName.fromTag(.p), &doc);
+    var div = Element.init(allocator, .NS_Html, LocalName.fromTag(.div), &doc);
+    var second_p = Element.init(allocator, .NS_Html, LocalName.fromTag(.p), &doc);
+
+    var stack = OpenElementStack.init(allocator);
+    defer stack.deinit();
+
+    try stack.append(&html);
+    try stack.append(&body);
+    try stack.append(&first_p);
+    try stack.append(&div);
+    try stack.append(&second_p);
+
+    const result = stack.lastStackElement(.p);
+    const result2 = stack.lastStackElement(.li);
+
+    try std.testing.expect(result.? == &second_p);
+    try std.testing.expect(result2 == null);
+}
+
+test "pop until poped" {
+    const allocator = std.testing.allocator;
+
+    var doc = Document.init();
+
+    var html = Element.init(allocator, .NS_Html, LocalName.fromTag(.html), &doc);
+    var body = Element.init(allocator, .NS_Html, LocalName.fromTag(.body), &doc);
+    var div = Element.init(allocator, .NS_Html, LocalName.fromTag(.div), &doc);
+    var p = Element.init(allocator, .NS_Html, LocalName.fromTag(.p), &doc);
+
+    var stack = OpenElementStack.init(allocator);
+    defer stack.deinit();
+
+    try stack.append(&html);
+    try stack.append(&body);
+    try stack.append(&div);
+    try stack.append(&p);
+
+    stack.popUntilPopped(.body);
+
+    try std.testing.expectEqual(1, stack.len());
+    try std.testing.expect(stack.currentNode() == &html);
+}
+
+test "pop until" {
+    const allocator = std.testing.allocator;
+
+    var doc = Document.init();
+
+    var html = Element.init(allocator, .NS_Html, LocalName.fromTag(.html), &doc);
+    var body = Element.init(allocator, .NS_Html, LocalName.fromTag(.body), &doc);
+    var div = Element.init(allocator, .NS_Html, LocalName.fromTag(.div), &doc);
+    var p = Element.init(allocator, .NS_Html, LocalName.fromTag(.p), &doc);
+
+    var stack = OpenElementStack.init(allocator);
+    defer stack.deinit();
+
+    try stack.append(&html);
+    try stack.append(&body);
+    try stack.append(&div);
+    try stack.append(&p);
+
+    stack.popUntil(.body);
+
+    try std.testing.expectEqual(2, stack.len());
+    try std.testing.expect(stack.currentNode() == &body);
+}
+
+test "pop until one of popped" {
+    const allocator = std.testing.allocator;
+
+    var doc = Document.init();
+
+    var html = Element.init(allocator, .NS_Html, LocalName.fromTag(.html), &doc);
+    var body = Element.init(allocator, .NS_Html, LocalName.fromTag(.body), &doc);
+    var table = Element.init(allocator, .NS_Html, LocalName.fromTag(.table), &doc);
+    var div = Element.init(allocator, .NS_Html, LocalName.fromTag(.div), &doc);
+
+    var stack = OpenElementStack.init(allocator);
+    defer stack.deinit();
+
+    try stack.append(&html);
+    try stack.append(&body);
+    try stack.append(&table);
+    try stack.append(&div);
+
+    stack.popUntilOneOfPopped(&.{ .body, .table });
+
+    try std.testing.expectEqual(3, stack.len());
+    try std.testing.expect(stack.currentNode() == &table);
+}
+
+test "has element in table scope" {
+    const allocator = std.testing.allocator;
+
+    var doc = Document.init();
+
+    var html = Element.init(allocator, .NS_Html, LocalName.fromTag(.html), &doc);
+    var table = Element.init(allocator, .NS_Html, LocalName.fromTag(.table), &doc);
+    var tr = Element.init(allocator, .NS_Html, LocalName.fromTag(.tr), &doc);
+    var td = Element.init(allocator, .NS_Html, LocalName.fromTag(.td), &doc);
+
+    var stack = OpenElementStack.init(allocator);
+    defer stack.deinit();
+
+    try stack.append(&html);
+    try stack.append(&table);
+    try stack.append(&tr);
+    try stack.append(&td);
+
+    try std.testing.expect(stack.hasElementInTableScope(.td));
+}
+
+test "has element in scope custom" {
+    const allocator = std.testing.allocator;
+
+    var doc = Document.init();
+
+    var html = Element.init(allocator, .NS_Html, LocalName.fromTag(.html), &doc);
+    var body = Element.init(allocator, .NS_Html, LocalName.fromTag(.body), &doc);
+    var ol = Element.init(allocator, .NS_Html, LocalName.fromTag(.ol), &doc);
+    var li = Element.init(allocator, .NS_Html, LocalName.fromTag(.li), &doc);
+
+    var stack = OpenElementStack.init(allocator);
+    defer stack.deinit();
+
+    try stack.append(&html);
+    try stack.append(&body);
+    try stack.append(&ol);
+    try stack.append(&li);
+
+    try std.testing.expect(stack.hasElementInScopeCustom(.li, &.{ .ol, .ul }));
+}
+

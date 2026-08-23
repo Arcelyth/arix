@@ -5,11 +5,14 @@ const Element = @import("../../dom/Element.zig");
 const Document = @import("../../dom/Document.zig");
 const ln = @import("local_name");
 const LocalName = ln.LocalName;
+const TestAdapter = @import("TestAdapter.zig");
 
 test "appropriatePlaceForInsertion - normal insertion without foster parenting" {
     const allocator = testing.allocator;
     var doc = Document.init();
-    var builder = TreeBuilder.init(allocator, false);
+    var test_adapter = TestAdapter.init(allocator);
+    const adapter = test_adapter.adapter();
+    var builder = TreeBuilder.init(allocator, adapter, false);
     defer builder.deinit();
 
     var html = Element.init(allocator, .NS_Html, LocalName.fromTag(.html), &doc);

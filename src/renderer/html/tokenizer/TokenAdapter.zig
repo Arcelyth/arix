@@ -1,0 +1,21 @@
+/// A type-erased interface for consuming tokens.
+const TokenAdapter = @This();
+
+const Token = @import("token.zig").Token;
+const TokenizerError = @import("error.zig").TokenizerError;
+
+ptr: *anyopaque,
+vtable: *const VTable,
+
+pub const VTable = struct {
+    handleTokenFn: *const fn (ptr: *anyopaque, token: Token) void,
+    handleErrorFn: *const fn (ptr: *anyopaque, err: TokenizerError, cur_line: usize) void,
+};
+
+pub fn handleToken(self: TokenAdapter, token: Token) void {
+    self.vtable.handleTokenFn(self.ptr, token);
+}
+
+pub fn handleError(self: TokenAdapter, err: TokenizerError, cur_line: usize) void {
+    self.vtable.handleErrorFn(self.ptr, err, cur_line);
+}

@@ -11,8 +11,7 @@ const TokenizerError = t_error.TokenizerError;
 const u8_buffer = @import("../../utils/u8_buffer.zig");
 const ascii = @import("../../utils/ascii.zig");
 const token = @import("token.zig");
-const TokenIngester = @import("TokenIngester.zig");
-const ErrorIngester = @import("ErrorIngester.zig");
+const TokenAdapter = @import("TokenAdapter.zig");
 const trie_nodes = @import("named_ref").trie_nodes;
 const local_name = @import("local_name");
 const LocalName = local_name.LocalName;
@@ -48,22 +47,21 @@ current_attr_dup: bool,
 
 current_character: StraleUtf8Global,
 current_line: usize,
-ingester: TokenIngester,
+adapter: TokenAdapter,
 last_start_tag_name: ?StraleUtf8Global,
 temporary_buffer: StraleUtf8Global,
-err_ingester: ?ErrorIngester,
 
 pub const TokenizerOpts = struct {
-    inital_state: TokenizerState = .Data,
+    initial_state: TokenizerState = .Data,
     last_state_tag_name: ?StraleUtf8Global = null,
 };
 
-pub fn init(alloc: std.mem.Allocator, ingester: TokenIngester, err_ingester: ?ErrorIngester, opts: TokenizerOpts) Tokenizer {
+pub fn init(alloc: std.mem.Allocator, adapter: TokenAdapter, opts: TokenizerOpts) Tokenizer {
     //  TOOD: enable global allocator
     //    strale.setGlobalAlloc(alloc);
     return Tokenizer{
         .allocator = alloc,
-        .state = opts.inital_state,
+        .state = opts.initial_state,
         .ch = undefined,
         .is_eof = false,
         .return_state = .Data,
@@ -82,10 +80,9 @@ pub fn init(alloc: std.mem.Allocator, ingester: TokenIngester, err_ingester: ?Er
         .current_attr_dup = false,
         .current_character = StraleUtf8Global.initEmpty(),
         .current_line = 1,
-        .ingester = ingester,
+        .adapter = adapter,
         .last_start_tag_name = opts.last_state_tag_name,
         .temporary_buffer = StraleUtf8Global.initEmpty(),
-        .err_ingester = err_ingester,
     };
 }
 
@@ -100,7 +97,7 @@ pub fn deinit(self: *Tokenizer) void {
 }
 
 pub fn handleToken(self: *Tokenizer, t: token.Token) void {
-    self.ingester.handleToken(t);
+    self.adapter.handleToken(t);
 }
 
 pub fn emitChar(self: *Tokenizer, ch: u21) void {
@@ -373,8 +370,8 @@ pub fn is_adjusted(self: *Tokenizer) bool {
     return false;
 }
 
-pub fn handleError(self: *Tokenizer, err: TokenizerError) void {
-    if (self.err_ingester) |ei| ei.handleError(err, self.current_line);
+pub inline fn handleError(self: *Tokenizer, err: TokenizerError) void {
+    self.adapter.handleError(err, self.current_line);
 }
 
 pub fn debugDetail(self: *Tokenizer) void {
@@ -409,6 +406,8 @@ pub fn preprocessChar(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, 
         self.ignore_lf = true;
         ch.* = '\n';
     }
+
+    if (self.is_eof) return;
 
     if (ascii.isSurrogate(u21, ch.*)) self.handleError(.SurrogateInInputStream) else if (ascii.isNoncharacter(u21, ch.*)) self.handleError(.NoncharacterInInputStream) else if (ascii.isControlCharacter(u21, ch.*)) self.handleError(.ControlCharacterInInputStream);
 }

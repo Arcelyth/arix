@@ -1,12 +1,10 @@
 const std = @import("std");
 
-const TokenIngester = @import("../html/tokenizer/TokenIngester.zig");
 const Tokenizer = @import("../html/tokenizer/Tokenizer.zig");
 const token = @import("../html/tokenizer/token.zig");
-const TestIngester = @import("../html/tokenizer/TestIngester.zig");
 const state = @import("../html/tokenizer/state.zig");
-const ErrorIngester = @import("../html/tokenizer/ErrorIngester.zig");
-const TestErrorIngester = @import("../html/tokenizer/TestErrorIngester.zig");
+const TokenAdapter = @import("../html/tokenizer/TokenAdapter.zig");
+const TestAdapter = @import("../html/tokenizer/TestAdapter.zig");
 
 const Token = token.Token;
 const Attribute = token.Attribute;
@@ -225,19 +223,19 @@ pub fn runHtml5LibTestFile(
 
         for (state_strings) |initial_state| {
             const st = try state.stringToTokenizeState(initial_state);
-            // Initialize Token Ingester.
-            var test_ingester = TestIngester.init(allocator);
-            defer test_ingester.deinit();
+            // Initialize Token Adapter.
+            var test_adapter = TestAdapter.init(allocator);
+            defer test_adapter.deinit();
 
-            const ingester = TokenIngester.init(&test_ingester, TestIngester.handleToken);
+            const adapter = test_adapter.adapter();
 
             // Initialize Error Ingester.
-            var err_ingester = TestErrorIngester.init(allocator);
-            defer err_ingester.deinit();
+//            var err_ingester = TestErrorIngester.init(allocator);
+//            defer err_ingester.deinit();
+//
+//            const ec = ErrorIngester.init(&err_ingester, TestErrorIngester.handleError);
 
-            const ec = ErrorIngester.init(&err_ingester, TestErrorIngester.handleError);
-
-            var tokenizer = Tokenizer.init(allocator, ingester, ec, .{ .inital_state = st, .last_state_tag_name = l });
+            var tokenizer = Tokenizer.init(allocator, adapter, .{ .initial_state = st, .last_state_tag_name = l });
             defer tokenizer.deinit();
 
             strale.setGlobalAlloc(allocator);
@@ -263,14 +261,14 @@ pub fn runHtml5LibTestFile(
 
             for (expected_output_value.array.items) |expected_json_token| {
                 // Skip EOF tokens.
-                const t_len = test_ingester.tokens.items.len;
+                const t_len = test_adapter.tokens.items.len;
                 while (actual_index < t_len and
-                    std.meta.activeTag(test_ingester.tokens.items[actual_index]) == .EofToken)
+                    std.meta.activeTag(test_adapter.tokens.items[actual_index]) == .EofToken)
                 {
                     actual_index += 1;
                 }
 
-                if (actual_index >= test_ingester.tokens.items.len) {
+                if (actual_index >= test_adapter.tokens.items.len) {
                     printFailedMessage(path, test_case_index, description, initial_state);
 
                     std.debug.print("Expected {} tokens, but tokenizer only emit {} tokens.\n", .{ expected_output_value.array.items.len, t_len });
@@ -283,7 +281,7 @@ pub fn runHtml5LibTestFile(
                 );
                 defer expected_token.deinit(allocator);
 
-                const actual_token = test_ingester.tokens.items[actual_index];
+                const actual_token = test_adapter.tokens.items[actual_index];
 
                 token.expectToken(
                     expected_token,
@@ -298,26 +296,25 @@ pub fn runHtml5LibTestFile(
                 actual_index += 1;
             }
 
-            while (actual_index < test_ingester.tokens.items.len and
-                std.meta.activeTag(test_ingester.tokens.items[actual_index]) == .EofToken)
+            while (actual_index < test_adapter.tokens.items.len and
+                std.meta.activeTag(test_adapter.tokens.items[actual_index]) == .EofToken)
             {
                 actual_index += 1;
             }
 
-            if (actual_index != test_ingester.tokens.items.len) {
+            if (actual_index != test_adapter.tokens.items.len) {
                 printFailedMessage(path, test_case_index, description, initial_state);
 
                 std.debug.print("Tokenizer emitted unexpected extra tokens.\n", .{});
 
-                for (test_ingester.tokens.items, 0..) |t, i| {
+                for (test_adapter.tokens.items, 0..) |t, i| 
                     std.debug.print("[{d}] {f}\n", .{ i, t });
-                }
+                
                 return error.UnexpectedExtraTokens;
             }
-
             if (errors) |errs| {
                 for (errs.array.items) |expected_error| {
-                    const e_len = err_ingester.errors.items.len;
+                    const e_len = test_adapter.errors.items.len;
                     if (err_actual_index >= e_len) {
                         printFailedMessage(path, test_case_index, description, initial_state);
 
@@ -329,7 +326,7 @@ pub fn runHtml5LibTestFile(
                     const code = expected_error.object.get("code") orelse return error.InvalidTestsField;
                     const line = expected_error.object.get("line") orelse return error.InvalidTestsField;
 
-                    err_ingester.expectError(
+                    test_adapter.expectError(
                         err_actual_index,
                         code.string,
                         @as(usize, @intCast(line.integer)),

@@ -95,11 +95,11 @@ pub fn handleToken(self: *TreeBuilder, tk: Token) void {
     _ = need_ack;
 
     // Dispatch token.
-    const result = if (self.isForeign(tk)) {
-        self.processTokenForeign(tk);
-    } else {
+    const result = if (self.isForeign(tk))
+        self.processTokenForeign(tk)
+    else
         self.processToken(tk);
-    };
+
     switch (result) {
         else => {},
     }
@@ -154,17 +154,16 @@ pub fn processTokenForeign(self: *const TreeBuilder, tk: Token) ProcessResult {
 }
 
 pub inline fn adjustedCurrentNode(self: *TreeBuilder) *Node {
-    if (self.fragment_case and self.open_elements.len() == 1) {
+    if (self.fragment_case and self.open_elements.len() == 1)
         return (self.context orelse @panic("Context no set.")).asNode();
-    }
 
     return self.currentNode();
 }
 
 pub inline fn isAdjustedCurrentNodeTopmost(self: *TreeBuilder) bool {
-    if (self.fragment_case and self.open_elements.len() == 1) {
+    if (self.fragment_case and self.open_elements.len() == 1)
         return false;
-    }
+
     return true;
 }
 
@@ -184,9 +183,8 @@ pub fn appropriatePlaceForInsertion(self: *TreeBuilder, override_target: ?*Eleme
                 last_table_pos = idx;
                 break :blk;
             }
-            if (el.local_name.is(.template)) {
+            if (el.local_name.is(.template))
                 return .{ .last_child = el.asNode() };
-            }
         }
 
         if (last_table) |table| {
@@ -200,9 +198,7 @@ pub fn appropriatePlaceForInsertion(self: *TreeBuilder, override_target: ?*Eleme
                 return .{ .last_child = self.open_elements.at(last_table_pos - 1).asNode() }
             else
                 @panic("This should never happen: last_table_pos <= 0");
-        } else {
-            return .{ .last_child = (self.htmlElement() orelse target).asNode() };
-        }
+        } else return .{ .last_child = (self.htmlElement() orelse target).asNode() };
     }
     return .{ .last_child = target.asNode() };
 }
@@ -242,12 +238,12 @@ pub fn createElementForToken(self: *TreeBuilder, tk: Token, namespace: ?Namespac
     }
     if (!element.isXmlnsXLinkValid()) @panic("[TODO]: Handle parser error.");
     const is_custom = element.isFormAssociatedCustomElement();
-    if (element.isResettable() and !is_custom) {
+    if (element.isResettable() and !is_custom)
         @panic("[TODO]: Reset algorithm");
-    }
-    if (element.isFormAssociatedElement() and !is_custom) {
+
+    if (element.isFormAssociatedElement() and !is_custom)
         @panic("[TODO]:");
-    }
+
     return element;
 }
 
@@ -258,9 +254,9 @@ pub fn adjustedInsertionLocation(self: *TreeBuilder, pos: ?*InsertionLocation) I
 
     // Step: 3.
     const node = adjusted_loc.getParent();
-    if (self.htmlElement()) |html| {
+    if (self.htmlElement()) |html|
         if (node == html.asNode()) @panic("[TODO]: need parser.");
-    }
+
     return adjusted_loc;
 }
 
@@ -513,14 +509,13 @@ pub fn clearStackBackToTableRowContext(self: *TreeBuilder) void {
 
 pub fn closeCell(self: *TreeBuilder) void {
     self.open_elements.generateImpliedEndTags(null);
-    if (!self.currentNode().local_name.oneOf(&.{ .td, .th })) {
+    if (!self.currentNode().local_name.oneOf(&.{ .td, .th }))
         if (true) @panic("[TODO]: Handle Parser Error");
-    }
+
     while (self.open_elements.len() > 0) {
         const el = self.open_elements.pop();
-        if (el) |e| {
+        if (el) |e|
             if (e.ns == .NS_Html and e.local_name.oneOf(&.{ .td, .th })) break;
-        }
     }
     self.clearActiveFormattingElementsToLastMarker();
     self.insert_mode = .InRowMode;

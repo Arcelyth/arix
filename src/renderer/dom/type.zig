@@ -14,6 +14,8 @@ pub const DomTypeId = enum {
     DOM_HTMLDivElement,
     DOM_HTMLTableElement,
 
+    DOM_HTMLInputElement,
+
     // CharactData
     DOM_Text,
     DOM_Comment,

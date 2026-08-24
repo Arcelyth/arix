@@ -23,7 +23,7 @@ allocator: std.mem.Allocator,
 tokens: std.ArrayList(Token),
 errors: std.ArrayList(ErrorMessage),
 
-const vtable = Vtable {
+const vtable = Vtable{
     .handleTokenFn = handleToken,
     .handleErrorFn = handleError,
 };
@@ -44,9 +44,9 @@ pub fn adapter(self: *TestAdapter) TokenAdapter {
 }
 
 pub fn deinit(self: *TestAdapter) void {
-    for (self.tokens.items) |*tok| 
+    for (self.tokens.items) |*tok|
         tok.deinit(self.allocator);
-    
+
     self.tokens.deinit(self.allocator);
     self.errors.deinit(self.allocator);
 }

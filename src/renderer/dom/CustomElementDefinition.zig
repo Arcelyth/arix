@@ -9,6 +9,7 @@ local_name: LocalName,
 // constructor:
 // observed_attributes
 // ...
+form_associated: bool,
 
 pub fn init() CustomElementDefinition {
     return .{};

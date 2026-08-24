@@ -358,4 +358,3 @@ test "has element in scope custom" {
 
     try std.testing.expect(stack.hasElementInScopeCustom(.li, &.{ .ol, .ul }));
 }
-

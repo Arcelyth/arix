@@ -33,7 +33,7 @@ fn runHtml5LibTestFile(
     }
 }
 
-test "html5lib tree_construction test1"  {
+test "html5lib tree_construction test1" {
     const alloc = testing.allocator;
     try runHtml5LibTestFile(alloc, "src/renderer/tests/html5lib-tests/tree-construction/tests1.dat", testing.io);
-} 
+}

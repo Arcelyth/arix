@@ -175,8 +175,10 @@ pub fn isResettable(self: *const Element) bool {
     };
 }
 
+// https://html.spec.whatwg.org/#form-associated-custom-element
 pub fn isFormAssociatedCustomElement(self: *const Element) bool {
-    _ = self;
+    if (self.custom_element_definition) |def|
+        return def.form_associated;
     return false;
 }
 
@@ -194,4 +196,11 @@ pub fn attachShadowRoot(self: *Element, mode: ShadowRoot.ShadowRootMode, clonabl
     _ = slot_ass;
     _ = serializable;
     _ = registry;
+}
+
+/// If the type attribute define a value sanitization algorithm.
+/// TODO:
+pub fn isTypeDefineVSA(self: *Element) bool {
+    _ = self;
+    return false;
 }

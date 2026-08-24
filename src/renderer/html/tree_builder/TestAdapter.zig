@@ -13,10 +13,12 @@ const vtable = Vtable{
 };
 
 allocator: std.mem.Allocator,
+errors: std.ArrayList(TreeBuilderError),
 
 pub fn init(alloc: std.mem.Allocator) TestAdapter {
     return .{
         .allocator = alloc,
+        .errors = .empty,
     };
 }
 
@@ -28,12 +30,11 @@ pub fn adapter(self: *TestAdapter) TreeAdapter {
 }
 
 pub fn deinit(self: *TestAdapter) void {
-    _ = self;
+    self.errors.deinit(self.allocator);
 }
 
 // Implement TreeAdapter's method.
 pub fn handleError(ptr: *anyopaque, err: TreeBuilderError) void {
     const self: *TestAdapter = @ptrCast(@alignCast(ptr));
-    _ = self;
-    _ = err;
+    self.errors.append(self.allocator, err) catch unreachable;
 }

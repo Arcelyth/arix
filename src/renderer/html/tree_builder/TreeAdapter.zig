@@ -1,4 +1,4 @@
-/// A type-erased interface for handling TreeBuilder.
+/// A type-erased interface for handling dom tree.
 const TreeAdapter = @This();
 
 const TreeBuilderError = @import("error.zig").TreeBuilderError;

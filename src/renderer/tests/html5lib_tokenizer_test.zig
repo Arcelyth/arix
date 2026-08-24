@@ -16,7 +16,7 @@ const testing = std.testing;
 const config = @import("config");
 const LocalName = @import("local_name").LocalName;
 
-pub fn printFailedMessage(path: []const u8, idx: usize, desc: []const u8, init_state: []const u8) void {
+fn printFailedMessage(path: []const u8, idx: usize, desc: []const u8, init_state: []const u8) void {
     std.debug.print(
         "\n[Failed] Test Failed in File: {s}\nCase #{d}: {s}\nInitial state: {s}\n",
         .{ path, idx, desc, init_state },
@@ -24,7 +24,7 @@ pub fn printFailedMessage(path: []const u8, idx: usize, desc: []const u8, init_s
 }
 
 /// Parse one token from an html5lib tokenizer test JSON value.
-pub fn parseJsonToken(
+fn parseJsonToken(
     allocator: std.mem.Allocator,
     json_item: std.json.Value,
 ) !Token {
@@ -145,7 +145,7 @@ pub fn parseJsonToken(
 }
 
 /// Run one html5lib tokenizer test file.
-pub fn runHtml5LibTestFile(
+fn runHtml5LibTestFile(
     allocator: std.mem.Allocator,
     path: []const u8,
     io: std.Io,
@@ -230,10 +230,10 @@ pub fn runHtml5LibTestFile(
             const adapter = test_adapter.adapter();
 
             // Initialize Error Ingester.
-//            var err_ingester = TestErrorIngester.init(allocator);
-//            defer err_ingester.deinit();
-//
-//            const ec = ErrorIngester.init(&err_ingester, TestErrorIngester.handleError);
+            //            var err_ingester = TestErrorIngester.init(allocator);
+            //            defer err_ingester.deinit();
+            //
+            //            const ec = ErrorIngester.init(&err_ingester, TestErrorIngester.handleError);
 
             var tokenizer = Tokenizer.init(allocator, adapter, .{ .initial_state = st, .last_state_tag_name = l });
             defer tokenizer.deinit();
@@ -307,9 +307,9 @@ pub fn runHtml5LibTestFile(
 
                 std.debug.print("Tokenizer emitted unexpected extra tokens.\n", .{});
 
-                for (test_adapter.tokens.items, 0..) |t, i| 
+                for (test_adapter.tokens.items, 0..) |t, i|
                     std.debug.print("[{d}] {f}\n", .{ i, t });
-                
+
                 return error.UnexpectedExtraTokens;
             }
             if (errors) |errs| {

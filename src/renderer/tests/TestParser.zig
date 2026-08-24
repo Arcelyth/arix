@@ -124,11 +124,11 @@ fn handleDoc(self: *TestParser, case: *TestCase) void {
 }
 
 pub fn parse(self: *TestParser) !std.ArrayList(TestCase) {
-    var list = std.ArrayList(TestCase).init(self.allocator);
-    errdefer list.deinit();
+    var list: std.ArrayList(TestCase) = .empty;
+    errdefer list.deinit(self.allocator);
 
     while (self.nextTest()) |tc| {
-        try list.append(tc);
+        try list.append(self.allocator, tc);
     }
 
     return list;

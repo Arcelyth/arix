@@ -25,6 +25,15 @@ fn runHtml5LibTestFile(
     );
     defer allocator.free(content);
 
-    const tp = TestParser.init(content, testing.allocator);
-    _ = tp;
+    var tp = TestParser.init(content, testing.allocator);
+    var cases = try tp.parse();
+    defer cases.deinit(tp.allocator);
+    for (cases.items) |case| {
+        _ = case;
+    }
 }
+
+test "html5lib tree_construction test1"  {
+    const alloc = testing.allocator;
+    try runHtml5LibTestFile(alloc, "src/renderer/tests/html5lib-tests/tree-construction/tests1.dat", testing.io);
+} 

@@ -229,12 +229,6 @@ fn runHtml5LibTestFile(
 
             const adapter = test_adapter.adapter();
 
-            // Initialize Error Ingester.
-            //            var err_ingester = TestErrorIngester.init(allocator);
-            //            defer err_ingester.deinit();
-            //
-            //            const ec = ErrorIngester.init(&err_ingester, TestErrorIngester.handleError);
-
             var tokenizer = Tokenizer.init(allocator, adapter, .{ .initial_state = st, .last_state_tag_name = l });
             defer tokenizer.deinit();
 
@@ -344,57 +338,57 @@ fn runHtml5LibTestFile(
     }
 }
 
-test "html5lib escapeFlag" {
+test "html5lib tokenizer escapeFlag" {
     const alloc = testing.allocator;
     try runHtml5LibTestFile(alloc, "src/renderer/tests/html5lib-tests/tokenizer/escapeFlag.test", testing.io);
 }
 
-test "html5lib contentModelFlags" {
+test "html5lib tokenizer contentModelFlags" {
     const alloc = testing.allocator;
     try runHtml5LibTestFile(alloc, "src/renderer/tests/html5lib-tests/tokenizer/contentModelFlags.test", testing.io);
 }
 
-test "html5lib entities" {
+test "html5lib tokenizer entities" {
     const alloc = testing.allocator;
     try runHtml5LibTestFile(alloc, "src/renderer/tests/html5lib-tests/tokenizer/entities.test", testing.io);
 }
 
-test "html5lib namedEntities" {
+test "html5lib tokenizer namedEntities" {
     const alloc = testing.allocator;
     try runHtml5LibTestFile(alloc, "src/renderer/tests/html5lib-tests/tokenizer/namedEntities.test", testing.io);
 }
 
-test "html5lib numericEntities" {
+test "html5lib tokenizer numericEntities" {
     const alloc = testing.allocator;
     try runHtml5LibTestFile(alloc, "src/renderer/tests/html5lib-tests/tokenizer/numericEntities.test", testing.io);
 }
 
-test "html5lib pendingSpecChanges" {
+test "html5lib tokenizer pendingSpecChanges" {
     const alloc = testing.allocator;
     try runHtml5LibTestFile(alloc, "src/renderer/tests/html5lib-tests/tokenizer/pendingSpecChanges.test", testing.io);
 }
 
-test "html5lib test1" {
+test "html5lib tokenizer test1" {
     const alloc = testing.allocator;
     try runHtml5LibTestFile(alloc, "src/renderer/tests/html5lib-tests/tokenizer/test1.test", testing.io);
 }
 
-test "html5lib test2" {
+test "html5lib tokenizer test2" {
     const alloc = testing.allocator;
     try runHtml5LibTestFile(alloc, "src/renderer/tests/html5lib-tests/tokenizer/test2.test", testing.io);
 }
 
-test "html5lib test3" {
+test "html5lib tokenizer test3" {
     const alloc = testing.allocator;
     try runHtml5LibTestFile(alloc, "src/renderer/tests/html5lib-tests/tokenizer/test3.test", testing.io);
 }
 
-test "html5lib test4" {
+test "html5lib tokenizer test4" {
     const alloc = testing.allocator;
     try runHtml5LibTestFile(alloc, "src/renderer/tests/html5lib-tests/tokenizer/test4.test", testing.io);
 }
 
-test "html5lib unicodeChars" {
+test "html5lib tokenizer unicodeChars" {
     const alloc = testing.allocator;
     try runHtml5LibTestFile(alloc, "src/renderer/tests/html5lib-tests/tokenizer/unicodeChars.test", testing.io);
 }

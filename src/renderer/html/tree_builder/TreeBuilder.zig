@@ -1772,7 +1772,7 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                                 self.insert_mode = .InRowMode;
                                 return .PR_Done;
                             } else if (tag_tk.name.oneOf(&.{ .th, .td })) {
-                                if (true) @panic("[TODO]: Handle Parser Error");
+                                self.parseError(.unexpected_td_th_in_table_body);
                                 self.clearStackBackToTableBodyContext();
                                 _ = self.insertHtmlElement(.{
                                     .TagToken = .{
@@ -1789,7 +1789,7 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                                     !self.hasElementInTableScope(.thead) and
                                     !self.hasElementInTableScope(.tfoot))
                                 {
-                                    if (true) @panic("[TODO]: Handle Parser Error");
+                                    self.parseError(.no_table_section_in_scope);
                                     return .PR_Done;
                                 } else {
                                     self.clearStackBackToTableBodyContext();
@@ -1802,7 +1802,7 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                         .EndTagToken => {
                             if (tag_tk.name.oneOf(&.{ .tbody, .tfoot, .thead })) {
                                 if (!self.hasElementInTableScope(tag_tk.name.toTag().?)) {
-                                    if (true) @panic("[TODO]: Handle Parser Error");
+                                    self.parseError(.no_table_section_in_scope);
                                     return .PR_Done;
                                 }
                                 self.clearStackBackToTableBodyContext();
@@ -1814,7 +1814,7 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                                     !self.hasElementInTableScope(.thead) and
                                     !self.hasElementInTableScope(.tfoot))
                                 {
-                                    if (true) @panic("[TODO]: Handle Parser Error");
+                                    self.parseError(.no_table_section_in_scope);
                                     return .PR_Done;
                                 } else {
                                     self.clearStackBackToTableBodyContext();
@@ -1823,7 +1823,7 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                                     return self.step_E(tk, null);
                                 }
                             } else if (tag_tk.name.oneOf(&.{ .body, .caption, .col, .colgroup, .html, .td, .th, .tr })) {
-                                if (true) @panic("[TODO]: Handle Parser Error");
+                                self.parseError(.invalid_tag_in_table_body);
                                 return .PR_Done;
                             }
                         },
@@ -1850,7 +1850,7 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                                 return .PR_Done;
                             } else if (tag_tk.name.oneOf(&.{ .caption, .col, .colgroup, .tbody, .tfoot, .thead, .tr })) {
                                 if (!self.hasElementInTableScope(.tr)) {
-                                    if (true) @panic("[TODO]: Handle Parser Error");
+                                    self.parseError(.no_tr_in_table_scope);
                                     return .PR_Done;
                                 } else {
                                     self.clearStackBackToTableRowContext();
@@ -1863,7 +1863,7 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                         .EndTagToken => {
                             if (tag_tk.name.is(.tr)) {
                                 if (!self.hasElementInTableScope(.tr)) {
-                                    if (true) @panic("[TODO]: Handle Parser Error");
+                                    self.parseError(.no_tr_in_table_scope);
                                     return .PR_Done;
                                 } else {
                                     self.clearStackBackToTableRowContext();
@@ -1873,7 +1873,7 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                                 }
                             } else if (tag_tk.name.is(.table)) {
                                 if (!self.hasElementInTableScope(.tr)) {
-                                    if (true) @panic("[TODO]: Handle Parser Error");
+                                    self.parseError(.no_tr_in_table_scope);
                                     return .PR_Done;
                                 } else {
                                     self.clearStackBackToTableRowContext();
@@ -1883,19 +1883,18 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                                 }
                             } else if (tag_tk.name.oneOf(&.{ .tbody, .tfoot, .thead })) {
                                 if (!self.hasElementInTableScope(tag_tk.name.toTag().?)) {
-                                    if (true) @panic("[TODO]: Handle Parser Error");
+                                    self.parseError(.end_table_section_without_scope);
                                     return .PR_Done;
                                 }
 
-                                if (!self.hasElementInTableScope(.tr)) {
-                                    return .PR_Done;
-                                }
+                                if (!self.hasElementInTableScope(.tr)) return .PR_Done;
+
                                 self.clearStackBackToTableRowContext();
                                 _ = self.open_elements.pop();
                                 self.insert_mode = .InTableBodyMode;
                                 return self.step_E(tk, null);
                             } else if (tag_tk.name.oneOf(&.{ .body, .caption, .col, .colgroup, .html, .td, .th })) {
-                                if (true) @panic("[TODO]: Handle Parser Error");
+                                self.parseError(.invalid_end_tag_in_row);
                                 return .PR_Done;
                             }
                         },
@@ -1924,24 +1923,23 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                             if (tag_tk.name.oneOf(&.{ .td, .th })) {
                                 const target_tag = tag_tk.name.toTag().?;
                                 if (!self.hasElementInTableScope(target_tag)) {
-                                    if (true) @panic("[TODO]: Handle Parser Error");
+                                    self.parseError(.end_cell_without_cell_in_scope);
                                     return .PR_Done;
                                 } else {
                                     self.generateImpliedEndTags(null);
-                                    if (!self.currentNode().local_name.is(target_tag)) {
-                                        if (true) @panic("[TODO]: Handle Parser Error");
-                                    }
+                                    if (!self.currentNode().local_name.is(target_tag))
+                                        self.parseError(.current_node_not_cell);
                                     self.popUntilPopped(target_tag);
                                     self.clearActiveFormattingElementsToLastMarker();
                                     self.insert_mode = .InRowMode;
                                     return .PR_Done;
                                 }
                             } else if (tag_tk.name.oneOf(&.{ .body, .caption, .col, .colgroup, .html })) {
-                                if (true) @panic("[TODO]: Handle Parser Error");
+                                self.parseError(.invalid_tag_in_cell);
                                 return .PR_Done;
                             } else if (tag_tk.name.oneOf(&.{ .table, .tbody, .tfoot, .thead, .tr })) {
                                 if (!self.hasElementInTableScope(tag_tk.name.toTag().?)) {
-                                    if (true) @panic("[TODO]: Handle Parser Error");
+                                    self.parseError(.end_table_element_without_scope);
                                     return .PR_Done;
                                 } else {
                                     self.closeCell();
@@ -2000,7 +1998,7 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                             if (tag_tk.name.is(.template)) {
                                 return self.step_E(tk, .InHeadMode);
                             } else {
-                                if (true) @panic("[TODO]: Handle Parser Error");
+                                self.parseError(.invalid_tag_in_template);
                                 return .PR_Done;
                             }
                         },
@@ -2008,7 +2006,7 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                 },
                 .EofToken => {
                     if (!self.hasElement(.template)) return .PR_StopParsing;
-                    if (true) @panic("[TODO]: Handle Parser Error");
+                    self.parseError(.eof_in_template);
                     self.popUntilPopped(.template);
                     self.clearActiveFormattingElementsToLastMarker();
                     _ = self.temp_insert_modes.pop();
@@ -2035,8 +2033,8 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                     self.insertProcessingInstruction(pi_tk, .{ .last_child = self.open_elements.items[0].asNode() });
                     return .PR_Done;
                 },
-                .DoctypeToken => {
-                    if (true) @panic("[TODO]: Handle Parser Error");
+                .DoctypeToken => |doc_tk| {
+                    self.unexpect(doc_tk, .AfterBodyMode);
                     return .PR_Done;
                 },
                 .TagToken => |tag_tk| {
@@ -2047,7 +2045,7 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                         .EndTagToken => {
                             if (tag_tk.name.is(.html)) {
                                 if (self.frameset_ok) {
-                                    if (true) @panic("[TODO]: Handle Parser Error");
+                                    self.parseError(.end_html_with_frameset_ok);
                                     return .PR_Done;
                                 }
                                 self.insert_mode = .AfterAfterBodyMode;
@@ -2060,7 +2058,7 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
             }
 
             // Anything else
-            if (true) @panic("[TODO]: Handle Parser Error");
+            self.unexpect(tk, .AfterBodyMode);
             self.insert_mode = .InBodyMode;
             return self.step_E(tk, null);
         },
@@ -2083,8 +2081,8 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                     self.insertProcessingInstruction(pi_tk);
                     return .PR_Done;
                 },
-                .DoctypeToken => {
-                    if (true) @panic("[TODO]: Handle Parser Error");
+                .DoctypeToken => |doc_tk| {
+                    self.unexpect(doc_tk, .InFramesetMode);
                     return .PR_Done;
                 },
                 .TagToken => |tag_tk| {
@@ -2106,7 +2104,7 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                         .EndTagToken => {
                             if (tag_tk.name.is(.frameset)) {
                                 if (self.currentNode().local_name.is(.html)) {
-                                    if (true) @panic("[TODO]: Handle Parser Error");
+                                    self.parseError(.end_frameset_with_html_current_node);
                                     return .PR_Done;
                                 }
                                 _ = self.open_elements.pop();
@@ -2119,15 +2117,15 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                     }
                 },
                 .EofToken => {
-                    if (!self.currentNode().local_name.is(.html)) {
-                        if (true) @panic("[TODO]: Handle Parser Error");
-                    }
+                    if (!self.currentNode().local_name.is(.html))
+                        self.parseError(.eof_in_frameset);
+
                     return .PR_StopParsing;
                 },
             }
 
             // Anything else
-            if (true) @panic("[TODO]: Handle Parser Error");
+            self.unexpect(tk, .InFramesetMode);
             return .PR_Done;
         },
 
@@ -2149,8 +2147,8 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                     self.insertProcessingInstruction(pi_tk, null);
                     return .PR_Done;
                 },
-                .DoctypeToken => {
-                    if (true) @panic("[TODO]: Handle Parser Error");
+                .DoctypeToken => |doc_tk| {
+                    self.unexpect(doc_tk, .AfterFramesetMode);
                     return .PR_Done;
                 },
                 .TagToken => |tag_tk| {
@@ -2177,7 +2175,7 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
             }
 
             // Anything else
-            if (true) @panic("[TODO]: Handle Parser Error");
+            self.unexpect(tk, .AfterFramesetMode);
             return .PR_Done;
         },
 
@@ -2213,7 +2211,7 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
             }
 
             // Anything else
-            if (true) @panic("[TODO]: Handle Parser Error");
+            self.unexpect(tk, .AfterAfterBodyMode);
             self.insert_mode = .InBodyMode;
             return self.step_E(tk, null);
         },
@@ -2252,7 +2250,7 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
             }
 
             // Anything else
-            if (true) @panic("[TODO]: Handle Parser Error");
+            self.unexpect(tk.AfterAfterFramesetMode);
             return .PR_Done;
         },
     }

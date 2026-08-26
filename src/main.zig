@@ -1,9 +1,7 @@
 const std = @import("std");
 const config = @import("config");
 
-pub fn main() !void {
-    std.debug.print("hello world\n", .{});
-}
+pub fn main() !void {}
 
 test {
     _ = @import("renderer.zig");

@@ -16,6 +16,9 @@ const CustomElementRegistry = @import("../../dom/CustomElementRegistry.zig");
 const CustomElementDefinition = @import("../../dom/CustomElementDefinition.zig");
 const Namespace = @import("../../dom/namespace.zig").Namespace;
 const Tokenizer = @import("../tokenizer/Tokenizer.zig");
+const TokenAdapter = @import("../tokenizer/TokenAdapter.zig");
+const Vtable = @import("../tokenizer/TokenAdapter.zig").VTable;
+const TokenizerError = @import("../tokenizer/error.zig").TokenizerError;
 const TokenizerState = @import("../tokenizer/state.zig").TokenizerState;
 const encoding_ = @import("../encoding/encoding.zig");
 const Encoding = encoding_.Encoding;
@@ -40,7 +43,7 @@ const ShadowRootMode = dom_type.ShadowRootMode;
 const SlotAssignment = dom_type.SlotAssignment;
 
 allocator: std.mem.Allocator,
-adapter: TreeAdapter,
+tree_adapter: TreeAdapter,
 open_elements: OpenElementStack,
 // InsertionMode
 insert_mode: InsertionMode,
@@ -63,10 +66,10 @@ active_fmt_els: std.ArrayList(ActiveFormatElement),
 allow_decl_shadow_roots: bool,
 pending_table_char_tks: std.ArrayList(*Token),
 
-pub fn init(alloc: std.mem.Allocator, adapter: TreeAdapter, fragment_case: bool) TreeBuilder {
+pub fn init(alloc: std.mem.Allocator, tree_adapter: TreeAdapter, fragment_case: bool) TreeBuilder {
     return TreeBuilder{
         .allocator = alloc,
-        .adapter = adapter,
+        .tree_adapter = tree_adapter,
         .open_elements = OpenElementStack.init(alloc),
         .insert_mode = .InitialMode,
         .orig_insert_mode = .InitialMode,
@@ -89,8 +92,14 @@ pub fn deinit(self: *TreeBuilder) void {
     self.open_elements.deinit();
 }
 
-/// Implement TokenIngester.
-pub fn handleToken(self: *TreeBuilder, tk: Token) void {
+// --- Implement TokenAdapter. ---
+const vtable = Vtable{
+    .handleTokenFn = handleToken,
+    .handleErrorFn = handleError,
+};
+
+pub fn handleToken(ptr: *anyopaque, tk: Token) void {
+    const self: *TreeBuilder = @ptrCast(@alignCast(ptr));
     // If need to acknowledge the token's self-closing flag.
     const need_ack = switch (tk) {
         .TagToken => |tag| tag.kind == .StartTag and tag.self_closing,
@@ -108,6 +117,20 @@ pub fn handleToken(self: *TreeBuilder, tk: Token) void {
         else => {},
     }
 }
+
+pub fn handleError(ptr: *anyopaque, err: TokenizerError, cur_line: usize) void {
+    _ = ptr;
+    _ = err;
+    _ = cur_line;
+}
+
+pub fn adapter(self: *TreeBuilder) TokenAdapter {
+    return .{
+        .ptr = self,
+        .vtable = &vtable,
+    };
+}
+// --- ---
 
 // https://html.spec.whatwg.org/#tree-construction-dispatcher
 pub fn isForeign(self: *const TreeBuilder, tk: Token) bool {
@@ -567,7 +590,7 @@ pub inline fn hasElementInButtonScope(self: *const TreeBuilder, target_tag: Loca
 }
 
 pub fn parseError(self: *const TreeBuilder, err: TreeBuilderError) void {
-    self.adapter.handleError(err);
+    self.tree_adapter.handleError(err);
 }
 
 pub fn reconstructActiveFormattingElements(self: *TreeBuilder) void {

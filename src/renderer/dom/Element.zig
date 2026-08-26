@@ -90,7 +90,7 @@ pub fn init(alloc: std.mem.Allocator, ns: Namespace, local: LocalName, document:
     };
 }
 
-pub fn create(document: *Document, local: LocalName, namespace: ?Namespace, prefix: ?LocalName, is: ?[]const u8, sce: bool, registry: ?*CustomElementRegistry) Element {
+pub fn create(document: *Document, local: LocalName, namespace: ?Namespace, prefix: ?LocalName, is: ?[]const u8, sce: bool, registry: ?*CustomElementRegistry) *Element {
     _ = document;
     _ = local;
     _ = namespace;
@@ -165,16 +165,17 @@ pub fn appendAttrs(self: *Element, attrs: []Attribute) !void {
 }
 
 pub fn isXmlnsXLinkValid(self: *const Element) bool {
-    for (self.attrs.data) |attr| {
-        if (attr.namespace == .NS_Xmlns and attr.local_name.is(.xmlns) and std.mem.eql(u8, attr.value.slice(), Namespace.Xmlns)) return false;
-        if (attr.namespace == .NS_Xmlns and attr.local_name.is(.xlink) and std.mem.eql(u8, attr.value.slice(), Namespace.XLink)) return false;
+    for (self.attrs.data.items) |attr| {
+        if (attr.ns == .NS_Xmlns and attr.local_name.is(.xmlns) and std.mem.eql(u8, attr.value.slice(), Namespace.Xmlns)) return false;
+        if (attr.ns == .NS_Xmlns and attr.local_name.is(.xlink) and std.mem.eql(u8, attr.value.slice(), Namespace.XLink)) return false;
     }
     return true;
 }
 
 // https://html.spec.whatwg.org/multipage/forms.html#category-reset
 pub fn isResettable(self: *const Element) bool {
-    return switch (self.local_name) {
+    const tag = self.local_name.toTag() orelse return false;
+    return switch (tag) {
         .input, .output, .select, .textarea => true,
         else => false,
     };

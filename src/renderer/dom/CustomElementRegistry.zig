@@ -7,7 +7,7 @@ const Document = @import("Document.zig");
 const LocalName = @import("local_name").LocalName;
 
 pub const DefKey = struct {
-    name: LocalName,
+    name: []const u8,
     local_name: LocalName,
 };
 
@@ -15,7 +15,7 @@ const DefKeyContext = struct {
     pub fn hash(_: DefKeyContext, key: DefKey) u64 {
         var hasher = std.hash.Wyhash.init(0);
 
-        hasher.update(key.name.slice());
+        hasher.update(key.name);
         hasher.update("\x00");
         hasher.update(key.local_name.slice());
 
@@ -23,7 +23,7 @@ const DefKeyContext = struct {
     }
 
     pub fn eql(_: DefKeyContext, a: DefKey, b: DefKey) bool {
-        return a.name.eql(b.name) and
+        return std.mem.eql(u8, a.name, b.name) and
             b.local_name.eql(a.local_name);
     }
 };
@@ -44,14 +44,14 @@ pub fn init() CustomElementRegistry {
     return .{
         .is_scoped = false,
         .scoped_doc_set = HashSet(*Document).init(),
-        .custom_elem_def_set = .empty, 
+        .custom_elem_def_set = .empty,
         .elem_def_is_running = HashSet(*CustomElementDefinition).init(),
     };
 }
 
 pub fn lookup(
     self: *CustomElementRegistry,
-    name: LocalName,
+    name: []const u8,
     local_name: LocalName,
 ) ?*CustomElementDefinition {
     return self.custom_elem_def_set.get(.{

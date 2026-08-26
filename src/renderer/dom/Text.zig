@@ -10,14 +10,14 @@ pub const dom_type = .DOM_Text;
 char_data: CharacterData,
 data: StraleUtf8Global,
 
-pub fn init(document: Document) Text {
+pub fn init(document: *Document) Text {
     return .{
         .char_data = CharacterData.init(document),
         .data = StraleUtf8Global.init(),
     };
 }
 
-pub fn create(document: Document, data: StraleUtf8Global) Text {
+pub fn create(document: *Document, data: StraleUtf8Global) Text {
     return .{
         .char_data = CharacterData.init(document),
         .data = data,
@@ -25,7 +25,7 @@ pub fn create(document: Document, data: StraleUtf8Global) Text {
 }
 
 pub inline fn asNode(self: *Text) *Node {
-    return &self.node;
+    return &self.char_data.node;
 }
 
 pub fn fromNode(node: *Node) *Text {

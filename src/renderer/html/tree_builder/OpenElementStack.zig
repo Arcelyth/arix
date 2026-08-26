@@ -29,6 +29,10 @@ pub inline fn append(self: *OpenElementStack, el: *Element) !void {
     try self.els.append(self.allocator, el);
 }
 
+pub inline fn pop(self: *OpenElementStack) ?*Element {
+    return self.els.pop();
+}
+
 pub inline fn at(self: *OpenElementStack, idx: usize) *Element {
     return self.els.items[idx];
 }

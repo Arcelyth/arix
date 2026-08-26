@@ -12,14 +12,14 @@ target: StraleUtf8Global,
 // attr_map:
 data: StraleUtf8Global,
 
-pub fn init(document: Document) ProcessingInstruction {
+pub fn init(document: *Document) ProcessingInstruction {
     return .{
         .char_data = CharacterData.init(document),
         .data = StraleUtf8Global.init(),
     };
 }
 
-pub fn create(document: Document, target: StraleUtf8Global, data: StraleUtf8Global) ProcessingInstruction {
+pub fn create(document: *Document, target: StraleUtf8Global, data: StraleUtf8Global) ProcessingInstruction {
     return .{
         .char_data = CharacterData.init(document),
         .target = target,
@@ -28,7 +28,7 @@ pub fn create(document: Document, target: StraleUtf8Global, data: StraleUtf8Glob
 }
 
 pub inline fn asNode(self: *ProcessingInstruction) *Node {
-    return &self.node;
+    return &self.char_data.node;
 }
 
 pub fn fromNode(node: *Node) *ProcessingInstruction {

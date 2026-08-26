@@ -6,6 +6,7 @@ pub const DomTypeId = enum {
     DOM_Document,
     DOM_DocumentFragment,
     DOM_DocumentType,
+    DOM_CharacteData,
 
     // HTML
     DOM_HTMLElement,

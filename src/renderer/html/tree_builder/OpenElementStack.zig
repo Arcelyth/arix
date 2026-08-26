@@ -173,15 +173,15 @@ const Document = @import("../../dom/Document.zig");
 
 test "generate implied end tags" {
     const allocator = std.testing.allocator;
-    var doc = Document.init();
+    const doc = Document.init(allocator);
 
     var stack = OpenElementStack.init(allocator);
     defer stack.deinit();
 
-    var html = Element.init(allocator, .NS_Html, LocalName.fromTag(.html), &doc);
-    var body = Element.init(allocator, .NS_Html, LocalName.fromTag(.body), &doc);
-    var p = Element.init(allocator, .NS_Html, LocalName.fromTag(.p), &doc);
-    var li = Element.init(allocator, .NS_Html, LocalName.fromTag(.li), &doc);
+    var html = Element.init(allocator, .NS_Html, LocalName.fromTag(.html), doc);
+    var body = Element.init(allocator, .NS_Html, LocalName.fromTag(.body), doc);
+    var p = Element.init(allocator, .NS_Html, LocalName.fromTag(.p), doc);
+    var li = Element.init(allocator, .NS_Html, LocalName.fromTag(.li), doc);
 
     try stack.append(&html);
     try stack.append(&body);
@@ -197,15 +197,15 @@ test "generate implied end tags" {
 test "generate implied end tags exclude" {
     const allocator = std.testing.allocator;
 
-    var doc = Document.init();
+    const doc = Document.init(allocator);
 
     var stack = OpenElementStack.init(allocator);
     defer stack.deinit();
 
-    var html = Element.init(allocator, .NS_Html, LocalName.fromTag(.html), &doc);
-    var body = Element.init(allocator, .NS_Html, LocalName.fromTag(.body), &doc);
-    var p = Element.init(allocator, .NS_Html, LocalName.fromTag(.p), &doc);
-    var li = Element.init(allocator, .NS_Html, LocalName.fromTag(.li), &doc);
+    var html = Element.init(allocator, .NS_Html, LocalName.fromTag(.html), doc);
+    var body = Element.init(allocator, .NS_Html, LocalName.fromTag(.body), doc);
+    var p = Element.init(allocator, .NS_Html, LocalName.fromTag(.p), doc);
+    var li = Element.init(allocator, .NS_Html, LocalName.fromTag(.li), doc);
 
     try stack.append(&html);
     try stack.append(&body);
@@ -221,13 +221,13 @@ test "generate implied end tags exclude" {
 test "last stack element" {
     const allocator = std.testing.allocator;
 
-    var doc = Document.init();
+    const doc = Document.init(allocator);
 
-    var html = Element.init(allocator, .NS_Html, LocalName.fromTag(.html), &doc);
-    var body = Element.init(allocator, .NS_Html, LocalName.fromTag(.body), &doc);
-    var first_p = Element.init(allocator, .NS_Html, LocalName.fromTag(.p), &doc);
-    var div = Element.init(allocator, .NS_Html, LocalName.fromTag(.div), &doc);
-    var second_p = Element.init(allocator, .NS_Html, LocalName.fromTag(.p), &doc);
+    var html = Element.init(allocator, .NS_Html, LocalName.fromTag(.html), doc);
+    var body = Element.init(allocator, .NS_Html, LocalName.fromTag(.body), doc);
+    var first_p = Element.init(allocator, .NS_Html, LocalName.fromTag(.p), doc);
+    var div = Element.init(allocator, .NS_Html, LocalName.fromTag(.div), doc);
+    var second_p = Element.init(allocator, .NS_Html, LocalName.fromTag(.p), doc);
 
     var stack = OpenElementStack.init(allocator);
     defer stack.deinit();
@@ -248,12 +248,12 @@ test "last stack element" {
 test "pop until poped" {
     const allocator = std.testing.allocator;
 
-    var doc = Document.init();
+    const doc = Document.init(allocator);
 
-    var html = Element.init(allocator, .NS_Html, LocalName.fromTag(.html), &doc);
-    var body = Element.init(allocator, .NS_Html, LocalName.fromTag(.body), &doc);
-    var div = Element.init(allocator, .NS_Html, LocalName.fromTag(.div), &doc);
-    var p = Element.init(allocator, .NS_Html, LocalName.fromTag(.p), &doc);
+    var html = Element.init(allocator, .NS_Html, LocalName.fromTag(.html), doc);
+    var body = Element.init(allocator, .NS_Html, LocalName.fromTag(.body), doc);
+    var div = Element.init(allocator, .NS_Html, LocalName.fromTag(.div), doc);
+    var p = Element.init(allocator, .NS_Html, LocalName.fromTag(.p), doc);
 
     var stack = OpenElementStack.init(allocator);
     defer stack.deinit();
@@ -272,12 +272,12 @@ test "pop until poped" {
 test "pop until" {
     const allocator = std.testing.allocator;
 
-    var doc = Document.init();
+    const doc = Document.init(allocator);
 
-    var html = Element.init(allocator, .NS_Html, LocalName.fromTag(.html), &doc);
-    var body = Element.init(allocator, .NS_Html, LocalName.fromTag(.body), &doc);
-    var div = Element.init(allocator, .NS_Html, LocalName.fromTag(.div), &doc);
-    var p = Element.init(allocator, .NS_Html, LocalName.fromTag(.p), &doc);
+    var html = Element.init(allocator, .NS_Html, LocalName.fromTag(.html), doc);
+    var body = Element.init(allocator, .NS_Html, LocalName.fromTag(.body), doc);
+    var div = Element.init(allocator, .NS_Html, LocalName.fromTag(.div), doc);
+    var p = Element.init(allocator, .NS_Html, LocalName.fromTag(.p), doc);
 
     var stack = OpenElementStack.init(allocator);
     defer stack.deinit();
@@ -296,12 +296,12 @@ test "pop until" {
 test "pop until one of popped" {
     const allocator = std.testing.allocator;
 
-    var doc = Document.init();
+    const doc = Document.init(allocator);
 
-    var html = Element.init(allocator, .NS_Html, LocalName.fromTag(.html), &doc);
-    var body = Element.init(allocator, .NS_Html, LocalName.fromTag(.body), &doc);
-    var table = Element.init(allocator, .NS_Html, LocalName.fromTag(.table), &doc);
-    var div = Element.init(allocator, .NS_Html, LocalName.fromTag(.div), &doc);
+    var html = Element.init(allocator, .NS_Html, LocalName.fromTag(.html), doc);
+    var body = Element.init(allocator, .NS_Html, LocalName.fromTag(.body), doc);
+    var table = Element.init(allocator, .NS_Html, LocalName.fromTag(.table), doc);
+    var div = Element.init(allocator, .NS_Html, LocalName.fromTag(.div), doc);
 
     var stack = OpenElementStack.init(allocator);
     defer stack.deinit();
@@ -320,12 +320,12 @@ test "pop until one of popped" {
 test "has element in table scope" {
     const allocator = std.testing.allocator;
 
-    var doc = Document.init();
+    const doc = Document.init(allocator);
 
-    var html = Element.init(allocator, .NS_Html, LocalName.fromTag(.html), &doc);
-    var table = Element.init(allocator, .NS_Html, LocalName.fromTag(.table), &doc);
-    var tr = Element.init(allocator, .NS_Html, LocalName.fromTag(.tr), &doc);
-    var td = Element.init(allocator, .NS_Html, LocalName.fromTag(.td), &doc);
+    var html = Element.init(allocator, .NS_Html, LocalName.fromTag(.html), doc);
+    var table = Element.init(allocator, .NS_Html, LocalName.fromTag(.table), doc);
+    var tr = Element.init(allocator, .NS_Html, LocalName.fromTag(.tr), doc);
+    var td = Element.init(allocator, .NS_Html, LocalName.fromTag(.td), doc);
 
     var stack = OpenElementStack.init(allocator);
     defer stack.deinit();
@@ -341,12 +341,12 @@ test "has element in table scope" {
 test "has element in scope custom" {
     const allocator = std.testing.allocator;
 
-    var doc = Document.init();
+    const doc = Document.init(allocator);
 
-    var html = Element.init(allocator, .NS_Html, LocalName.fromTag(.html), &doc);
-    var body = Element.init(allocator, .NS_Html, LocalName.fromTag(.body), &doc);
-    var ol = Element.init(allocator, .NS_Html, LocalName.fromTag(.ol), &doc);
-    var li = Element.init(allocator, .NS_Html, LocalName.fromTag(.li), &doc);
+    var html = Element.init(allocator, .NS_Html, LocalName.fromTag(.html), doc);
+    var body = Element.init(allocator, .NS_Html, LocalName.fromTag(.body), doc);
+    var ol = Element.init(allocator, .NS_Html, LocalName.fromTag(.ol), doc);
+    var li = Element.init(allocator, .NS_Html, LocalName.fromTag(.li), doc);
 
     var stack = OpenElementStack.init(allocator);
     defer stack.deinit();

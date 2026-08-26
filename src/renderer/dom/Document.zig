@@ -39,9 +39,11 @@ parser_cannot_change_the_mode: bool,
 
 pub const dom_type = .DOM_Document;
 
-pub fn init() Document {
-    return .{
-        .node = Node.init(dom_type, null),
+pub fn init(alloc: std.mem.Allocator) *Document {
+    const document = alloc.create(Document) catch @panic("TODO");
+
+    document.* = .{
+        .node = undefined,
         .encoding = .utf8,
         .content_type = "application/xml",
         .ty = .DT_Xml,
@@ -51,6 +53,10 @@ pub fn init() Document {
         .todmi_counter = 0,
         .parser_cannot_change_the_mode = false,
     };
+
+    document.node = Node.init(.DOM_Document, document);
+
+    return document;
 }
 
 pub inline fn asNode(self: *Document) *Node {

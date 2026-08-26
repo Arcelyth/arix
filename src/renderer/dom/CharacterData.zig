@@ -6,7 +6,7 @@ pub const dom_type = .DOM_CharacteData;
 
 node: Node,
 
-pub fn init(document: Document) CharacterData {
+pub fn init(document: *Document) CharacterData {
     return .{
         .node = Node.init(dom_type, document),
     };

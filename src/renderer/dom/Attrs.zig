@@ -17,11 +17,11 @@ pub fn init(alloc: std.mem.Allocator) Attrs {
 }
 
 pub fn deinit(self: *Attrs) void {
-    self.data.deinit(self.alloc);
+    self.data.deinit(self.allocator);
 }
 
 pub fn append(self: *Attrs, item: Attr) !void {
-    try self.data.append(item);
+    try self.data.append(self.allocator, item);
 }
 
 pub fn getFromLocalName(self: *const Attrs, target: LocalTag) ?*Attr {

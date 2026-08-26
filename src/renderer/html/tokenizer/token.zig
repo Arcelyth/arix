@@ -75,12 +75,12 @@ pub const Doctype = struct {
         }
 
         for (ids.PREFIX_PUBLIC_IDS) |prefix| {
-            if (self.public_id.startWith(prefix, true)) return true;
+            if (self.public_id.startsWith(prefix, true)) return true;
         }
 
         if (self.system_id.isEmpty()) {
             for (ids.CONDITIONAL_PREFIX_PUBLIC_IDS) |prefix| {
-                if (self.public_id.startWith(prefix, true)) return true;
+                if (self.public_id.startsWith(prefix, true)) return true;
             }
         }
 
@@ -119,7 +119,7 @@ pub const Tag = struct {
         value: []const u8,
         is_sensitive: bool,
     ) bool {
-        const target = LocalName.fromSlice(name);
+        const target = LocalName.fromSlice(name) catch return false;
 
         for (self.attrs.items) |attr| {
             if (!attr.name.eql(target)) continue;
@@ -145,7 +145,7 @@ pub const Tag = struct {
     }
 
     pub fn getAttrVal(self: *const Tag, name: []const u8) ?[]const u8 {
-        const target = LocalName.fromSlice(name);
+        const target = LocalName.fromSlice(name) catch @panic("OutOfMemory");
 
         for (self.attrs.items) |attr| {
             if (attr.name.eql(target)) return attr.value.slice();

@@ -90,7 +90,7 @@ pub fn init(alloc: std.mem.Allocator, ns: Namespace, local: LocalName, document:
     };
 }
 
-pub fn create(document: *Document, local: LocalName, namespace: ?Namespace, prefix: ?LocalName, is: ?LocalName, sce: bool, registry: ?*CustomElementRegistry) Element {
+pub fn create(document: *Document, local: LocalName, namespace: ?Namespace, prefix: ?LocalName, is: ?[]const u8, sce: bool, registry: ?*CustomElementRegistry) Element {
     _ = document;
     _ = local;
     _ = namespace;
@@ -118,7 +118,7 @@ pub fn in(self: Element, elems: []const LocalTag) bool {
 }
 
 pub inline fn isMathMLTextIntegrationPoint(self: *const Element) bool {
-    if (self.ns != .NS_MathML) return false;
+    if (self.ns != .NS_Math) return false;
 
     return self.local_name.is(.mi) or
         self.local_name.is(.mo) or
@@ -127,17 +127,21 @@ pub inline fn isMathMLTextIntegrationPoint(self: *const Element) bool {
         self.local_name.is(.mtext);
 }
 
-pub fn isHtmlIntegrationPoint(self: *const Element, tk: token.Tag) bool {
-    if (self.ns == .NS_SVG) {
+pub fn isHtmlIntegrationPoint(self: *const Element, tk: token.Token) bool {
+    if (self.ns == .NS_Svg) {
         return self.local_name.is(.foreignObject) or
             self.local_name.is(.desc) or
             self.local_name.is(.title);
     }
 
     if (self.isMathMLAnnotationXml()) {
-        if (tk.kind == .StartTag) {
-            return tk.hasAttr("encoding", "text/html", false) or
-                tk.hasAttr("encoding", "application/xhtml+xml", false);
+        switch (tk) {
+            .TagToken => |tag| {
+                if (tag.kind == .StartTag)
+                    return tag.hasAttr("encoding", "text/html", false) or
+                        tag.hasAttr("encoding", "application/xhtml+xml", false);
+            },
+            else => {},
         }
     }
 
@@ -145,13 +149,14 @@ pub fn isHtmlIntegrationPoint(self: *const Element, tk: token.Tag) bool {
 }
 
 pub inline fn isMathMLAnnotationXml(self: *const Element) bool {
-    return self.ns == .NS_MathML and self.local_name.is(.annotation_xml);
+    return self.ns == .NS_Math and self.local_name.is(.@"annotation-xml");
 }
 
 pub fn appendAttrs(self: *Element, attrs: []Attribute) !void {
     for (attrs) |attr| {
         try self.attrs.append(.{
             .ns = null,
+            .prefix = null,
             .local_name = attr.name,
             .value = attr.value.clone(),
             .element = null,

@@ -31,12 +31,13 @@ next_sibling: ?*Node,
 prev_sibling: ?*Node,
 // Associated node document.
 // Maybe need to remove '?'.
-node_doc: ?*Document,
+node_doc: *Document,
 
 /// The compile-time type identifier of Node.
 pub const dom_type = .DOM_Node;
 
-pub fn init(type_id: DomTypeId, document: ?*Document) Node {
+// Document should not be null except when initializing Document.
+pub fn init(type_id: DomTypeId, document: *Document) Node {
     return .{
         .event_target = EventTarget.init(),
         .type_id = type_id,
@@ -85,7 +86,7 @@ pub fn insertBefore(
     child: *Node,
     reference: *Node,
 ) void {
-    std.debug.assert(reference.?.parent == self);
+    std.debug.assert(reference.parent == self);
 
     child.parent = self;
     child.next_sibling = reference;

@@ -3,7 +3,6 @@ const TreeBuilder = @This();
 const std = @import("std");
 const token_ = @import("../tokenizer/token.zig");
 const Token = token_.Token;
-const ProcessingInstruction = token_.ProcessingInstruction;
 const Attribute = token_.Attribute;
 const Node = @import("../../dom/Node.zig");
 const Element = @import("../../dom/Element.zig");
@@ -14,6 +13,7 @@ const DocumentType = @import("../../dom/DocumentType.zig");
 const Attrs = @import("../../dom/Attrs.zig");
 const CustomElementRegistry = @import("../../dom/CustomElementRegistry.zig");
 const CustomElementDefinition = @import("../../dom/CustomElementDefinition.zig");
+const ProcessingInstruction = @import("../../dom/ProcessingInstruction.zig");
 const Namespace = @import("../../dom/namespace.zig").Namespace;
 const Tokenizer = @import("../tokenizer/Tokenizer.zig");
 const TokenAdapter = @import("../tokenizer/TokenAdapter.zig");
@@ -57,7 +57,7 @@ fragment_case: bool,
 scripting_mode: ScriptingMode,
 foster_parenting: bool,
 frameset_ok: bool,
-document: Document,
+document: *Document,
 context: ?*Element,
 // Element pointer: https://html.spec.whatwg.org/multipage/parsing.html#the-element-pointers
 head_el_ptr: ?*Element,
@@ -78,7 +78,7 @@ pub fn init(alloc: std.mem.Allocator, tree_adapter: TreeAdapter, fragment_case: 
         .scripting_mode = .Normal,
         .foster_parenting = false,
         .frameset_ok = true,
-        .document = Document.init(),
+        .document = Document.init(alloc),
         .context = null,
         .head_el_ptr = null,
         .form_el_ptr = null,
@@ -133,7 +133,7 @@ pub fn adapter(self: *TreeBuilder) TokenAdapter {
 // --- ---
 
 // https://html.spec.whatwg.org/#tree-construction-dispatcher
-pub fn isForeign(self: *const TreeBuilder, tk: Token) bool {
+pub fn isForeign(self: *TreeBuilder, tk: Token) bool {
     if (self.open_elements.len() == 0 or std.meta.activeTag(tk) == .EofToken) return false;
     const cur_el = self.adjustedCurrentNode();
 
@@ -142,7 +142,7 @@ pub fn isForeign(self: *const TreeBuilder, tk: Token) bool {
     if (cur_el.isMathMLTextIntegrationPoint()) {
         switch (tk) {
             .TagToken => |tag| {
-                if (tag.kind == .StartTag and !tag.name.eql(.mglyph) and !tag.name.eql(.malignmark)) return false;
+                if (tag.kind == .StartTag and !tag.name.is(.mglyph) and !tag.name.is(.malignmark)) return false;
             },
             .CharacterToken => return false,
             else => {},
@@ -152,37 +152,38 @@ pub fn isForeign(self: *const TreeBuilder, tk: Token) bool {
     if (cur_el.isMathMLAnnotationXml()) {
         switch (tk) {
             .TagToken => |tag| {
-                if (tag.kind == .StartTag and tag.name.eql(.svg)) return false;
+                if (tag.kind == .StartTag and tag.name.is(.svg)) return false;
             },
             else => {},
         }
     }
 
-    if (cur_el.isHtmlIntegrationPoint()) {
+    if (cur_el.isHtmlIntegrationPoint(tk)) {
         switch (tk) {
             .TagToken => |tag| {
                 if (tag.kind == .StartTag) return false;
             },
             .CharacterToken => return false,
+            else => {},
         }
     }
 
     return true;
 }
 
-pub fn processToken(self: *const TreeBuilder, tk: Token) ProcessResult {
-    return self.step_E(tk);
+pub fn processToken(self: *TreeBuilder, tk: Token) ProcessResult {
+    return self.step_E(tk, null) catch @panic("[TODO]: handle error.");
 }
 
-pub fn processTokenForeign(self: *const TreeBuilder, tk: Token) ProcessResult {
+pub fn processTokenForeign(self: *TreeBuilder, tk: Token) ProcessResult {
     _ = self;
     _ = tk;
     @panic("[TODO]");
 }
 
-pub inline fn adjustedCurrentNode(self: *TreeBuilder) *Node {
+pub inline fn adjustedCurrentNode(self: *TreeBuilder) *Element {
     if (self.fragment_case and self.open_elements.len() == 1)
-        return (self.context orelse @panic("Context no set.")).asNode();
+        return (self.context orelse @panic("Context no set."));
 
     return self.currentNode();
 }
@@ -231,18 +232,12 @@ pub fn appropriatePlaceForInsertion(self: *TreeBuilder, override_target: ?*Eleme
 }
 
 // https://html.spec.whatwg.org/#create-an-element-for-the-token
-pub fn createElementForToken(self: *TreeBuilder, tk: Token, namespace: ?Namespace, intended_parent: *Node) Element {
+pub fn createElementForToken_E(self: *TreeBuilder, tag: token_.Tag, namespace: ?Namespace, intended_parent: *Node) !Element {
     // Ignore the Speculative Parser and start on step 3.
     const document = intended_parent.node_doc;
-    const local = tk.local_name;
-    var token_attrs: ?std.ArrayList(Attribute) = null;
-    const is = switch (tk) {
-        .TagToken => |tag| {
-            token_attrs = tag.attr;
-            tag.getAttrVal("is");
-        },
-        else => null,
-    };
+    const local = tag.name;
+    const token_attrs: std.ArrayList(Attribute) = tag.attrs;
+    const is = tag.getAttrVal("is");
     const registry = lookingUpCustomElementRegistry(intended_parent);
     const definition = lookingUpCustomElementDefinition(registry, namespace, local, is);
     // Whether will execute script.
@@ -255,8 +250,8 @@ pub fn createElementForToken(self: *TreeBuilder, tk: Token, namespace: ?Namespac
         document.*.todmi_counter += 1;
         @panic("[TODO]: This part needs JS runtime");
     }
-    const element = Element.create(document, local, namespace, null, is, will_exec_script, registry);
-    if (token_attrs) |ta| element.appendAttrs(ta);
+    var element = Element.create(document, local, namespace, null, is, will_exec_script, registry);
+    try element.appendAttrs(token_attrs.items);
 
     // Step 12.
     if (will_exec_script) {
@@ -275,9 +270,9 @@ pub fn createElementForToken(self: *TreeBuilder, tk: Token, namespace: ?Namespac
 }
 
 // https://html.spec.whatwg.org/multipage/parsing.html#insert-an-element-at-the-adjusted-insertion-location
-pub fn adjustedInsertionLocation(self: *TreeBuilder, pos: ?*InsertionLocation) InsertionLocation {
-    const override_target = if (pos) |p| p.getParent() else null;
-    const adjusted_loc = self.appropriatePlaceForInsertion(override_target.downcast(Element));
+pub fn adjustedInsertionLocation(self: *TreeBuilder, pos: ?*const InsertionLocation) InsertionLocation {
+    const override_target = if (pos) |p| p.getParent().downcast(Element) else null;
+    const adjusted_loc = self.appropriatePlaceForInsertion(override_target);
 
     // Step: 3.
     const node = adjusted_loc.getParent();
@@ -304,17 +299,17 @@ pub fn insertElementAtAdjustedInsertionLocation(self: *TreeBuilder, el: *Element
 }
 
 // https://html.spec.whatwg.org/multipage/parsing.html#insert-a-foreign-element
-pub fn insertForeignElement(self: *TreeBuilder, tk: Token, namespace: Namespace, only_add_to_element_stack: bool) *Element {
+pub fn insertForeignElement_E(self: *TreeBuilder, tk: token_.Tag, namespace: Namespace, only_add_to_element_stack: bool) !*Element {
     const adjusted_loc = self.appropriatePlaceForInsertion(null);
-    const element = self.createElementForToken(tk, namespace, adjusted_loc.getParent());
+    const element = try self.createElementForToken_E(tk, namespace, adjusted_loc.getParent());
     if (!only_add_to_element_stack) self.insertElementAtAdjustedInsertionLocation(element);
     self.open_elements.append(self.allocator, element);
     return element;
 }
 
 // https://html.spec.whatwg.org/multipage/parsing.html#insert-an-html-element
-pub fn insertHtmlElement(self: *TreeBuilder, tk: Token) *Element {
-    return self.insertForeignElement(tk, .NS_Html, false);
+pub fn insertHtmlElement_E(self: *TreeBuilder, tk: token_.Tag) !*Element {
+    return try self.insertForeignElement_E(tk, .NS_Html, false);
 }
 
 pub const TextParsingType = enum {
@@ -323,12 +318,15 @@ pub const TextParsingType = enum {
 };
 
 // https://html.spec.whatwg.org/multipage/parsing.html#parsing-elements-that-contain-only-text
-pub fn parseGenericTextElement(
+pub fn parseGenericTextElement_E(
     self: *TreeBuilder,
     tk: Token,
     tpt: TextParsingType,
-) TokenizerState {
-    _ = self.insertHtmlElement(tk);
+) !TokenizerState {
+    switch (tk) {
+        .TagToken => |tag_tk| try self.insertHtmlElement_E(tag_tk),
+        else => {},
+    }
     const state = switch (tpt) {
         .TPT_Rawtext => .RAWTEXT,
         .TPT_Rcdata => .RCDATA,
@@ -371,7 +369,7 @@ pub fn lookingUpCustomElementRegistry(intended_parent: *Node) *CustomElementRegi
 }
 
 // https://html.spec.whatwg.org/#look-up-a-custom-element-definition
-pub fn lookingUpCustomElementDefinition(registry: ?*CustomElementRegistry, namespace: ?Namespace, local: LocalName, is: ?LocalName) ?CustomElementDefinition {
+pub fn lookingUpCustomElementDefinition(registry: ?*CustomElementRegistry, namespace: ?Namespace, local: LocalName, is: ?[]const u8) ?CustomElementDefinition {
     if (registry) |reg| {
         if (namespace) |n| {
             if (n != .NS_Html) return null;
@@ -415,32 +413,32 @@ pub fn insertCharacter(self: *TreeBuilder, chars: ?[]const u8, tk: Token) void {
 }
 
 // https://html.spec.whatwg.org/multipage/parsing.html#insert-a-comment
-pub fn insertComment(self: *TreeBuilder, data: StraleUtf8Global, insertion_location: ?InsertionLocation) void {
+pub fn insertComment(self: *TreeBuilder, data: StraleUtf8Global, insertion_location: ?*const InsertionLocation) void {
     const insert_loc = self.adjustedInsertionLocation(insertion_location);
     const parent = insert_loc.getParent();
     const document = parent.node_doc;
-    const comment = Comment.create(document, data);
+    var comment = Comment.create(document, data);
     self.insertNodeAt(comment.asNode(), insert_loc);
 }
 
 pub fn insertCommentToDocument(self: *TreeBuilder, data: StraleUtf8Global) void {
-    self.insertComment(data, .{ .last_child = self.document.asNode() });
+    self.insertComment(data, &.{ .last_child = self.document.asNode() });
 }
 
 // https://html.spec.whatwg.org/multipage/parsing.html#insert-a-processing-instruction
-pub fn insertProcessingInstruction(self: *TreeBuilder, tk: ProcessingInstruction, insertion_location: ?InsertionLocation) void {
+pub fn insertProcessingInstruction(self: *TreeBuilder, tk: token_.ProcessingInstruction, insertion_location: ?*const InsertionLocation) void {
     const target = tk.target;
     const data = tk.data;
     const insert_loc = self.adjustedInsertionLocation(insertion_location);
 
     const parent = insert_loc.getParent();
     const document = parent.node_doc;
-    const pi = ProcessingInstruction.create(document, target, data);
+    var pi = ProcessingInstruction.create(document, target, data);
     self.insertNodeAt(pi.asNode(), insert_loc);
 }
 
-pub fn insertProcessingInstructionToDocument(self: *TreeBuilder, tk: ProcessingInstruction) void {
-    self.insertProcessingInstruction(tk, .{ .last_child = self.document.asNode() });
+pub fn insertProcessingInstructionToDocument(self: *TreeBuilder, tk: token_.ProcessingInstruction) void {
+    self.insertProcessingInstruction(tk, &.{ .last_child = self.document.asNode() });
 }
 
 fn insertElementAt(
@@ -640,7 +638,7 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
             sw: switch (tk) {
                 .CharacterToken => |ch_tk| {
                     for (ch_tk.slice()) |c| {
-                        if (!ascii.isAsciiWhitespace(c)) break :sw;
+                        if (!ascii.isAsciiWhitespace(u8, c)) break :sw;
                     }
                     return .PR_Done;
                 },
@@ -653,9 +651,10 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                     return .PR_Done;
                 },
                 .DoctypeToken => |doc_tk| {
-                    if (!doc_tk.name.eql("html") or !doc_tk.public_id.isEmpty() or (!doc_tk.system_id.isEmpty and !doc_tk.system_id.eql("about:legacy-compat"))) self.unexpect(doc_tk, .InitialMode);
-                    self.appendToDocument(DocumentType.create(self.document, doc_tk.name, doc_tk.public_id, doc_tk.system_id).asNode());
-                    if (!self.document.isIframeSrcdocDocument() and !self.document.parser_cannot_change_the_mod) {
+                    if (!doc_tk.name.eql("html") or !doc_tk.public_id.isEmpty() or (!doc_tk.system_id.isEmpty() and !doc_tk.system_id.eql("about:legacy-compat"))) self.unexpect(tk, .InitialMode);
+                    var dt = DocumentType.create(self.document, doc_tk.name, doc_tk.public_id, doc_tk.system_id);
+                    self.appendToDocument(dt.asNode());
+                    if (!self.document.isIframeSrcdocDocument() and !self.document.parser_cannot_change_the_mode) {
                         if (doc_tk.isQuirksDoctype()) {
                             self.document.mode = .DM_Quirks;
                         } else if (doc_tk.isLimitedQuirksDoctype()) {
@@ -670,7 +669,7 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
             // Handle anything else here.
             if (!self.document.isIframeSrcdocDocument()) self.parseError(.not_iframe_srcdoc);
 
-            if (!self.document.parser_cannot_change_the_mod)
+            if (!self.document.parser_cannot_change_the_mode)
                 self.document.mode = .DM_Quirks;
 
             self.insert_mode = .BeforeHtmlMode;
@@ -681,8 +680,8 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
         // https://html.spec.whatwg.org/multipage/parsing.html#the-before-html-insertion-mode
         .BeforeHtmlMode => {
             sw: switch (tk) {
-                .DoctypeToken => |doc_tk| {
-                    self.unexpect(doc_tk, .BeforeHtmlMode);
+                .DoctypeToken => {
+                    self.unexpect(tk, .BeforeHtmlMode);
                 },
                 .CommentToken => |cmt_tk| {
                     self.insertCommentToDocument(cmt_tk);
@@ -694,15 +693,15 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                 },
                 .CharacterToken => |ch_tk| {
                     for (ch_tk.slice()) |c| {
-                        if (!ascii.isAsciiWhitespace(c)) break :sw;
+                        if (!ascii.isAsciiWhitespace(u8, c)) break :sw;
                     }
                     return .PR_Done;
                 },
                 .TagToken => |tag_tk| {
                     switch (tag_tk.kind) {
-                        .StartTagToken => {
+                        .StartTag => {
                             if (tag_tk.name.is(.html)) {
-                                const html_elem = self.createElementForToken(tag_tk, .NS_Html, self.document);
+                                const html_elem = try self.createElementForToken_E(tag_tk, .NS_Html, self.document.asNode());
                                 self.appendToDocument(html_elem.asNode());
                                 try self.open_elements.append(html_elem);
                                 self.insert_mode = .BeforeHeadMode;
@@ -710,11 +709,11 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                             }
                             break :sw;
                         },
-                        .EndTagToken => {
+                        .EndTag => {
                             if (tag_tk.name.is(.head) or tag_tk.name.is(.body) or tag_tk.name.is(.html) or tag_tk.name.is(.br)) {
                                 break :sw;
                             }
-                            self.unexpect(tag_tk, .BeforeHtmlMode);
+                            self.unexpect(tk, .BeforeHtmlMode);
                         },
                     }
                 },
@@ -734,7 +733,7 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
             sw: switch (tk) {
                 .CharacterToken => |ch_tk| {
                     for (ch_tk.slice()) |c| {
-                        if (!ascii.isAsciiWhitespace(c)) break :sw;
+                        if (!ascii.isAsciiWhitespace(u8, c)) break :sw;
                     }
                     return .PR_Done;
                 },
@@ -746,8 +745,8 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                     self.insertProcessingInstruction(pi_tk, null);
                     return .PR_Done;
                 },
-                .DoctypeToken => |doc_tk| {
-                    self.unexpect(doc_tk, .BeforeHeadMode);
+                .DoctypeToken => {
+                    self.unexpect(tk, .BeforeHeadMode);
                 },
                 .TagToken => |tag_tk| {
                     switch (tag_tk.kind) {
@@ -756,7 +755,7 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                                 self.step_E(tk, .InBodyMode);
                                 return .PR_Done;
                             } else if (tag_tk.name.is(.head)) {
-                                const head_elem = self.insertHtmlElement(tag_tk);
+                                const head_elem = self.insertHtmlElement_E(tag_tk);
                                 self.head_el_ptr = head_elem;
                                 self.insert_mode = .InHeadMode;
                                 return .PR_Done;
@@ -767,7 +766,7 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                             if (tag_tk.name.is(.head) or tag_tk.name.is(.body) or tag_tk.name.is(.html) or tag_tk.name.is(.br)) {
                                 break :sw;
                             }
-                            self.unexpect(tag_tk, .BeforeHeadMode);
+                            self.unexpect(tk, .BeforeHeadMode);
                         },
                     }
                 },
@@ -775,7 +774,7 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
             }
 
             // Anything else
-            const head_elem = self.insertHtmlElement(.{
+            const head_elem = self.insertHtmlElement_E(.{
                 .TagToken = .{
                     .kind = .StartTag,
                     .name = LocalName.fromTag(.head),
@@ -794,7 +793,7 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                 .CharacterToken => |ch_tk| {
                     // ASCII whitespace -> Insert the character
                     for (ch_tk.slice()) |c| {
-                        if (!ascii.isAsciiWhitespace(c)) break :sw;
+                        if (!ascii.isAsciiWhitespace(u8, c)) break :sw;
                     }
                     self.insertCharacter(null, ch_tk);
                     return .PR_Done;
@@ -807,8 +806,8 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                     self.insertProcessingInstruction(pi_tk, null);
                     return .PR_Done;
                 },
-                .DoctypeToken => |doc_tk| {
-                    self.unexpect(doc_tk, .InHeadMode);
+                .DoctypeToken => {
+                    self.unexpect(tk, .InHeadMode);
                 },
                 .TagToken => |tag_tk| {
                     switch (tag_tk.kind) {
@@ -817,11 +816,11 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                                 self.step_E(tk, .InBodyMode);
                                 return .PR_Done;
                             } else if (tag_tk.name.is(.base) or tag_tk.name.is(.basefont) or tag_tk.name.is(.bgsound) or tag_tk.name.is(.link)) {
-                                _ = self.insertHtmlElement(tag_tk);
+                                _ = self.insertHtmlElement_E(tag_tk);
                                 _ = self.open_elements.pop();
                                 return .PR_AckSelfClosing;
                             } else if (tag_tk.name.is(.meta)) {
-                                const elem = self.insertHtmlElement(tag_tk);
+                                const elem = self.insertHtmlElement_E(tag_tk);
                                 _ = elem;
                                 _ = self.open_elements.pop();
                                 // TODO: need speculative html parser.
@@ -833,20 +832,20 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                                 if (true) @panic("[TODO]: Handle encoding.");
                                 return .PR_AckSelfClosing;
                             } else if (tag_tk.name.is(.title)) {
-                                const state = self.parseGenericTextElement(tag_tk, .TPT_Rcdata);
+                                const state = try self.parseGenericTextElement_E(tag_tk, .TPT_Rcdata);
                                 return .{ .PR_ChangeState = state };
                             } else if ((tag_tk.name.is(.noscript) and self.scripting_mode != .Disabled) or tag_tk.name.is(.noframes) or tag_tk.name.is(.style)) {
-                                const state = self.parseGenericTextElement(tag_tk, .TPT_Rawtext);
+                                const state = try self.parseGenericTextElement_E(tag_tk, .TPT_Rawtext);
                                 return .{ .PR_ChangeState = state };
                             } else if (tag_tk.name.is(.noscript) and self.scripting_mode == .Disabled) {
-                                _ = self.insertHtmlElement(tag_tk);
+                                _ = self.insertHtmlElement_E(tag_tk);
                                 self.insert_mode = .InHeadNoscriptMode;
                                 return .PR_Done;
                             } else if (tag_tk.name.is(.script)) {
                                 const adjust_loc = self.appropriatePlaceForInsertion(null);
                                 const parent = adjust_loc.getParent();
                                 const document = parent.node_doc;
-                                const el = self.createElementForToken(tag_tk, .NS_Html, document);
+                                const el = try self.createElementForToken_E(tag_tk, .NS_Html, document);
                                 if (self.scripting_mode != .Fragment) el.parser_doc = self.document;
                                 el.force_async = false;
                                 if (self.scripting_mode == .Inert) el.already_started = true;
@@ -866,7 +865,7 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                                 const intended_parent = adjust_loc.getParent();
                                 self.document = intended_parent.node_doc;
                                 if (tmp_tag.shadowRootMode != .SRM_None or !self.allow_decl_shadow_roots or self.isAdjustedCurrentNodeTopmost()) {
-                                    self.insertHtmlElement(tag_tk);
+                                    self.insertHtmlElement_E(tag_tk);
                                 } else {
                                     const decl_she = self.adjustedCurrentNode();
                                     const temp = self.insertForeignElement(tmp_tag, .NS_Html, true);
@@ -895,7 +894,7 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                                     }
                                 }
                             } else if (tag_tk.name.is(.head)) {
-                                self.unexpect(tag_tk, .InHeadMode);
+                                self.unexpect(tk, .InHeadMode);
                             }
                         },
                         .EndTagToken => {
@@ -917,7 +916,7 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                             } else if (tag_tk.name.is(.body) or tag_tk.name.is(.html) or tag_tk.name.is(.br)) {
                                 break :sw;
                             }
-                            self.unexpect(tag_tk, .InHeadMode);
+                            self.unexpect(tk, .InHeadMode);
                         },
                     }
                 },
@@ -933,8 +932,8 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
         // https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-inheadnoscript
         .InHeadNoscriptMode => {
             switch (tk) {
-                .DoctypeToken => |doc_tk| {
-                    self.unexpect(doc_tk, .InHeadNoscriptMode);
+                .DoctypeToken => {
+                    self.unexpect(tk, .InHeadNoscriptMode);
                     return .PR_Done;
                 },
                 .TagToken => |tag_tk| {
@@ -952,7 +951,7 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                                 return .PR_Done;
                             }
                             if (!tag_tk.name.is(.br)) {
-                                self.unexpect(tag_tk, .InHeadNoscriptMode);
+                                self.unexpect(tk, .InHeadNoscriptMode);
                                 return .PR_Done;
                             }
                         },
@@ -960,7 +959,7 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                 },
                 .CharacterToken => |ch_tk| {
                     for (ch_tk.slice()) |c| {
-                        if (!ascii.isAsciiWhitespace(c)) return self.step_E(ch_tk, .InHeadMode);
+                        if (!ascii.isAsciiWhitespace(u8, c)) return self.step_E(ch_tk, .InHeadMode);
                     }
                 },
                 .CommentToken => |cmt_tk| {
@@ -983,7 +982,7 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
             sw: switch (tk) {
                 .CharacterToken => |ch_tk| {
                     for (ch_tk.slice()) |c| {
-                        if (!ascii.isAsciiWhitespace(c)) break :sw;
+                        if (!ascii.isAsciiWhitespace(u8, c)) break :sw;
                     }
                     self.insertCharacter(null, ch_tk);
                     return .PR_Done;
@@ -996,8 +995,8 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                     self.insertProcessingInstruction(pi_tk, null);
                     return .PR_Done;
                 },
-                .DoctypeToken => |doc_tk| {
-                    self.unexpect(doc_tk, .AfterHeadMode);
+                .DoctypeToken => {
+                    self.unexpect(tk, .AfterHeadMode);
                     return .PR_Done;
                 },
                 .TagToken => |tag_tk| {
@@ -1006,16 +1005,16 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                             if (tag_tk.name.is(.html)) {
                                 return self.step_E(tk, .InBodyMode);
                             } else if (tag_tk.name.is(.body)) {
-                                _ = self.insertHtmlElement(tag_tk);
+                                _ = try self.insertHtmlElement_E(tag_tk);
                                 self.frameset_ok = false;
                                 self.insert_mode = .InBodyMode;
                                 return .PR_Done;
                             } else if (tag_tk.name.is(.frameset)) {
-                                _ = self.insertHtmlElement(tag_tk);
+                                _ = try self.insertHtmlElement_E(tag_tk);
                                 self.insert_mode = .InFramesetMode;
                                 return .PR_Done;
                             } else if (tag_tk.name.oneOf(&.{ .base, .basefont, .bgsound, .link, .meta, .noframes, .script, .style, .template, .title })) {
-                                self.unexpect(tag_tk, .AfterHeadMode);
+                                self.unexpect(tk, .AfterHeadMode);
                                 const head_el = self.head_el_ptr.?;
                                 try self.open_elements.append(self.allocator, head_el) catch @panic("OOM");
                                 const res = self.step_E(tk, .InHeadMode);
@@ -1024,7 +1023,7 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                                 }
                                 return res;
                             } else if (tag_tk.name.is(.head)) {
-                                self.unexpect(tag_tk, .AfterHeadMode);
+                                self.unexpect(tk, .AfterHeadMode);
                                 return .PR_Done;
                             }
                         },
@@ -1034,7 +1033,7 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                             } else if (tag_tk.name.is(.body) or tag_tk.name.is(.html) or tag_tk.name.is(.br)) {
                                 break :sw;
                             }
-                            self.unexpect(tag_tk, .AfterHeadMode);
+                            self.unexpect(tk, .AfterHeadMode);
                             return .PR_Done;
                         },
                     }
@@ -1043,7 +1042,7 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
             }
 
             // Anything else
-            _ = self.insertHtmlElement(.{
+            _ = try self.insertHtmlElement_E(.{
                 .TagToken = .{
                     .kind = .StartTag,
                     .name = LocalName.fromTag(.body),
@@ -1069,7 +1068,7 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
 
                     var is_all_ws = true;
                     for (ch_tk.slice()) |c| {
-                        if (!ascii.isAsciiWhitespace(c)) {
+                        if (!ascii.isAsciiWhitespace(u8, c)) {
                             is_all_ws = false;
                             break;
                         }
@@ -1086,22 +1085,22 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                     self.insertProcessingInstruction(pi_tk, null);
                     return .PR_Done;
                 },
-                .DoctypeToken => |doc_tk| {
-                    self.unexpect(doc_tk, .InBodyMode);
+                .DoctypeToken => {
+                    self.unexpect(tk, .InBodyMode);
                     return .PR_Done;
                 },
                 .TagToken => |tag_tk| {
                     switch (tag_tk.kind) {
                         .StartTagToken => {
                             if (tag_tk.name.is(.html)) {
-                                self.unexpect(tag_tk, .InBodyMode);
+                                self.unexpect(tk, .InBodyMode);
                                 if (self.hasElement(.template)) return .PR_Done;
                                 self.addAttributesToElement(self.open_elements.items[0], tag_tk.attrs);
                                 return .PR_Done;
                             } else if (tag_tk.name.oneOf(&.{ .base, .basefont, .bgsound, .link, .meta, .noframes, .script, .style, .template, .title })) {
                                 return self.step_E(tk, .InHeadMode);
                             } else if (tag_tk.name.is(.body)) {
-                                self.unexpect(tag_tk, .InBodyMode);
+                                self.unexpect(tk, .InBodyMode);
                                 if (self.open_elements.len() == 1 or !self.open_elements.items[1].local_name == .body or self.hasElement(.template)) {
                                     return .PR_Done;
                                 }
@@ -1109,7 +1108,7 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                                 self.addAttributesToElement(self.open_elements.items[1], tag_tk.attrs);
                                 return .PR_Done;
                             } else if (tag_tk.name.is(.frameset)) {
-                                self.unexpect(tag_tk, .InBodyMode);
+                                self.unexpect(tk, .InBodyMode);
                                 if (self.open_elements.len() == 1 or !self.open_elements.items[1].local_name == .body or !self.frameset_ok) {
                                     return .PR_Done;
                                 }
@@ -1120,36 +1119,36 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                                     }
                                 }
                                 self.popUntil(.html);
-                                self.insertHtmlElement(tag_tk);
+                                try self.insertHtmlElement_E(tag_tk);
                                 self.insert_mode = .InFramesetMode;
                                 return .PR_Done;
                             } else if (tag_tk.name.oneOf(&.{ .address, .article, .aside, .blockquote, .center, .details, .dialog, .dir, .div, .dl, .fieldset, .figcaption, .figure, .footer, .header, .hgroup, .main, .menu, .nav, .ol, .p, .search, .section, .summary, .ul })) {
                                 if (self.hasElementInButtonScope(.p)) self.closePElement();
-                                self.insertHtmlElement(tag_tk);
+                                try self.insertHtmlElement_E(tag_tk);
                                 return .PR_Done;
                             } else if (tag_tk.name.oneOf(&.{ .h1, .h2, .h3, .h4, .h5, .h6 })) {
                                 if (self.hasElementInButtonScope(.p)) self.closePElement();
                                 const cur_node = self.currentNode();
                                 if (cur_node.ns == .NS_Html and cur_node.local_name.oneOf(&.{ .h1, .h2, .h3, .h4, .h5, .h6 })) {
-                                    self.unexpect(tag_tk, .InBodyMode);
+                                    self.unexpect(tk, .InBodyMode);
                                     _ = self.open_elements.pop();
                                 }
-                                self.insertHtmlElement(tag_tk);
+                                try self.insertHtmlElement_E(tag_tk);
                                 return .PR_Done;
                             } else if (tag_tk.name.oneOf(&.{ .pre, .listing })) {
                                 if (self.hasElementInButtonScope(.p)) self.closePElement();
-                                self.insertHtmlElement(tag_tk);
+                                try self.insertHtmlElement_E(tag_tk);
                                 // Handle newline at the start of block
                                 self.handleNewLine();
                                 self.frameset_ok = false;
                                 return .PR_Done;
                             } else if (tag_tk.name.is(.form)) {
                                 if (self.form_el_ptr != null and !self.hasElement(.template)) {
-                                    self.unexpect(tag_tk, .InBodyMode);
+                                    self.unexpect(tk, .InBodyMode);
                                     return .PR_Done;
                                 }
                                 if (self.hasElementInButtonScope(.p)) self.closePElement();
-                                const element = self.insertHtmlElement(tag_tk);
+                                const element = try self.insertHtmlElement_E(tag_tk);
                                 if (!self.hasElement(.template)) self.form_el_ptr = element;
                                 return .PR_Done;
                             } else if (tag_tk.name.is(.li)) {
@@ -1162,16 +1161,16 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                                 return .PR_Done;
                             } else if (tag_tk.name.is(.plaintext)) {
                                 if (self.hasElementInButtonScope(.p)) self.closePElement();
-                                self.insertHtmlElement(tag_tk);
+                                try self.insertHtmlElement_E(tag_tk);
                                 return .{ .PR_ChangeState = .PLAINTEXT };
                             } else if (tag_tk.name.is(.button)) {
                                 if (self.hasElementInScope(.button)) {
-                                    self.unexpect(tag_tk, .InBodyMode);
+                                    self.unexpect(tk, .InBodyMode);
                                     self.generateImpliedEndTags(null);
                                     self.popUntilPopped(.button);
                                 }
                                 self.reconstructActiveFormattingElements();
-                                self.insertHtmlElement(tag_tk);
+                                try self.insertHtmlElement_E(tag_tk);
                                 self.frameset_ok = false;
                                 return .PR_Done;
                             } else if (tag_tk.name.is(.a)) {
@@ -1179,50 +1178,50 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                                 return .PR_Done;
                             } else if (tag_tk.name.oneOf(&.{ .b, .big, .code, .em, .font, .i, .s, .small, .strike, .strong, .tt, .u })) {
                                 self.reconstructActiveFormattingElements();
-                                const element = self.insertHtmlElement(tag_tk);
+                                const element = try self.insertHtmlElement_E(tag_tk);
                                 self.pushActiveFormattingElement(element);
                                 return .PR_Done;
                             } else if (tag_tk.name.is(.nobr)) {
                                 self.reconstructActiveFormattingElements();
                                 if (self.hasElementInScope(.nobr)) {
-                                    self.unexpect(tag_tk, .InBodyMode);
+                                    self.unexpect(tk, .InBodyMode);
                                     self.adoptionAgencyAlgorithm(tag_tk);
                                     self.reconstructActiveFormattingElements();
                                 }
-                                const element = self.insertHtmlElement(tag_tk);
+                                const element = try self.insertHtmlElement_E(tag_tk);
                                 self.pushActiveFormattingElement(element);
                                 return .PR_Done;
                             } else if (tag_tk.name.oneOf(&.{ .applet, .marquee, .object })) {
                                 self.reconstructActiveFormattingElements();
-                                self.insertHtmlElement(tag_tk);
+                                try self.insertHtmlElement_E(tag_tk);
                                 self.active_fmt_els.append(self.allocator, .AFE_Marker);
                                 self.frameset_ok = false;
                                 return .PR_Done;
                             } else if (tag_tk.name.is(.table)) {
                                 if (self.document.mode != .DM_Quirks and self.hasElementInButtonScope(.p))
                                     self.closePElement();
-                                self.insertHtmlElement(tag_tk);
+                                try self.insertHtmlElement_E(tag_tk);
                                 self.frameset_ok = false;
                                 self.insert_mode = .InTableMode;
                                 return .PR_Done;
                             } else if (tag_tk.name.oneOf(&.{ .area, .br, .embed, .img, .keygen, .wbr })) {
                                 self.reconstructActiveFormattingElements();
-                                self.insertHtmlElement(tag_tk);
+                                try self.insertHtmlElement_E(tag_tk);
                                 _ = self.open_elements.pop();
                                 self.frameset_ok = false;
                                 if (tag_tk.self_closing) return .PR_AckSelfClosing;
                                 return .PR_Done;
                             } else if (tag_tk.name.is(.input)) {
                                 if (self.fragment_case and self.context.?.local_name.is(.select)) {
-                                    self.unexpect(tag_tk, .InBodyMode);
+                                    self.unexpect(tk, .InBodyMode);
                                     return .PR_Done;
                                 }
                                 if (self.hasElementInScope(.select)) {
-                                    self.unexpect(tag_tk, .InBodyMode);
+                                    self.unexpect(tk, .InBodyMode);
                                     self.popUntilPopped(.select);
                                 }
                                 self.reconstructActiveFormattingElements();
-                                self.insertHtmlElement(tag_tk);
+                                try self.insertHtmlElement_E(tag_tk);
                                 _ = self.open_elements.pop();
                                 if (tag_tk.self_closing) return .PR_AckSelfClosing;
 
@@ -1234,19 +1233,19 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                                 if (!is_hidden) self.frameset_ok = false;
                                 return .PR_Done;
                             } else if (tag_tk.name.oneOf(&.{ .param, .source, .track })) {
-                                self.insertHtmlElement(tag_tk);
+                                try self.insertHtmlElement_E(tag_tk);
                                 _ = self.open_elements.pop();
                                 if (tag_tk.self_closing) return .PR_AckSelfClosing;
                                 return .PR_Done;
                             } else if (tag_tk.name.is(.hr)) {
                                 if (self.hasElementInButtonScope(.p)) self.closePElement();
-                                self.insertHtmlElement(tag_tk);
+                                try self.insertHtmlElement_E(tag_tk);
                                 _ = self.open_elements.pop();
                                 if (tag_tk.self_closing) return .PR_AckSelfClosing;
                                 self.frameset_ok = false;
                                 return .PR_Done;
                             } else if (tag_tk.name.is(.image)) {
-                                self.unexpect(tag_tk, .InBodyMode);
+                                self.unexpect(tk, .InBodyMode);
                                 var mut_tk = tk;
                                 mut_tk.TagToken.name.kind = .img;
                                 return self.step_E(mut_tk, null);
@@ -1257,41 +1256,41 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                                 if (self.hasElementInButtonScope(.p)) self.closePElement();
                                 self.reconstructActiveFormattingElements();
                                 self.frameset_ok = false;
-                                self.parseGenericTextElement(tag_tk, .TPT_Rawtext);
+                                try self.parseGenericTextElement_E(tag_tk, .TPT_Rawtext);
                                 return .PR_Done;
                             } else if (tag_tk.name.is(.iframe)) {
                                 self.frameset_ok = false;
-                                self.parseGenericTextElement(tag_tk, .TPT_Rawtext);
+                                try self.parseGenericTextElement_E(tag_tk, .TPT_Rawtext);
                                 return .PR_Done;
                             } else if (tag_tk.name.is(.noembed) or (tag_tk.name.is(.noscript) and !self.isScriptingDisabled())) {
-                                self.parseGenericTextElement(tag_tk, .TPT_Rawtext);
+                                try self.parseGenericTextElement_E(tag_tk, .TPT_Rawtext);
                                 return .PR_Done;
                             } else if (tag_tk.name.is(.select)) {
                                 self.reconstructActiveFormattingElements();
-                                self.insertHtmlElement(tag_tk);
+                                try self.insertHtmlElement_E(tag_tk);
                                 self.frameset_ok = false;
                                 if (true) @panic("[TODO]:");
                                 return .PR_Done;
                             } else if (tag_tk.name.oneOf(&.{ .option, .optgroup })) {
                                 if (self.currentNodeIs(.option)) _ = self.open_elements.pop();
                                 self.reconstructActiveFormattingElements();
-                                self.insertHtmlElement(tag_tk);
+                                try self.insertHtmlElement_E(tag_tk);
                                 return .PR_Done;
                             } else if (tag_tk.name.oneOf(&.{ .rb, .rtc, .rp, .rt })) {
                                 if (self.hasElementInScope(.ruby)) self.generateImpliedEndTags(null);
-                                self.insertHtmlElement(tag_tk);
+                                try self.insertHtmlElement_E(tag_tk);
                                 return .PR_Done;
                             } else if (tag_tk.name.is(.math) or tag_tk.name.is(.svg)) {
                                 if (true) @panic("[TODO]:");
                                 return .PR_Done;
                             } else if (tag_tk.name.oneOf(&.{ .caption, .col, .colgroup, .frame, .head, .tbody, .td, .tfoot, .th, .thead, .tr })) {
-                                self.unexpect(tag_tk, .InBodyMode);
+                                self.unexpect(tk, .InBodyMode);
                                 return .PR_Done;
                             }
 
                             // Any other start tag
                             self.reconstructActiveFormattingElements();
-                            self.insertHtmlElement(tag_tk);
+                            try self.insertHtmlElement_E(tag_tk);
                             return .PR_Done;
                         },
                         .EndTagToken => {
@@ -1299,7 +1298,7 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                                 return self.step_E(tk, .InHeadMode);
                             } else if (tag_tk.name.is(.body)) {
                                 if (!self.hasElementInScope(.body)) {
-                                    self.unexpect(tag_tk, .InBodyMode);
+                                    self.unexpect(tk, .InBodyMode);
                                     return .PR_Done;
                                 }
                                 if (self.allElementsOneOf(&.{ .dd, .dt, .li, .optgroup, .option, .p, .rb, .rp, .rt, .rtc, .tbody, .td, .tfoot, .th, .thead, .tr, .body, .html }))
@@ -1307,7 +1306,7 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                                 return .PR_Done;
                             } else if (tag_tk.name.is(.html)) {
                                 if (!self.hasElementInScope(.body)) {
-                                    self.unexpect(tag_tk, .InBodyMode);
+                                    self.unexpect(tk, .InBodyMode);
                                     return .PR_Done;
                                 }
                                 self.insert_mode = .AfterBodyMode;
@@ -1315,12 +1314,12 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                             } else if (tag_tk.name.oneOf(&.{ .address, .article, .aside, .blockquote, .button, .center, .details, .dialog, .dir, .div, .dl, .fieldset, .figcaption, .figure, .footer, .header, .hgroup, .listing, .main, .menu, .nav, .ol, .pre, .search, .section, .select, .summary, .ul })) {
                                 const tag = tag_tk.name.asTag().?;
                                 if (!self.hasElementInScope(tag)) {
-                                    self.unexpect(tag_tk, .InBodyMode);
+                                    self.unexpect(tk, .InBodyMode);
                                     return .PR_Done;
                                 }
                                 self.generateImpliedEndTags(null);
                                 if (!self.currentNode().local_name.is(tag))
-                                    self.unexpect(tag_tk, .InBodyMode);
+                                    self.unexpect(tk, .InBodyMode);
                                 self.popUntilPopped(tag);
                                 return .PR_Done;
                             } else if (tag_tk.name.is(.form)) {
@@ -1328,28 +1327,28 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                                     const node = self.form_el_ptr;
                                     self.form_el_ptr = null;
                                     if (node == null or !self.hasElementInScope(node.?)) {
-                                        self.unexpect(tag_tk, .InBodyMode);
+                                        self.unexpect(tk, .InBodyMode);
                                         return .PR_Done;
                                     }
                                     self.generateImpliedEndTags(null);
                                     if (self.currentNode() != node.?)
-                                        self.unexpect(tag_tk, .InBodyMode);
+                                        self.unexpect(tk, .InBodyMode);
                                     self.removeFromStack(node.?);
                                 } else {
                                     if (!self.hasElementInScope(.form)) {
-                                        self.unexpect(tag_tk, .InBodyMode);
+                                        self.unexpect(tk, .InBodyMode);
                                         return .PR_Done;
                                     }
                                     self.generateImpliedEndTags(null);
                                     if (!self.currentNode().local_name.is(.form))
-                                        self.unexpect(tag_tk, .InBodyMode);
+                                        self.unexpect(tk, .InBodyMode);
                                     self.popUntilPopped(.form);
                                 }
                                 return .PR_Done;
                             } else if (tag_tk.name.is(.p)) {
                                 if (!self.hasElementInButtonScope(.p)) {
-                                    self.unexpect(tag_tk, .InBodyMode);
-                                    self.insertHtmlElement(.{
+                                    self.unexpect(tk, .InBodyMode);
+                                    try self.insertHtmlElement_E(.{
                                         .TagToken = .{
                                             .kind = .StartTagToken,
                                             .name = LocalName.fromTag(.p),
@@ -1362,33 +1361,33 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                                 return .PR_Done;
                             } else if (tag_tk.name.is(.li)) {
                                 if (!self.hasElementInListItemScope(.li)) {
-                                    self.unexpect(tag_tk, .InBodyMode);
+                                    self.unexpect(tk, .InBodyMode);
                                     return .PR_Done;
                                 }
                                 self.generateImpliedEndTags(.li);
                                 if (!self.currentNode().local_name.is(.li))
-                                    self.unexpect(tag_tk, .InBodyMode);
+                                    self.unexpect(tk, .InBodyMode);
                                 self.popUntilPopped(.li);
                                 return .PR_Done;
                             } else if (tag_tk.name.oneOf(&.{ .dd, .dt })) {
                                 const tag = tag_tk.name.asTag().?;
                                 if (!self.hasElementInScope(tag)) {
-                                    self.unexpect(tag_tk, .InBodyMode);
+                                    self.unexpect(tk, .InBodyMode);
                                     return .PR_Done;
                                 }
                                 self.generateImpliedEndTags(tag);
                                 if (!self.currentNode().local_name.is(tag))
-                                    self.unexpect(tag_tk, .InBodyMode);
+                                    self.unexpect(tk, .InBodyMode);
                                 self.popUntilPopped(tag);
                                 return .PR_Done;
                             } else if (tag_tk.name.oneOf(&.{ .h1, .h2, .h3, .h4, .h5, .h6 })) {
                                 if (!self.allElementsOneOf(&.{ .h1, .h2, .h3, .h4, .h5, .h6 })) {
-                                    self.unexpect(tag_tk, .InBodyMode);
+                                    self.unexpect(tk, .InBodyMode);
                                     return .PR_Done;
                                 }
                                 self.generateImpliedEndTags(null);
                                 if (!self.currentNode().local_name.is(tag_tk.name.asTag().?))
-                                    self.unexpect(tag_tk, .InBodyMode);
+                                    self.unexpect(tk, .InBodyMode);
                                 self.popUntilOneOfPopped(&.{ .h1, .h2, .h3, .h4, .h5, .h6 });
                                 return .PR_Done;
                             }
@@ -1401,17 +1400,17 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                             } else if (tag_tk.name.oneOf(&.{ .applet, .marquee, .object })) {
                                 const tag = tag_tk.name.asTag().?;
                                 if (!self.hasElementInScope(tag)) {
-                                    self.unexpect(tag_tk, .InBodyMode);
+                                    self.unexpect(tk, .InBodyMode);
                                     return .PR_Done;
                                 }
                                 self.generateImpliedEndTags(null);
                                 if (!self.currentNode().local_name.is(tag))
-                                    self.unexpect(tag_tk, .InBodyMode);
+                                    self.unexpect(tk, .InBodyMode);
                                 self.popUntilPopped(tag);
                                 self.clearActiveFormattingElementsToLastMarker();
                                 return .PR_Done;
                             } else if (tag_tk.name.is(.br)) {
-                                self.unexpect(tag_tk, .InBodyMode);
+                                self.unexpect(tk, .InBodyMode);
                                 var mut_tk = tk;
                                 mut_tk.TagToken.kind = .StartTagToken;
                                 return self.step_E(mut_tk, null);
@@ -1483,8 +1482,8 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                     self.insertProcessingInstruction(pi_tk, null);
                     return .PR_Done;
                 },
-                .DoctypeToken => |doc_tk| {
-                    self.unexpect(doc_tk, .InTableMode);
+                .DoctypeToken => {
+                    self.unexpect(tk, .InTableMode);
                     return .PR_Done;
                 },
                 .TagToken => |tag_tk| {
@@ -1493,17 +1492,17 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                             if (tag_tk.name.is(.caption)) {
                                 self.clearStackBackToTableContext();
                                 try self.active_fmt_els.append(self.allocator, .AFE_Marker) catch @panic("OOM");
-                                _ = self.insertHtmlElement(tag_tk);
+                                _ = try self.insertHtmlElement_E(tag_tk);
                                 self.insert_mode = .InCaptionMode;
                                 return .PR_Done;
                             } else if (tag_tk.name.is(.colgroup)) {
                                 self.clearStackBackToTableContext();
-                                _ = self.insertHtmlElement(tag_tk);
+                                _ = try self.insertHtmlElement_E(tag_tk);
                                 self.insert_mode = .InColumnGroupMode;
                                 return .PR_Done;
                             } else if (tag_tk.name.is(.col)) {
                                 self.clearStackBackToTableContext();
-                                _ = self.insertHtmlElement(.{
+                                _ = try self.insertHtmlElement_E(.{
                                     .TagToken = .{
                                         .kind = .StartTagToken,
                                         .name = LocalName.fromTag(.colgroup),
@@ -1515,12 +1514,12 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                                 return self.step_E(tk, null);
                             } else if (tag_tk.name.oneOf(&.{ .tbody, .tfoot, .thead })) {
                                 self.clearStackBackToTableContext();
-                                _ = self.insertHtmlElement(tag_tk);
+                                _ = try self.insertHtmlElement_E(tag_tk);
                                 self.insert_mode = .InTableBodyMode;
                                 return .PR_Done;
                             } else if (tag_tk.name.oneOf(&.{ .td, .th, .tr })) {
                                 self.clearStackBackToTableContext();
-                                _ = self.insertHtmlElement(.{
+                                _ = try self.insertHtmlElement_E(.{
                                     .TagToken = .{
                                         .kind = .StartTagToken,
                                         .name = LocalName.fromTag(.tbody),
@@ -1531,7 +1530,7 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                                 self.insert_mode = .InTableBodyMode;
                                 return self.step_E(tk, null);
                             } else if (tag_tk.name.is(.table)) {
-                                self.unexpect(tag_tk, .InTableMode);
+                                self.unexpect(tk, .InTableMode);
                                 if (!self.hasElementInTableScope(.table)) {
                                     return .PR_Done;
                                 } else {
@@ -1550,16 +1549,16 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                                 if (!is_hidden) break :sw;
 
                                 self.parseError(.non_hidden_input);
-                                const elem = self.insertHtmlElement(tag_tk);
+                                const elem = try self.insertHtmlElement_E(tag_tk);
                                 _ = self.open_elements.pop();
                                 if (elem.self_closing) return .PR_AckSelfClosing;
                                 return .PR_Done;
                             } else if (tag_tk.name.is(.form)) {
-                                self.unexpect(tag_tk, .InTableMode);
+                                self.unexpect(tk, .InTableMode);
                                 if (self.hasElement(.template) or self.form_el_ptr != null) {
                                     return .PR_Done;
                                 } else {
-                                    const form_elem = self.insertHtmlElement(tag_tk);
+                                    const form_elem = try self.insertHtmlElement_E(tag_tk);
                                     self.form_el_ptr = form_elem;
                                     _ = self.open_elements.pop();
                                     return .PR_Done;
@@ -1619,7 +1618,7 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
             for (self.pending_table_char_tks.items) |pending_tk| {
                 if (pending_tk == .CharacterToken) {
                     for (pending_tk.CharacterToken.slice()) |c| {
-                        if (!ascii.isAsciiWhitespace(c)) {
+                        if (!ascii.isAsciiWhitespace(u8, c)) {
                             contains_non_whitespace = true;
                             break;
                         }
@@ -1716,7 +1715,7 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
             sw: switch (tk) {
                 .CharacterToken => |ch_tk| {
                     for (ch_tk.slice()) |c| {
-                        if (!ascii.isAsciiWhitespace(c)) break :sw;
+                        if (!ascii.isAsciiWhitespace(u8, c)) break :sw;
                     }
                     self.insertCharacter(null, ch_tk);
                     return .PR_Done;
@@ -1729,8 +1728,8 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                     self.insertProcessingInstruction(pi_tk, null);
                     return .PR_Done;
                 },
-                .DoctypeToken => |doc_tk| {
-                    self.unexpect(doc_tk, .InColumnGroupMode);
+                .DoctypeToken => {
+                    self.unexpect(tk, .InColumnGroupMode);
                     return .PR_Done;
                 },
                 .TagToken => |tag_tk| {
@@ -1739,7 +1738,7 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                             if (tag_tk.name.is(.html)) {
                                 return self.step_E(tk, .InBodyMode);
                             } else if (tag_tk.name.is(.col)) {
-                                const col_elem = self.insertHtmlElement(tag_tk);
+                                const col_elem = try self.insertHtmlElement_E(tag_tk);
                                 _ = self.open_elements.pop();
                                 if (col_elem.self_closing) return .PR_AckSelfClosing;
                                 return .PR_Done;
@@ -1791,13 +1790,13 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                         .StartTagToken => {
                             if (tag_tk.name.is(.tr)) {
                                 self.clearStackBackToTableBodyContext();
-                                _ = self.insertHtmlElement(tag_tk);
+                                _ = try self.insertHtmlElement_E(tag_tk);
                                 self.insert_mode = .InRowMode;
                                 return .PR_Done;
                             } else if (tag_tk.name.oneOf(&.{ .th, .td })) {
                                 self.parseError(.unexpected_td_th_in_table_body);
                                 self.clearStackBackToTableBodyContext();
-                                _ = self.insertHtmlElement(.{
+                                _ = try self.insertHtmlElement_E(.{
                                     .TagToken = .{
                                         .kind = .StartTagToken,
                                         .name = LocalName.fromTag(.tr),
@@ -1867,7 +1866,7 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                         .StartTagToken => {
                             if (tag_tk.name.oneOf(&.{ .th, .td })) {
                                 self.clearStackBackToTableRowContext();
-                                _ = self.insertHtmlElement(tag_tk);
+                                _ = try self.insertHtmlElement_E(tag_tk);
                                 self.insert_mode = .InCellMode;
                                 try self.active_fmt_els.append(self.allocator, .AFE_Marker) catch @panic("OOM");
                                 return .PR_Done;
@@ -2044,7 +2043,7 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
             sw: switch (tk) {
                 .CharacterToken => |ch_tk| {
                     for (ch_tk.slice()) |c| {
-                        if (!ascii.isAsciiWhitespace(c)) break :sw;
+                        if (!ascii.isAsciiWhitespace(u8, c)) break :sw;
                     }
                     return self.step_E(tk, .InBodyMode);
                 },
@@ -2056,8 +2055,8 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                     self.insertProcessingInstruction(pi_tk, .{ .last_child = self.open_elements.items[0].asNode() });
                     return .PR_Done;
                 },
-                .DoctypeToken => |doc_tk| {
-                    self.unexpect(doc_tk, .AfterBodyMode);
+                .DoctypeToken => {
+                    self.unexpect(tk, .AfterBodyMode);
                     return .PR_Done;
                 },
                 .TagToken => |tag_tk| {
@@ -2091,7 +2090,7 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
             sw: switch (tk) {
                 .CharacterToken => |ch_tk| {
                     for (ch_tk.slice()) |c| {
-                        if (!ascii.isAsciiWhitespace(c)) break :sw;
+                        if (!ascii.isAsciiWhitespace(u8, c)) break :sw;
                     }
                     return self.step_E(ch_tk, .InBodyMode);
                 },
@@ -2104,8 +2103,8 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                     self.insertProcessingInstruction(pi_tk);
                     return .PR_Done;
                 },
-                .DoctypeToken => |doc_tk| {
-                    self.unexpect(doc_tk, .InFramesetMode);
+                .DoctypeToken => {
+                    self.unexpect(tk, .InFramesetMode);
                     return .PR_Done;
                 },
                 .TagToken => |tag_tk| {
@@ -2114,10 +2113,10 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                             if (tag_tk.name.is(.html)) {
                                 return self.step_E(tk, .InBodyMode);
                             } else if (tag_tk.name.is(.frameset)) {
-                                _ = self.insertHtmlElement(tag_tk);
+                                _ = try self.insertHtmlElement_E(tag_tk);
                                 return .PR_Done;
                             } else if (tag_tk.name.is(.frame)) {
-                                _ = self.insertHtmlElement(tag_tk);
+                                _ = try self.insertHtmlElement_E(tag_tk);
                                 _ = self.open_elements.pop();
                                 return .PR_AckSelfClosing;
                             } else if (tag_tk.name.is(.noframes)) {
@@ -2157,7 +2156,7 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
             sw: switch (tk) {
                 .CharacterToken => |ch_tk| {
                     for (ch_tk.slice()) |c| {
-                        if (!ascii.isAsciiWhitespace(c)) break :sw;
+                        if (!ascii.isAsciiWhitespace(u8, c)) break :sw;
                     }
                     self.insertCharacter(null, tk);
                     return .PR_Done;
@@ -2170,8 +2169,8 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                     self.insertProcessingInstruction(pi_tk, null);
                     return .PR_Done;
                 },
-                .DoctypeToken => |doc_tk| {
-                    self.unexpect(doc_tk, .AfterFramesetMode);
+                .DoctypeToken => {
+                    self.unexpect(tk, .AfterFramesetMode);
                     return .PR_Done;
                 },
                 .TagToken => |tag_tk| {
@@ -2218,7 +2217,7 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                 },
                 .CharacterToken => |ch_tk| {
                     for (ch_tk.slice()) |c| {
-                        if (!ascii.isAsciiWhitespace(c)) break :sw;
+                        if (!ascii.isAsciiWhitespace(u8, c)) break :sw;
                     }
                     return self.step_E(tk, .InBodyMode);
                 },
@@ -2255,7 +2254,7 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                 },
                 .CharacterToken => |ch_tk| {
                     for (ch_tk.slice()) |c| {
-                        if (!ascii.isAsciiWhitespace(c)) break :sw;
+                        if (!ascii.isAsciiWhitespace(u8, c)) break :sw;
                     }
                     return self.step_E(tk, .InBodyMode);
                 },

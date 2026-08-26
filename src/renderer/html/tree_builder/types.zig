@@ -27,7 +27,7 @@ pub const InsertionMode = enum {
     AfterAfterFramesetMode,
 };
 
-pub const InsertionLocation = union {
+pub const InsertionLocation = union(enum) {
     last_child: *Node,
     before_child: *Node,
     parent_before_child: struct {
@@ -35,7 +35,7 @@ pub const InsertionLocation = union {
         before_child: *Node,
     },
 
-    pub fn getParent(self: *InsertionLocation) *Node {
+    pub fn getParent(self: *const InsertionLocation) *Node {
         return switch (self) {
             .last_child => |parent| parent,
             .before_child => |before| before.parent orelse @panic("before_child has no parent"),
@@ -43,7 +43,7 @@ pub const InsertionLocation = union {
         };
     }
 
-    pub fn beforeNode(self: InsertionLocation) ?*Node {
+    pub fn beforeNode(self: *const InsertionLocation) ?*Node {
         const before = switch (self) {
             .last_child => |parent| return parent.last_child,
             .before_child => |node| node,

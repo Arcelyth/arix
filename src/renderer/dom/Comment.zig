@@ -10,14 +10,14 @@ pub const dom_type = .DOM_Comment;
 char_data: CharacterData,
 data: StraleUtf8Global,
 
-pub fn init(document: Document) Comment {
+pub fn init(document: *Document) Comment {
     return .{
         .char_data = CharacterData.init(document),
         .data = StraleUtf8Global.init(),
     };
 }
 
-pub fn create(document: Document, data: StraleUtf8Global) Comment {
+pub fn create(document: *Document, data: StraleUtf8Global) Comment {
     return .{
         .char_data = CharacterData.init(document),
         .data = data,
@@ -25,7 +25,7 @@ pub fn create(document: Document, data: StraleUtf8Global) Comment {
 }
 
 pub inline fn asNode(self: *Comment) *Node {
-    return &self.node;
+    return &self.char_data.node;
 }
 
 pub fn fromNode(node: *Node) *Comment {

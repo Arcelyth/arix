@@ -193,7 +193,7 @@ pub fn isFormAssociatedElement(self: *const Element) bool {
     return false;
 }
 
-pub fn attachShadowRoot(self: *Element, mode: ShadowRoot.ShadowRootMode, clonable: bool, serializable: bool, delegates_focus: bool, slot_ass: ShadowRoot.ShadowRootSlotAssignment, registry: ?*CustomElementRegistry) void {
+pub fn attachShadowRoot(self: *Element, mode: ShadowRoot.ShadowRootMode, clonable: bool, serializable: bool, delegates_focus: bool, slot_ass: ShadowRoot.ShadowRootSlotAssignment, registry: ?*CustomElementRegistry) !void {
     //TODO
     _ = self;
     _ = mode;

@@ -42,6 +42,12 @@ pub inline fn currentNode(self: *OpenElementStack) *Element {
     return self.els.items[self.els.items.len - 1];
 }
 
+pub inline fn remove(self: *OpenElementStack, el: *Element) ?*Element {
+    if (std.mem.indexOfScalar(*Element, self.els.items, el)) |idx|
+        return self.els.orderedRemove(idx);
+    return null;
+}
+
 // https://html.spec.whatwg.org/multipage/parsing.html#generate-implied-end-tags
 pub fn generateImpliedEndTags(self: *OpenElementStack, exclude: ?LocalTag) void {
     while (self.els.items.len > 0) {

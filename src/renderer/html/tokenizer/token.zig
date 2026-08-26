@@ -9,8 +9,8 @@ const Namespace = @import("../../dom/namespace.zig").Namespace;
 const Attr = @import("../../dom/Attr.zig");
 const Attrs = @import("../../dom/Attrs.zig");
 const dom_type = @import("../../dom/type.zig");
-const ShadowRootMode = dom_type.ShadowRootMode;
-const SlotAssignment = dom_type.SlotAssignment;
+const ShadowRootMode = @import("../../dom/ShadowRoot.zig").ShadowRootMode;
+const SlotAssignment = @import("../../dom/ShadowRoot.zig").ShadowRootSlotAssignment;
 
 const ids = @import("ids.zig");
 
@@ -135,7 +135,7 @@ pub const Tag = struct {
         self: *const Tag,
         name: []const u8,
     ) bool {
-        const target = LocalName.fromSlice(name);
+        const target = LocalName.fromSlice(name) catch @panic("OutOfMemory");
 
         for (self.attrs.items) |attr| {
             if (attr.name.eql(target)) return true;
@@ -144,11 +144,11 @@ pub const Tag = struct {
         return false;
     }
 
-    pub fn getAttrVal(self: *const Tag, name: []const u8) ?[]const u8 {
+    pub fn getAttrVal(self: *const Tag, name: []const u8) ?StraleUtf8Global {
         const target = LocalName.fromSlice(name) catch @panic("OutOfMemory");
 
         for (self.attrs.items) |attr| {
-            if (attr.name.eql(target)) return attr.value.slice();
+            if (attr.name.eql(target)) return attr.value;
         }
 
         return null;
@@ -161,11 +161,11 @@ pub const Tag = struct {
         return .SRM_None;
     }
 
-    pub fn shadowRootSlotAssignment(self: *const Tag) shadowRootSlotAssignment {
-        const val = self.getAttrVal("shadowrootslotassignment") orelse return .SA_Named;
-        if (val.eqlIgnoreCase("named")) return .SA_Named;
-        if (val.eqlIgnoreCase("manual")) return .SA_Manual;
-        return .SRM_Named;
+    pub fn shadowRootSlotAssignment(self: *const Tag) SlotAssignment {
+        const val = self.getAttrVal("shadowrootslotassignment") orelse return .SR_Named;
+        if (val.eqlIgnoreCase("named")) return .SR_Named;
+        if (val.eqlIgnoreCase("manual")) return .SR_Manual;
+        return .SR_Named;
     }
 
     // https://html.spec.whatwg.org/multipage/parsing.html#adjust-mathml-attributes

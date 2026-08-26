@@ -9,14 +9,14 @@ const TestAdapter = @import("TestAdapter.zig");
 
 test "appropriatePlaceForInsertion - normal insertion without foster parenting" {
     const allocator = testing.allocator;
-    var doc = Document.init();
+    const doc = Document.init(allocator);
     var test_adapter = TestAdapter.init(allocator);
     const adapter = test_adapter.adapter();
     var builder = TreeBuilder.init(allocator, adapter, false);
     defer builder.deinit();
 
-    var html = Element.init(allocator, .NS_Html, LocalName.fromTag(.html), &doc);
-    var div = Element.init(allocator, .NS_Html, LocalName.fromTag(.div), &doc);
+    var html = Element.init(allocator, .NS_Html, LocalName.fromTag(.html), doc);
+    var div = Element.init(allocator, .NS_Html, LocalName.fromTag(.div), doc);
 
     try builder.open_elements.append(&html);
     try builder.open_elements.append(&div);

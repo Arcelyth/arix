@@ -184,6 +184,7 @@ const Document = @import("../../dom/Document.zig");
 test "generate implied end tags" {
     const allocator = std.testing.allocator;
     const doc = Document.init(allocator);
+    defer doc.destroy(allocator);
 
     var stack = OpenElementStack.init(allocator);
     defer stack.deinit();
@@ -208,6 +209,7 @@ test "generate implied end tags exclude" {
     const allocator = std.testing.allocator;
 
     const doc = Document.init(allocator);
+    defer doc.destroy(allocator);
 
     var stack = OpenElementStack.init(allocator);
     defer stack.deinit();
@@ -232,6 +234,7 @@ test "last stack element" {
     const allocator = std.testing.allocator;
 
     const doc = Document.init(allocator);
+    defer doc.destroy(allocator);
 
     var html = Element.init(allocator, .NS_Html, LocalName.fromTag(.html), doc);
     var body = Element.init(allocator, .NS_Html, LocalName.fromTag(.body), doc);
@@ -259,6 +262,7 @@ test "pop until poped" {
     const allocator = std.testing.allocator;
 
     const doc = Document.init(allocator);
+    defer doc.destroy(allocator);
 
     var html = Element.init(allocator, .NS_Html, LocalName.fromTag(.html), doc);
     var body = Element.init(allocator, .NS_Html, LocalName.fromTag(.body), doc);
@@ -283,6 +287,7 @@ test "pop until" {
     const allocator = std.testing.allocator;
 
     const doc = Document.init(allocator);
+    defer doc.destroy(allocator);
 
     var html = Element.init(allocator, .NS_Html, LocalName.fromTag(.html), doc);
     var body = Element.init(allocator, .NS_Html, LocalName.fromTag(.body), doc);
@@ -307,6 +312,7 @@ test "pop until one of popped" {
     const allocator = std.testing.allocator;
 
     const doc = Document.init(allocator);
+    defer doc.destroy(allocator);
 
     var html = Element.init(allocator, .NS_Html, LocalName.fromTag(.html), doc);
     var body = Element.init(allocator, .NS_Html, LocalName.fromTag(.body), doc);
@@ -331,6 +337,7 @@ test "has element in table scope" {
     const allocator = std.testing.allocator;
 
     const doc = Document.init(allocator);
+    defer doc.destroy(allocator);
 
     var html = Element.init(allocator, .NS_Html, LocalName.fromTag(.html), doc);
     var table = Element.init(allocator, .NS_Html, LocalName.fromTag(.table), doc);
@@ -352,6 +359,7 @@ test "has element in scope custom" {
     const allocator = std.testing.allocator;
 
     const doc = Document.init(allocator);
+    defer doc.destroy(allocator);
 
     var html = Element.init(allocator, .NS_Html, LocalName.fromTag(.html), doc);
     var body = Element.init(allocator, .NS_Html, LocalName.fromTag(.body), doc);

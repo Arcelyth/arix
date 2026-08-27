@@ -10,6 +10,7 @@ const TestAdapter = @import("TestAdapter.zig");
 test "appropriatePlaceForInsertion - normal insertion without foster parenting" {
     const allocator = testing.allocator;
     const doc = Document.init(allocator);
+    defer doc.destroy(allocator);
     var test_adapter = TestAdapter.init(allocator);
     const adapter = test_adapter.adapter();
     var builder = TreeBuilder.init(allocator, adapter, false);

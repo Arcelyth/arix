@@ -90,6 +90,7 @@ pub fn init(alloc: std.mem.Allocator, tree_adapter: TreeAdapter, fragment_case: 
 
 pub fn deinit(self: *TreeBuilder) void {
     self.open_elements.deinit();
+    self.document.destroy(self.allocator);
 }
 
 // --- Implement TokenAdapter. ---

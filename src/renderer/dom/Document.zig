@@ -59,6 +59,10 @@ pub fn init(alloc: std.mem.Allocator) *Document {
     return document;
 }
 
+pub fn destroy(self: *Document, alloc: std.mem.Allocator) void {
+    alloc.destroy(self);
+}
+
 pub inline fn asNode(self: *Document) *Node {
     return &self.node;
 }

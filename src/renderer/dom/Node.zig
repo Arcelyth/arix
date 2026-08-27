@@ -50,6 +50,11 @@ pub fn init(type_id: DomTypeId, document: *Document) Node {
     };
 }
 
+pub fn create(document: *Document) Node {
+    // TODO:
+    return init(.DOM_Element, document);
+}
+
 /// Attempts to downcast this Node into a more specific DOM type.
 /// The target type `T` must provide a `fromNode` function that converts a
 /// `*Node` pointer into a pointer to the corresponding DOM object.

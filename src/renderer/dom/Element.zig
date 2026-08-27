@@ -34,15 +34,14 @@ const ScriptResult = union(enum) {
 
 node: Node,
 // namespace
-ns: Namespace,
+ns: ?Namespace,
 // namespace prefix
 prefix: ?LocalName,
 local_name: LocalName,
 custom_element_registry: ?*CustomElementRegistry,
 custom_element_state: CustomElementState,
 custom_element_definition: ?*CustomElementDefinition,
-// TODO: Since it stand for custom name, might need to changed to Strale.
-is: ?LocalName,
+is: ?[]const u8,
 shadow_root: ?*ShadowRoot,
 attr_list: NamedNodeMap,
 attrs: Attrs,
@@ -90,15 +89,59 @@ pub fn init(alloc: std.mem.Allocator, ns: Namespace, local: LocalName, document:
     };
 }
 
+// https://dom.spec.whatwg.org/#concept-create-element
 pub fn create(document: *Document, local: LocalName, namespace: ?Namespace, prefix: ?LocalName, is: ?[]const u8, sce: bool, registry: ?*CustomElementRegistry) *Element {
-    _ = document;
-    _ = local;
-    _ = namespace;
-    _ = prefix;
-    _ = is;
-    _ = sce;
-    _ = registry;
-    @panic("[TODO]: ");
+    const def = lookingUpCustomElementDefinition(registry, namespace, local, is);
+    if (def) |d| {
+        if (!d.*.name.eql(d.*.local_name)) {
+            const interface = getInterface(local, .NS_Html);
+            var result = createInternal(document, interface, local, namespace, prefix, .CES_Undefined, is, registry);
+            if (sce) {
+                result.upgrade(d) catch {
+                    @panic("TODO: Handle exceptions.");
+                };
+            } else {
+                result.enqueueUpgradeReaction(d);
+            }
+            return result;
+        } else {
+            if (sce) {} else {}
+            if (true) @panic("TODO");
+        }
+    } else {
+        const interface = getInterface(local, .NS_Html);
+        var result = createInternal(document, interface, local, namespace, prefix, .CES_Undefined, is, registry);
+        if (namespace == .NS_Html and (local.isValidCustomElementName() or is != null))
+            result.custom_element_state = .CES_Undefined;
+
+        return result;
+    }
+}
+
+pub fn upgrade(self: *Element, def: *CustomElementDefinition) !void {
+    _ = self;
+    _ = def;
+}
+
+pub fn enqueueUpgradeReaction(self: *Element, def: *CustomElementDefinition) void {
+    _ = self;
+    _ = def;
+}
+
+// https://dom.spec.whatwg.org/#create-an-element-internal
+pub fn createInternal(document: *Document, interface: bool, local: LocalName, namespace: ?Namespace, prefix: ?LocalName, state: CustomElementState, is: ?[]const u8, registry: ?*CustomElementRegistry) *Element {
+    _ = interface;
+    var node = Node.create(document);
+    var element = node.downcast(Element);
+    element.ns = namespace;
+    element.prefix = prefix;
+    element.local_name = local;
+    element.custom_element_registry = registry;
+    element.custom_element_state = state;
+    element.custom_element_definition = null;
+    element.is = is;
+    std.debug.assert(element.attrs.isEmpty());
+    return element;
 }
 
 pub inline fn asNode(self: *Element) *Node {
@@ -209,4 +252,34 @@ pub fn attachShadowRoot(self: *Element, mode: ShadowRoot.ShadowRootMode, clonabl
 pub fn isTypeDefineVSA(self: *Element) bool {
     _ = self;
     return false;
+}
+
+// https://html.spec.whatwg.org/#look-up-a-custom-element-registry
+pub fn lookingUpCustomElementRegistry(intended_parent: *Node) ?*CustomElementRegistry {
+    return switch (intended_parent.type_id) {
+        .DOM_Element => intended_parent.downcast(Element).custom_element_registry,
+        .DOM_Document => intended_parent.downcast(Element).custom_element_registry,
+        .DOM_ShadowRoot => intended_parent.downcast(Element).custom_element_registry,
+        else => null,
+    };
+}
+
+// https://html.spec.whatwg.org/#look-up-a-custom-element-definition
+pub fn lookingUpCustomElementDefinition(registry: ?*CustomElementRegistry, namespace: ?Namespace, local: LocalName, is: ?[]const u8) ?*CustomElementDefinition {
+    if (registry) |reg| {
+        if (namespace) |n| {
+            if (n != .NS_Html) return null;
+            if (reg.lookup(local.slice(), local)) |res| return res else if (is) |is_| {
+                if (reg.lookup(is_, local)) |res| return res;
+            }
+        } else return null;
+    }
+    return null;
+}
+
+// TODO:
+pub fn getInterface(local: LocalName, ns: Namespace) bool {
+    _ = local;
+    _ = ns;
+    return true;
 }

@@ -144,6 +144,72 @@ pub fn main(init: std.process.Init) !void {
         \\        return false;
         \\    }
         \\
+        \\    pub fn isValidCustomElementName(self: LocalName) bool {
+        \\        if (!self.isValidElementLocalName()) return false;
+        \\  
+        \\        const s = self.slice();
+        \\        if (s[0] < 'a' or s[0] > 'z') return false;
+        \\  
+        \\        var has_hyphen = false;
+        \\        for (s) |b| {
+        \\            if (b >= 'A' and b <= 'Z') return false;
+        \\            if (b == '-') has_hyphen = true;
+        \\        }
+        \\        if (!has_hyphen) return false;
+        \\  
+        \\        const reserved_names = [_][]const u8{
+        \\            "annotation-xml",
+        \\            "color-profile",
+        \\            "font-face",
+        \\            "font-face-src",
+        \\            "font-face-uri",
+        \\            "font-face-format",
+        \\            "font-face-name",
+        \\            "missing-glyph",
+        \\        };
+        \\  
+        \\        inline for (reserved_names) |reserved| {
+        \\            if (std.mem.eql(u8, s, reserved)) return false;
+        \\        }
+        \\  
+        \\        return true;
+        \\    }
+        \\  
+        \\    pub fn isValidElementLocalName(self: LocalName) bool {
+        \\        const s = self.slice();
+        \\        if (s.len == 0) return false;
+        \\  
+        \\        const first_byte = s[0];
+        \\        if ((first_byte >= 'a' and first_byte <= 'z') or (first_byte >= 'A' and first_byte <= 'Z')) {
+        \\            for (s) |b| {
+        \\                switch (b) {
+        \\                    ' ', '\t', '\n', '\r', 0x0C, 0x00, '/', '>' => return false,
+        \\                    else => {},
+        \\                }
+        \\            }
+        \\            return true;
+        \\        }
+        \\  
+        \\        var utf8 = std.unicode.Utf8View.init(s) catch return false;
+        \\        var iter = utf8.iterator();
+        \\        const first_cp = iter.nextCodepoint() orelse return false;
+        \\  
+        \\        if (first_cp != ':' and first_cp != '_' and !(first_cp >= 0x80 and first_cp <= 0x10FFFF)) {
+        \\            return false;
+        \\        }
+        \\  
+        \\        while (iter.nextCodepoint()) |cp| {
+        \\            const valid = switch (cp) {
+        \\                'a'...'z', 'A'...'Z', '0'...'9', '-', '.', ':', '_' => true,
+        \\                0x80...0x10FFFF => true,
+        \\                else => false,
+        \\            };
+        \\            if (!valid) return false;
+        \\        }
+        \\  
+        \\        return true;
+        \\    }
+        \\  
         \\    pub fn format(self: LocalName, writer: anytype) !void {
         \\        if (self == .static) try writer.print("{s}", .{@tagName(self.static)}) else try writer.print("{s}", .{self.dynamic.slice()});
         \\    }

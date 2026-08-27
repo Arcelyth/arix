@@ -239,8 +239,8 @@ pub fn createElementForToken_E(self: *TreeBuilder, tag: token_.Tag, namespace: ?
     const local = tag.name;
     const token_attrs: std.ArrayList(Attribute) = tag.attrs;
     const is = if (tag.getAttrVal("is")) |v| v.slice() else null;
-    const registry = lookingUpCustomElementRegistry(intended_parent);
-    const definition = lookingUpCustomElementDefinition(registry, namespace, local, is);
+    const registry = Element.lookingUpCustomElementRegistry(intended_parent);
+    const definition = Element.lookingUpCustomElementDefinition(registry, namespace, local, is);
     // Whether will execute script.
     const will_exec_script = if (definition != null and !self.fragment_case) blk: {
         break :blk true;
@@ -354,29 +354,6 @@ pub inline fn lastStackElement(self: *TreeBuilder, elem: LocalTag) ?Element {
 
 pub inline fn htmlElement(self: *TreeBuilder) ?*Element {
     return self.open_elements.htmlElement();
-}
-
-// https://html.spec.whatwg.org/#look-up-a-custom-element-registry
-pub fn lookingUpCustomElementRegistry(intended_parent: *Node) ?*CustomElementRegistry {
-    return switch (intended_parent.type_id) {
-        .DOM_Element => intended_parent.downcast(Element).custom_element_registry,
-        .DOM_Document => intended_parent.downcast(Element).custom_element_registry,
-        .DOM_ShadowRoot => intended_parent.downcast(Element).custom_element_registry,
-        else => null,
-    };
-}
-
-// https://html.spec.whatwg.org/#look-up-a-custom-element-definition
-pub fn lookingUpCustomElementDefinition(registry: ?*CustomElementRegistry, namespace: ?Namespace, local: LocalName, is: ?[]const u8) ?*CustomElementDefinition {
-    if (registry) |reg| {
-        if (namespace) |n| {
-            if (n != .NS_Html) return null;
-            if (reg.lookup(local.slice(), local)) |res| return res else if (is) |is_| {
-                if (reg.lookup(is_, local)) |res| return res;
-            }
-        } else return null;
-    }
-    return null;
 }
 
 // TODO:

@@ -24,6 +24,10 @@ pub fn append(self: *Attrs, item: Attr) !void {
     try self.data.append(self.allocator, item);
 }
 
+pub inline fn isEmpty(self: *const Attrs) bool {
+    return self.data.items.len == 0;
+}
+
 pub fn getFromLocalName(self: *const Attrs, target: LocalTag) ?*Attr {
     for (self.data.items) |*attr| {
         if (attr.local_name.is(target)) return attr;

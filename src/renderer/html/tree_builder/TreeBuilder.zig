@@ -90,6 +90,9 @@ pub fn init(alloc: std.mem.Allocator, tree_adapter: TreeAdapter, fragment_case: 
 
 pub fn deinit(self: *TreeBuilder) void {
     self.open_elements.deinit();
+    self.temp_insert_modes.deinit(self.allocator);
+    self.active_fmt_els.deinit(self.allocator);
+    self.pending_table_char_tks.deinit(self.allocator);
     self.document.destroy(self.allocator);
 }
 
@@ -397,7 +400,7 @@ pub fn insertComment(self: *TreeBuilder, data: StraleUtf8Global, insertion_locat
     const insert_loc = self.adjustedInsertionLocation(insertion_location);
     const parent = insert_loc.getParent();
     const document = parent.node_doc;
-    var comment = Comment.create(document, data);
+    var comment = Comment.create(document, data.clone());
     self.insertNodeAt(comment.asNode(), insert_loc);
 }
 
@@ -407,8 +410,8 @@ pub fn insertCommentToDocument(self: *TreeBuilder, data: StraleUtf8Global) void 
 
 // https://html.spec.whatwg.org/multipage/parsing.html#insert-a-processing-instruction
 pub fn insertProcessingInstruction(self: *TreeBuilder, tk: token_.ProcessingInstruction, insertion_location: ?*const InsertionLocation) void {
-    const target = tk.target;
-    const data = tk.data;
+    const target = tk.target.clone();
+    const data = tk.data.clone();
     const insert_loc = self.adjustedInsertionLocation(insertion_location);
 
     const parent = insert_loc.getParent();
@@ -633,7 +636,7 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                 },
                 .DoctypeToken => |doc_tk| {
                     if (!doc_tk.name.eql("html") or !doc_tk.public_id.isEmpty() or (!doc_tk.system_id.isEmpty() and !doc_tk.system_id.eql("about:legacy-compat"))) self.unexpect(tk, .InitialMode);
-                    var dt = DocumentType.create(self.document, doc_tk.name, doc_tk.public_id, doc_tk.system_id);
+                    var dt = DocumentType.create(self.document, doc_tk.name.clone(), doc_tk.public_id.clone(), doc_tk.system_id.clone());
                     self.appendToDocument(dt.asNode());
                     if (!self.document.isIframeSrcdocDocument() and !self.document.parser_cannot_change_the_mode) {
                         if (doc_tk.isQuirksDoctype()) {
@@ -769,11 +772,17 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
         .InHeadMode => {
             sw: switch (tk) {
                 .CharacterToken => |ch_tk| {
-                    // ASCII whitespace -> Insert the character
-                    for (ch_tk.slice()) |c| {
-                        if (!ascii.isAsciiWhitespace(u8, c)) break :sw;
+                    const chars = ch_tk.slice();
+                    var prefix_len: usize = 0;
+                    while (prefix_len < chars.len and ascii.isAsciiWhitespace(u8, chars[prefix_len])) : (prefix_len += 1) {}
+                    if (prefix_len > 0) try self.insertCharacter_E(chars[0..prefix_len], tk);
+                    if (prefix_len < chars.len) {
+                        _ = self.open_elements.pop();
+                        self.insert_mode = .AfterHeadMode;
+                        var remainder = Token{ .CharacterToken = try StraleUtf8Global.initSlice(chars[prefix_len..]) };
+                        defer remainder.CharacterToken.deinit();
+                        return try self.step_E(remainder, null);
                     }
-                    try self.insertCharacter_E(null, tk);
                     return .PR_Done;
                 },
                 .CommentToken => |cmt_tk| {
@@ -1426,7 +1435,9 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                 .TagToken => |tag_tk| {
                     if (tag_tk.kind == .EndTag) {
                         if (tag_tk.name.is(.script)) {
-                            if (true) @panic("[TODO]: script");
+                            // TODO: need script.
+                            _ = self.open_elements.pop();
+                            self.insert_mode = self.orig_insert_mode;
                             return .PR_Done;
                         } else {
                             _ = self.open_elements.pop();

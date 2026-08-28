@@ -129,9 +129,16 @@ pub inline fn hasElement(self: *const OpenElementStack, name: LocalTag) bool {
 }
 
 pub inline fn allElementsOneOf(self: *const OpenElementStack, tags: []const LocalTag) bool {
-    for (self.els.items) |el|
-        for (tags) |tag|
-            if (!el.local_name.is(tag)) return false;
+    for (self.els.items) |el| {
+        var found = false;
+        for (tags) |tag| {
+            if (el.local_name.is(tag)) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) return false;
+    }
 
     return true;
 }

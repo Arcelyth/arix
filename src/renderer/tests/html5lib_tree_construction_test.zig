@@ -24,6 +24,7 @@ fn appendIndent(out: *std.ArrayList(u8), allocator: std.mem.Allocator, depth: us
     for (0..depth) |_| try out.appendSlice(allocator, "  ");
 }
 
+/// Serialize a DOM node and its children into html5lib tree format.
 fn serializeNode(out: *std.ArrayList(u8), allocator: std.mem.Allocator, node: *Node, depth: usize) !void {
     if (out.items.len != 0) try out.append(allocator, '\n');
     try appendIndent(out, allocator, depth);
@@ -60,8 +61,17 @@ fn serializeNode(out: *std.ArrayList(u8), allocator: std.mem.Allocator, node: *N
             try out.appendSlice(allocator, " -->");
         },
         .DOM_DocumentType => {
+            const doctype = node.downcast(DocumentType);
             try out.appendSlice(allocator, "<!DOCTYPE ");
-            try out.appendSlice(allocator, node.downcast(DocumentType).name.slice());
+            try out.appendSlice(allocator, doctype.name.slice());
+            // Serialize public and system identifiers when present.
+            if (!doctype.public_id.isEmpty() or !doctype.system_id.isEmpty()) {
+                try out.appendSlice(allocator, " \"");
+                try out.appendSlice(allocator, doctype.public_id.slice());
+                try out.appendSlice(allocator, "\" \"");
+                try out.appendSlice(allocator, doctype.system_id.slice());
+                try out.append(allocator, '"');
+            }
             try out.append(allocator, '>');
         },
         else => return,
@@ -81,6 +91,7 @@ fn serializeDocument(allocator: std.mem.Allocator, document: *Node) ![]u8 {
     return try out.toOwnedSlice(allocator);
 }
 
+/// A single html5lib tree construction test case.
 const TreeTest = struct {
     data: []const u8,
     expected: []const u8,
@@ -108,7 +119,7 @@ fn runHtml5LibTestFile(
     defer cases.deinit(tp.allocator);
     for (cases.items) |case| {
         strale.setGlobalAlloc(allocator);
-
+        // Initialize tree builder and adapters.
         var test_tr_adapter = TestTreeAdapter.init(allocator);
         defer test_tr_adapter.deinit();
 
@@ -145,6 +156,7 @@ fn runHtml5LibTestFile(
             fragment_root = root;
             tree_builder.document.asNode().appendChild(root.asNode());
             try tree_builder.open_elements.append(root);
+            // Fragment parsing starts in "in body" insertion mode.
             tree_builder.insert_mode = .InBodyMode;
         }
 
@@ -197,11 +209,11 @@ test "html5lib tree_construction comments01" {
     try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html5lib-tests/tree-construction/comments01.dat", testing.io);
 }
 
-// test "html5lib tree_construction doctype01" {
-//     var arena = std.heap.ArenaAllocator.init(testing.allocator);
-//     defer arena.deinit();
-//     try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html5lib-tests/tree-construction/doctype01.dat", testing.io);
-// }
+test "html5lib tree_construction doctype01" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html5lib-tests/tree-construction/doctype01.dat", testing.io);
+}
 
 // test "html5lib tree_construction domjs-unsafe" {
 //     var arena = std.heap.ArenaAllocator.init(testing.allocator);

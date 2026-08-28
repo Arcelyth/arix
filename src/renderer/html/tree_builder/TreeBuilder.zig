@@ -953,17 +953,21 @@ pub fn debugDetail(self: *const TreeBuilder) void {
 /// `self.insert_mode`. A non-null mode temporarily overrides the insertion mode
 /// for this call without modifying `self.insert_mode`.
 pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResult {
-    if (config.debug) self.debugDetail();
-
     switch (mode orelse self.insert_mode) {
         // https://html.spec.whatwg.org/multipage/parsing.html#the-initial-insertion-mode
         .InitialMode => {
             sw: switch (tk) {
                 .CharacterToken => |ch_tk| {
-                    for (ch_tk.slice()) |c| {
-                        if (!ascii.isAsciiWhitespace(u8, c)) break :sw;
+                    const chars = ch_tk.slice();
+                    var prefix_len: usize = 0;
+                    while (prefix_len < chars.len and ascii.isAsciiWhitespace(u8, chars[prefix_len])) : (prefix_len += 1) {}
+                    if (prefix_len == chars.len) return .PR_Done;
+                    if (prefix_len > 0) {
+                        var remainder = Token{ .CharacterToken = try StraleUtf8Global.initSlice(chars[prefix_len..]) };
+                        defer remainder.CharacterToken.deinit();
+                        return try self.step_E(remainder, null);
                     }
-                    return .PR_Done;
+                    break :sw;
                 },
                 .CommentToken => |cmt_tk| {
                     self.insertCommentToDocument(cmt_tk);
@@ -1015,10 +1019,16 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                     return .PR_Done;
                 },
                 .CharacterToken => |ch_tk| {
-                    for (ch_tk.slice()) |c| {
-                        if (!ascii.isAsciiWhitespace(u8, c)) break :sw;
+                    const chars = ch_tk.slice();
+                    var prefix_len: usize = 0;
+                    while (prefix_len < chars.len and ascii.isAsciiWhitespace(u8, chars[prefix_len])) : (prefix_len += 1) {}
+                    if (prefix_len == chars.len) return .PR_Done;
+                    if (prefix_len > 0) {
+                        var remainder = Token{ .CharacterToken = try StraleUtf8Global.initSlice(chars[prefix_len..]) };
+                        defer remainder.CharacterToken.deinit();
+                        return try self.step_E(remainder, null);
                     }
-                    return .PR_Done;
+                    break :sw;
                 },
                 .TagToken => |tag_tk| {
                     switch (tag_tk.kind) {

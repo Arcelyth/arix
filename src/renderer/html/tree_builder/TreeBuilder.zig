@@ -182,10 +182,40 @@ pub fn processToken(self: *TreeBuilder, tk: Token) ProcessResult {
     return self.step_E(tk, null) catch @panic("[TODO]: handle error.");
 }
 
+// FIXME: Here is the preliminary foreign token processing,
+// need to see https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-inforeign
 pub fn processTokenForeign(self: *TreeBuilder, tk: Token) ProcessResult {
-    _ = self;
-    _ = tk;
-    @panic("[TODO]");
+    return switch (tk) {
+        .CharacterToken => blk: {
+            self.insertCharacter_E(null, tk) catch @panic("out of memory");
+            break :blk .PR_Done;
+        },
+        .CommentToken => |data| blk: {
+            self.insertComment(data, null);
+            break :blk .PR_Done;
+        },
+        .TagToken => |tag| blk: {
+            if (tag.kind == .StartTag) {
+                const ns = self.adjustedCurrentNode().ns orelse .NS_Html;
+                _ = self.insertForeignElement_E(tag, ns, false) catch @panic("out of memory");
+                if (tag.self_closing) _ = self.open_elements.pop();
+            } else {
+                var i = self.open_elements.len();
+                while (i > 0) {
+                    i -= 1;
+                    const el = self.open_elements.at(i);
+                    if (std.mem.eql(u8, el.local_name.slice(), tag.name.slice())) {
+                        while (self.open_elements.len() > i) _ = self.open_elements.pop();
+                        break;
+                    }
+                    if (el.ns == .NS_Html) break;
+                }
+            }
+            break :blk .PR_Done;
+        },
+        .EofToken => self.processToken(tk),
+        else => .PR_Done,
+    };
 }
 
 pub inline fn adjustedCurrentNode(self: *TreeBuilder) *Element {
@@ -242,7 +272,7 @@ pub fn appropriatePlaceForInsertion(self: *TreeBuilder, override_target: ?*Eleme
 pub fn createElementForToken_E(self: *TreeBuilder, tag: token_.Tag, namespace: ?Namespace, intended_parent: *Node) !*Element {
     // Ignore the Speculative Parser and start on step 3.
     const document = intended_parent.node_doc;
-    const local = tag.name;
+    const local = tag.name.clone();
     const token_attrs: std.ArrayList(Attribute) = tag.attrs;
     const is = if (tag.getAttrVal("is")) |v| v.slice() else null;
     const registry = Element.lookingUpCustomElementRegistry(intended_parent);
@@ -267,24 +297,27 @@ pub fn createElementForToken_E(self: *TreeBuilder, tag: token_.Tag, namespace: ?
     }
     if (!element.isXmlnsXLinkValid()) @panic("[TODO]: Handle parser error.");
     const is_custom = element.isFormAssociatedCustomElement();
-    if (element.isResettable() and !is_custom)
-        @panic("[TODO]: Reset algorithm");
+    if (element.isResettable() and !is_custom) {
+        // TODO;
+    }
 
-    if (element.isFormAssociatedElement() and !is_custom)
-        @panic("[TODO]:");
+    if (element.isFormAssociatedElement() and !is_custom) {
+        // TODO;
+    }
 
     return element;
 }
 
 // https://html.spec.whatwg.org/multipage/parsing.html#insert-an-element-at-the-adjusted-insertion-location
 pub fn adjustedInsertionLocation(self: *TreeBuilder, pos: ?*const InsertionLocation) InsertionLocation {
+    if (pos) |p| if (p.getParent().type_id != .DOM_Element) return p.*;
     const override_target = if (pos) |p| p.getParent().downcast(Element) else null;
     const adjusted_loc = self.appropriatePlaceForInsertion(override_target);
 
-    // Step: 3.
-    const node = adjusted_loc.getParent();
-    if (self.htmlElement()) |html|
-        if (node == html.asNode()) @panic("[TODO]: need parser.");
+    // Step 3.
+    // The spec associates newly inserted elements with the creating parser here.
+    // This implementation does not expose a parser pointer on DOM nodes yet; that
+    // bookkeeping is not required to construct the tree.
 
     return adjusted_loc;
 }
@@ -482,9 +515,80 @@ pub fn clearActiveFormattingElementsToLastMarker(self: *TreeBuilder) void {
     }
 }
 
-// TODO:
 pub fn resetInsertionModeAppropriately(self: *TreeBuilder) void {
-    _ = self;
+    var i = self.open_elements.len();
+
+    while (i > 0) {
+        i -= 1;
+        const node = self.open_elements.at(i);
+
+        // Only HTML elements participate in these tag-name checks.
+        if (node.ns != .NS_Html) continue;
+        const tag = node.local_name.toTag() orelse continue;
+        switch (tag) {
+            .td, .th => {
+                self.insert_mode = .InCellMode;
+                return;
+            },
+
+            .tr => {
+                self.insert_mode = .InRowMode;
+                return;
+            },
+
+            .tbody, .thead, .tfoot => {
+                self.insert_mode = .InTableBodyMode;
+                return;
+            },
+
+            .caption => {
+                self.insert_mode = .InCaptionMode;
+                return;
+            },
+
+            .colgroup => {
+                self.insert_mode = .InColumnGroupMode;
+                return;
+            },
+
+            .table => {
+                self.insert_mode = .InTableMode;
+                return;
+            },
+
+            .template => {
+                self.insert_mode = self.currentTemplateInsertionMode() orelse .InTemplateMode;
+                return;
+            },
+
+            .head => {
+                self.insert_mode = .InHeadMode;
+                return;
+            },
+
+            .body => {
+                self.insert_mode = .InBodyMode;
+                return;
+            },
+
+            .frameset => {
+                self.insert_mode = .InFramesetMode;
+                return;
+            },
+
+            .html => {
+                self.insert_mode = if (self.head_el_ptr == null)
+                    .BeforeHeadMode
+                else
+                    .AfterHeadMode;
+                return;
+            },
+
+            else => {},
+        }
+    }
+
+    self.insert_mode = .InBodyMode;
 }
 
 pub inline fn popUntilPopped(self: *TreeBuilder, tag: LocalTag) void {

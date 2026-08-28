@@ -107,18 +107,51 @@ fn runHtml5LibTestFile(
     var cases = try tp.parse();
     defer cases.deinit(tp.allocator);
     for (cases.items) |case| {
+        strale.setGlobalAlloc(allocator);
+
         var test_tr_adapter = TestTreeAdapter.init(allocator);
         defer test_tr_adapter.deinit();
 
         const tree_adapter = test_tr_adapter.adapter();
-        var tree_builder = TreeBuilder.init(allocator, tree_adapter, false);
+        var tree_builder = TreeBuilder.init(allocator, tree_adapter, case.fragment != null);
         defer tree_builder.deinit();
+
+        var fragment_context: ?*Element = null;
+        defer if (fragment_context) |context| context.asNode().destroy(allocator);
+        var fragment_root: ?*Element = null;
+        if (case.fragment) |context_name| {
+            const context = Element.create(
+                tree_builder.document,
+                try LocalName.fromSlice(context_name),
+                .NS_Html,
+                null,
+                null,
+                false,
+                null,
+            );
+            fragment_context = context;
+            tree_builder.context = context;
+            tree_builder.scripting_mode = .Fragment;
+
+            const root = Element.create(
+                tree_builder.document,
+                LocalName.fromTag(.html),
+                .NS_Html,
+                null,
+                null,
+                false,
+                null,
+            );
+            fragment_root = root;
+            tree_builder.document.asNode().appendChild(root.asNode());
+            try tree_builder.open_elements.append(root);
+            tree_builder.insert_mode = .InBodyMode;
+        }
 
         const token_adapter = tree_builder.adapter();
         var tokenizer = Tokenizer.init(allocator, token_adapter, .{});
         defer tokenizer.deinit();
 
-        strale.setGlobalAlloc(allocator);
         var buffer = try BufferDeque(.utf8, .not_atomic, true).init(allocator);
         defer buffer.deinit();
 
@@ -130,7 +163,8 @@ fn runHtml5LibTestFile(
 
         try tokenizer.step_E(&buffer);
 
-        const actual = try serializeDocument(allocator, tree_builder.document.asNode());
+        const serialization_root = if (fragment_root) |root| root.asNode() else tree_builder.document.asNode();
+        const actual = try serializeDocument(allocator, serialization_root);
         defer allocator.free(actual);
         testing.expectEqualStrings(case.expected, actual) catch |err| {
             std.debug.print("\ninput: {s}\n", .{case.data});
@@ -139,11 +173,11 @@ fn runHtml5LibTestFile(
     }
 }
 
-// test "html5lib tree_construction adoption01" {
-//     var arena = std.heap.ArenaAllocator.init(testing.allocator);
-//     defer arena.deinit();
-//     try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html5lib-tests/tree-construction/adoption01.dat", testing.io);
-// }
+test "html5lib tree_construction adoption01" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html5lib-tests/tree-construction/adoption01.dat", testing.io);
+}
 
 test "html5lib tree_construction adoption02" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);

@@ -754,7 +754,53 @@ pub fn handleListItemStartTag(self: *TreeBuilder, tk: token_.Tag, tag: LocalTag)
     _ = self.insertHtmlElement_E(tk) catch @panic("out of memory");
 }
 
-pub inline fn pushActiveFormattingElement(self: *TreeBuilder, el: *Element) void {
+fn optionalLocalNamesEqual(a: ?LocalName, b: ?LocalName) bool {
+    if (a == null or b == null) return a == null and b == null;
+    return std.mem.eql(u8, a.?.slice(), b.?.slice());
+}
+
+fn formattingElementsEquivalent(a: *const Element, b: *const Element) bool {
+    if (a.ns != b.ns or
+        !std.mem.eql(u8, a.local_name.slice(), b.local_name.slice()) or
+        a.attrs.data.items.len != b.attrs.data.items.len)
+    {
+        return false;
+    }
+
+    for (a.attrs.data.items) |a_attr| {
+        var matched = false;
+        for (b.attrs.data.items) |b_attr| {
+            if (a_attr.ns == b_attr.ns and
+                optionalLocalNamesEqual(a_attr.prefix, b_attr.prefix) and
+                std.mem.eql(u8, a_attr.local_name.slice(), b_attr.local_name.slice()) and
+                std.mem.eql(u8, a_attr.value.slice(), b_attr.value.slice()))
+            {
+                matched = true;
+                break;
+            }
+        }
+        if (!matched) return false;
+    }
+    return true;
+}
+
+pub fn pushActiveFormattingElement(self: *TreeBuilder, el: *Element) void {
+    var equivalent_count: usize = 0;
+    var earliest_equivalent: ?usize = null;
+    var i = self.active_fmt_els.len();
+    while (i > 0) {
+        i -= 1;
+        switch (self.active_fmt_els.at(i)) {
+            .AFE_Marker => break,
+            .AFE_Element => |candidate| {
+                if (formattingElementsEquivalent(candidate, el)) {
+                    equivalent_count += 1;
+                    earliest_equivalent = i;
+                }
+            },
+        }
+    }
+    if (equivalent_count >= 3) _ = self.active_fmt_els.removeAt(earliest_equivalent.?);
     self.active_fmt_els.append(.{ .AFE_Element = el }) catch @panic("out of memory");
 }
 
@@ -1597,7 +1643,7 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                                 self.reconstructActiveFormattingElements();
                                 tag_tk.adjustSVGAttributes();
                                 tag_tk.adjustForeignAttributes();
-                                _ = try self.insertForeignElement_E(tag_tk, .NS_Math, false);
+                                _ = try self.insertForeignElement_E(tag_tk, .NS_Svg, false);
                                 if (tag_tk.self_closing) {
                                     _ = self.open_elements.pop();
                                     return .PR_AckSelfClosing;

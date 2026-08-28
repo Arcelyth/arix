@@ -37,6 +37,7 @@ const InsertionLocation = types.InsertionLocation;
 const ScriptingMode = types.ScriptingMode;
 const dom_type = @import("../../dom/type.zig");
 const OpenElementStack = @import("OpenElementStack.zig");
+const ActiveFormatElementList = @import("ActiveFormatElementList.zig");
 const TreeAdapter = @import("TreeAdapter.zig");
 const TreeBuilderError = @import("error.zig").TreeBuilderError;
 const ShadowRootMode = @import("../../dom/ShadowRoot.zig").ShadowRootMode;
@@ -62,7 +63,8 @@ context: ?*Element,
 // Element pointer: https://html.spec.whatwg.org/multipage/parsing.html#the-element-pointers
 head_el_ptr: ?*Element,
 form_el_ptr: ?*Element,
-active_fmt_els: std.ArrayList(ActiveFormatElement),
+// List of active formatting elements.
+active_fmt_els: ActiveFormatElementList,
 allow_decl_shadow_roots: bool,
 pending_table_char_tks: std.ArrayList(Token),
 
@@ -82,7 +84,7 @@ pub fn init(alloc: std.mem.Allocator, tree_adapter: TreeAdapter, fragment_case: 
         .context = null,
         .head_el_ptr = null,
         .form_el_ptr = null,
-        .active_fmt_els = .empty,
+        .active_fmt_els = ActiveFormatElementList.init(alloc),
         .allow_decl_shadow_roots = false,
         .pending_table_char_tks = .empty,
     };
@@ -91,7 +93,7 @@ pub fn init(alloc: std.mem.Allocator, tree_adapter: TreeAdapter, fragment_case: 
 pub fn deinit(self: *TreeBuilder) void {
     self.open_elements.deinit();
     self.temp_insert_modes.deinit(self.allocator);
-    self.active_fmt_els.deinit(self.allocator);
+    self.active_fmt_els.deinit();
     self.pending_table_char_tks.deinit(self.allocator);
     self.document.destroy(self.allocator);
 }
@@ -506,7 +508,7 @@ pub inline fn allElementsOneOf(self: *const TreeBuilder, tags: []const LocalTag)
 }
 
 pub fn clearActiveFormattingElementsToLastMarker(self: *TreeBuilder) void {
-    while (self.active_fmt_els.items.len > 0) {
+    while (self.active_fmt_els.len() > 0) {
         const entry = self.active_fmt_els.pop();
         if (entry) |e| switch (e) {
             .AFE_Marker => return,
@@ -681,21 +683,21 @@ pub fn parseError(self: *const TreeBuilder, err: TreeBuilderError) void {
 
 // https://html.spec.whatwg.org/multipage/parsing.html#reconstruct-the-active-formatting-elements
 pub fn reconstructActiveFormattingElements(self: *TreeBuilder) void {
-    if (self.active_fmt_els.items.len == 0) return;
-    var index = self.active_fmt_els.items.len - 1;
-    switch (self.active_fmt_els.items[index]) {
+    if (self.active_fmt_els.len() == 0) return;
+    var index = self.active_fmt_els.len() - 1;
+    switch (self.active_fmt_els.at(index)) {
         .AFE_Marker => return,
         .AFE_Element => |el| if (std.mem.indexOfScalar(*Element, self.open_elements.els.items, el) != null) return,
     }
     while (index > 0) {
-        switch (self.active_fmt_els.items[index - 1]) {
+        switch (self.active_fmt_els.at(index - 1)) {
             .AFE_Marker => break,
             .AFE_Element => |el| if (std.mem.indexOfScalar(*Element, self.open_elements.els.items, el) != null) break,
         }
         index -= 1;
     }
-    while (index < self.active_fmt_els.items.len) : (index += 1) {
-        const old = switch (self.active_fmt_els.items[index]) {
+    while (index < self.active_fmt_els.len()) : (index += 1) {
+        const old = switch (self.active_fmt_els.at(index)) {
             .AFE_Element => |el| el,
             .AFE_Marker => unreachable,
         };
@@ -709,12 +711,15 @@ pub fn reconstructActiveFormattingElements(self: *TreeBuilder) void {
         }) catch @panic("out of memory");
         self.insertElementAtAdjustedInsertionLocation(replacement);
         self.open_elements.append(replacement) catch @panic("out of memory");
-        self.active_fmt_els.items[index] = .{ .AFE_Element = replacement };
+        self.active_fmt_els.setAt(index, .{ .AFE_Element = replacement });
     }
 }
 
+// https://html.spec.whatwg.org/multipage/parsing.html#close-a-p-element
 pub fn closePElement(self: *TreeBuilder) void {
-    _ = self;
+    self.generateImpliedEndTags(.p);
+    if (!self.currentNode().local_name.is(.p)) self.parseError(.current_node_not_p);
+    self.popUntilPopped(.p);
 }
 
 pub fn handleNewLine(self: *TreeBuilder) void {
@@ -722,24 +727,49 @@ pub fn handleNewLine(self: *TreeBuilder) void {
 }
 
 pub fn handleListItemStartTag(self: *TreeBuilder, tk: token_.Tag, tag: LocalTag) void {
-    _ = self;
-    _ = tk;
-    _ = tag;
+    var i = self.open_elements.len();
+    while (i > 0) {
+        i -= 1;
+        const node = self.open_elements.at(i);
+        const closes = if (tag == .li)
+            node.local_name.is(.li)
+        else
+            node.local_name.oneOf(&.{ .dd, .dt });
+        if (closes) {
+            self.generateImpliedEndTags(node.local_name.toTag());
+            if (self.currentNode() != node) self.parseError(.unexpected_node);
+
+            while (self.open_elements.len() > i) _ = self.open_elements.pop();
+            break;
+        }
+        if (node.isSpecial() and !node.local_name.oneOf(&.{ .address, .div, .p })) break;
+    }
+    if (self.hasElementInButtonScope(.p)) self.closePElement();
+    _ = self.insertHtmlElement_E(tk) catch @panic("out of memory");
 }
 
-pub fn pushActiveFormattingElement(self: *TreeBuilder, el: *Element) void {
-    _ = self;
-    _ = el;
+pub inline fn pushActiveFormattingElement(self: *TreeBuilder, el: *Element) void {
+    self.active_fmt_els.append(.{ .AFE_Element = el }) catch @panic("out of memory");
 }
 
+fn anyOtherEndTag(self: *TreeBuilder, subject: LocalTag) void {
+    var index = self.open_elements.len();
+    while (index > 0) {
+        index -= 1;
+        const node = self.open_elements.at(index);
+        if (node.ns == .NS_Html and node.local_name.is(subject)) {
+            self.generateImpliedEndTags(subject);
+            while (self.open_elements.len() > index) _ = self.open_elements.pop();
+            return;
+        }
+        if (node.isSpecial()) return;
+    }
+}
+
+// https://html.spec.whatwg.org/multipage/parsing.html#adoption-agency-algorithm
 pub fn adoptionAgencyAlgorithm(self: *TreeBuilder, tk: token_.Tag) void {
     _ = self;
     _ = tk;
-}
-
-pub fn removeFromStack(self: *TreeBuilder, el: *Element) void {
-    _ = self;
-    _ = el;
 }
 
 pub inline fn unexpect(self: *TreeBuilder, tk: Token, mode: InsertionMode) void {
@@ -977,7 +1007,7 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                                 return .{ .PR_ChangeState = .ScriptData };
                             } else if (tag_tk.name.is(.template)) {
                                 const tmp_tag = tag_tk;
-                                try self.active_fmt_els.append(self.allocator, .AFE_Marker);
+                                try self.active_fmt_els.append(.AFE_Marker);
                                 self.frameset_ok = false;
                                 self.insert_mode = .InTemplateMode;
                                 try self.temp_insert_modes.append(self.allocator, .InTemplateMode);
@@ -1157,7 +1187,6 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                                 break :sw;
                             }
                             self.unexpect(tk, .AfterHeadMode);
-                            return .PR_Done;
                         },
                     }
                 },
@@ -1217,6 +1246,12 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                                 self.unexpect(tk, .InBodyMode);
                                 if (self.hasElement(.template)) return .PR_Done;
                                 try self.addAttributesToElement_E(self.open_elements.at(0), tag_tk.attrs.items);
+                                return .PR_Done;
+                            } else if (tag_tk.name.oneOf(&.{ .base, .basefont, .bgsound, .link, .meta })) {
+                                self.unexpect(tk, .AfterHeadMode);
+                                const head = self.head_el_ptr.?;
+                                const element = try self.createElementForToken_E(tag_tk, .NS_Html, head.asNode());
+                                head.asNode().appendChild(element.asNode());
                                 return .PR_Done;
                             } else if (tag_tk.name.oneOf(&.{ .base, .basefont, .bgsound, .link, .meta, .noframes, .script, .style, .template, .title })) {
                                 return try self.step_E(tk, .InHeadMode);
@@ -1314,7 +1349,7 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                             } else if (tag_tk.name.oneOf(&.{ .applet, .marquee, .object })) {
                                 self.reconstructActiveFormattingElements();
                                 _ = try self.insertHtmlElement_E(tag_tk);
-                                try self.active_fmt_els.append(self.allocator, .AFE_Marker);
+                                try self.active_fmt_els.append(.AFE_Marker);
                                 self.frameset_ok = false;
                                 return .PR_Done;
                             } else if (tag_tk.name.is(.table)) {
@@ -1453,7 +1488,7 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                                     self.generateImpliedEndTags(null);
                                     if (self.currentNode() != node.?)
                                         self.unexpect(tk, .InBodyMode);
-                                    self.removeFromStack(node.?);
+                                    _ = self.open_elements.remove(node.?);
                                 } else {
                                     if (!self.hasElementInScope(.form)) {
                                         self.unexpect(tk, .InBodyMode);
@@ -1612,7 +1647,7 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                         .StartTag => {
                             if (tag_tk.name.is(.caption)) {
                                 self.clearStackBackToTableContext();
-                                try self.active_fmt_els.append(self.allocator, .AFE_Marker);
+                                try self.active_fmt_els.append(.AFE_Marker);
                                 _ = try self.insertHtmlElement_E(tag_tk);
                                 self.insert_mode = .InCaptionMode;
                                 return .PR_Done;
@@ -1983,7 +2018,7 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                                 self.clearStackBackToTableRowContext();
                                 _ = try self.insertHtmlElement_E(tag_tk);
                                 self.insert_mode = .InCellMode;
-                                try self.active_fmt_els.append(self.allocator, .AFE_Marker);
+                                try self.active_fmt_els.append(.AFE_Marker);
                                 return .PR_Done;
                             } else if (tag_tk.name.oneOf(&.{ .caption, .col, .colgroup, .tbody, .tfoot, .thead, .tr })) {
                                 if (!self.hasElementInTableScope(.tr)) {

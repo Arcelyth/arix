@@ -37,6 +37,10 @@ pub inline fn at(self: *OpenElementStack, idx: usize) *Element {
     return self.els.items[idx];
 }
 
+pub inline fn index(self: *const OpenElementStack, element: *Element) ?usize {
+    return std.mem.indexOfScalar(*Element, self.els.items, element);
+}
+
 pub inline fn currentNode(self: *OpenElementStack) *Element {
     if (self.els.items.len == 0) @panic("Empty open elements stack.");
     return self.els.items[self.els.items.len - 1];

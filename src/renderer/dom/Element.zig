@@ -144,7 +144,6 @@ pub fn createInternal(document: *Document, interface: bool, local: LocalName, na
     return element;
 }
 
-
 pub inline fn asNode(self: *Element) *Node {
     return &self.node;
 }
@@ -276,6 +275,29 @@ pub fn lookingUpCustomElementDefinition(registry: ?*CustomElementRegistry, names
         } else return null;
     }
     return null;
+}
+
+// https://html.spec.whatwg.org/multipage/parsing.html#special
+pub fn isSpecial(self: *const Element) bool {
+    const tag = self.local_name.toTag() orelse return false;
+
+    return switch (self.ns orelse return false) {
+        .NS_Html => switch (tag) {
+            .address, .applet, .area, .article, .aside, .base, .basefont, .bgsound, .blockquote, .body, .br, .button, .caption, .center, .col, .colgroup, .dd, .details, .dir, .div, .dl, .dt, .embed, .fieldset, .figcaption, .figure, .footer, .form, .frame, .frameset, .h1, .h2, .h3, .h4, .h5, .h6, .head, .header, .hgroup, .hr, .html, .iframe, .img, .input, .keygen, .li, .link, .listing, .main, .marquee, .menu, .meta, .nav, .noembed, .noframes, .noscript, .object, .ol, .p, .param, .plaintext, .pre, .script, .search, .section, .select, .source, .style, .summary, .table, .tbody, .td, .template, .textarea, .tfoot, .th, .thead, .title, .tr, .track, .ul, .wbr, .xmp => true,
+            else => false,
+        },
+
+        .NS_Math => switch (tag) {
+            .mi, .mo, .mn, .ms, .mtext, .@"annotation-xml" => true,
+            else => false,
+        },
+
+        .NS_Svg => switch (tag) {
+            .foreignObject, .desc, .title => true,
+            else => false,
+        },
+        else => false,
+    };
 }
 
 // TODO:

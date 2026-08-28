@@ -139,11 +139,11 @@ fn runHtml5LibTestFile(
     }
 }
 
-//test "html5lib tree_construction adoption01" {
-//    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-//    defer arena.deinit();
-//    try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html5lib-tests/tree-construction/adoption01.dat", testing.io);
-//}
+// test "html5lib tree_construction adoption01" {
+//     var arena = std.heap.ArenaAllocator.init(testing.allocator);
+//     defer arena.deinit();
+//     try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html5lib-tests/tree-construction/adoption01.dat", testing.io);
+// }
 
 test "html5lib tree_construction adoption02" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
@@ -228,6 +228,78 @@ test "html5lib tree_construction menuitem-element" {
     defer arena.deinit();
     try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html5lib-tests/tree-construction/menuitem-element.dat", testing.io);
 }
+
+//test "html5lib tree_construction namespace-senseitivity" {
+//    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+//    defer arena.deinit();
+//    try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html5lib-tests/tree-construction/namespace-senseitivity.dat", testing.io);
+//}
+
+//test "html5lib tree_construction noscript01" {
+//    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+//    defer arena.deinit();
+//    try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html5lib-tests/tree-construction/noscript01.dat", testing.io);
+//}
+
+//test "html5lib tree_construction pending-spec-changes-plain-text-unsafe" {
+//    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+//    defer arena.deinit();
+//    try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html5lib-tests/tree-construction/pending-spec-changes-plain-text-unsafe.dat", testing.io);
+//}
+
+//test "html5lib tree_construction pending-spec-changes" {
+//    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+//    defer arena.deinit();
+//    try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html5lib-tests/tree-construction/pending-spec-changes.dat", testing.io);
+//}
+
+//test "html5lib tree_construction quirk01" {
+//    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+//    defer arena.deinit();
+//    try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html5lib-tests/tree-construction/quirk01.dat", testing.io);
+//}
+
+// test "html5lib tree_construction plain-text-unsafe" {
+//     var arena = std.heap.ArenaAllocator.init(testing.allocator);
+//     defer arena.deinit();
+//     try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html5lib-tests/tree-construction/plain-text-unsafe.dat", testing.io);
+// }
+
+//test "html5lib tree_construction ruby" {
+//    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+//    defer arena.deinit();
+//    try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html5lib-tests/tree-construction/ruby.dat", testing.io);
+//}
+
+//test "html5lib tree_construction scriptdata01" {
+//    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+//    defer arena.deinit();
+//    try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html5lib-tests/tree-construction/scriptdata01.dat", testing.io);
+//}
+
+//test "html5lib tree_construction search-element" {
+//    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+//    defer arena.deinit();
+//    try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html5lib-tests/tree-construction/search-element.dat", testing.io);
+//}
+
+//test "html5lib tree_construction svg" {
+//    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+//    defer arena.deinit();
+//    try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html5lib-tests/tree-construction/svg.dat", testing.io);
+//}
+
+//test "html5lib tree_construction table01" {
+//    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+//    defer arena.deinit();
+//    try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html5lib-tests/tree-construction/table01.dat", testing.io);
+//}
+//
+//test "html5lib tree_construction template" {
+//    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+//    defer arena.deinit();
+//    try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html5lib-tests/tree-construction/template.dat", testing.io);
+//}
 
 test "html5lib tree_construction tests1" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);

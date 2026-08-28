@@ -63,7 +63,7 @@ pub fn main(init: std.process.Init) !void {
         \\};
         \\
         \\pub const LocalTag = block: {
-        \\    @setEvalBranchQuota(1200);
+        \\    @setEvalBranchQuota(2000);
         \\    var values: [static_local_names.len]u16 = undefined;
         \\    for (0..static_local_names.len) |i| {
         \\        values[i] = @intCast(i);
@@ -79,7 +79,7 @@ pub fn main(init: std.process.Init) !void {
         \\};
         \\
         \\pub const LocalNameMap = std.StaticStringMap(LocalTag).initComptime(block: {
-        \\    @setEvalBranchQuota(1200);
+        \\    @setEvalBranchQuota(2000);
         \\    var kvs: [static_local_names.len]struct { []const u8, LocalTag } = undefined;
         \\    for (static_local_names, 0..) |name, i| {
         \\        kvs[i] = .{ name, @enumFromInt(i) };
@@ -103,6 +103,7 @@ pub fn main(init: std.process.Init) !void {
         \\    }
         \\
         \\    pub inline fn fromSlice(s: []const u8) !LocalName {
+        \\        @setEvalBranchQuota(2000);
         \\        if (LocalNameMap.get(s)) |tag| {
         \\            return .{ .static = tag };
         \\        }

@@ -258,7 +258,7 @@ pub fn isTypeDefineVSA(self: *Element) bool {
 pub fn lookingUpCustomElementRegistry(intended_parent: *Node) ?*CustomElementRegistry {
     return switch (intended_parent.type_id) {
         .DOM_Element => intended_parent.downcast(Element).custom_element_registry,
-        .DOM_Document => intended_parent.downcast(Element).custom_element_registry,
+        .DOM_Document => intended_parent.downcast(Document).custom_element_registry,
         .DOM_ShadowRoot => null,
         else => null,
     };

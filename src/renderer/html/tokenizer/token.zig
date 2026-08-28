@@ -3,6 +3,7 @@ const testing = std.testing;
 const u8_buffer = @import("../../utils/u8_buffer.zig");
 const strale = @import("strale");
 const LocalName = @import("local_name").LocalName;
+const LocalTag = @import("local_name").LocalTag;
 const StraleUtf8Global = strale.StraleUtf8Global;
 const BufferDeque = strale.BufferDeque;
 const Namespace = @import("../../dom/namespace.zig").Namespace;
@@ -168,58 +169,20 @@ pub const Tag = struct {
         return .SR_Named;
     }
 
+    // FIXME: These three adjust need to be fixed.
     // https://html.spec.whatwg.org/multipage/parsing.html#adjust-mathml-attributes
-    pub fn adjustMathMLAttributes(self: *Tag, allocator: std.mem.Allocator) Attrs {
-        const attrs = Attrs.init(allocator);
-        for (self.attrs.items) |attr| {
-            var local = attr.name;
-            if (local.is(.definitionurl)) {
-                local.deinit();
-                local = LocalName.fromTag(.definitionURL);
-            }
-            attrs.append(.{
-                .ns = null,
-                .local_name = local,
-                .value = attr.value,
-                .element = null,
-            });
-        }
-        return attrs;
+    pub fn adjustMathMLAttributes(self: *const Tag) void {
+        _ = self;
     }
 
     // https://html.spec.whatwg.org/multipage/parsing.html#adjust-svg-attributes
-    pub fn adjustSVGAttributes(self: *Tag, allocator: std.mem.Allocator) Attrs {
-        const attrs = Attrs.init(allocator);
-        for (self.attrs.items) |attr| {
-            const attr_slice = attr.name.slice();
-            if (svg_attribute_map.get(attr_slice)) |name| {
-                attrs.append(.{
-                    .ns = null,
-                    .local_name = name,
-                    .value = attr.value,
-                    .element = null,
-                });
-            }
-        }
-        return attrs;
+    pub fn adjustSVGAttributes(self: *const Tag) void {
+        _ = self;
     }
 
     // https://html.spec.whatwg.org/multipage/parsing.html#adjust-foreign-attributes
-    pub fn adjustForeignAttributes(self: *Tag, allocator: std.mem.Allocator) Attrs {
-        const attrs = Attrs.init(allocator);
-        for (self.attrs.items) |attr| {
-            const raw_name = attr.name.slice();
-            if (foreign_attribute_map.get(raw_name)) |entry| {
-                attrs.append(.{
-                    .ns = entry.namespace,
-                    .prefix = entry.prefix orelse null,
-                    .local_name = LocalName.fromSlice(entry.local_name),
-                    .value = attr.value,
-                    .element = null,
-                });
-            }
-        }
-        return attrs;
+    pub fn adjustForeignAttributes(self: *const Tag) void {
+        _ = self;
     }
 };
 
@@ -472,21 +435,66 @@ const svg_attribute_map = std.StaticStringMap([]const u8).initComptime(.{
 });
 
 pub const ForeignAttrEntry = struct {
-    prefix: ?LocalName,
-    local_name: LocalName,
+    prefix: ?LocalTag,
+    local_name: LocalTag,
     namespace: Namespace,
 };
 
-const foreign_attribute_map = std.StaticStringMap(ForeignAttrEntry).initComptime(.{
-    .{ "xlink:actuate", .{ .prefix = LocalName.fromSlice("xlink"), .local_name = LocalName.fromSlice("actuate"), .namespace = .NS_XLink } },
-    .{ "xlink:arcrole", .{ .prefix = LocalName.fromSlice("xlink"), .local_name = LocalName.fromSlice("arcrole"), .namespace = .NS_XLink } },
-    .{ "xlink:href", .{ .prefix = LocalName.fromSlice("xlink"), .local_name = LocalName.fromSlice("href"), .namespace = .NS_XLink } },
-    .{ "xlink:role", .{ .prefix = LocalName.fromSlice("xlink"), .local_name = LocalName.fromSlice("role"), .namespace = .NS_XLink } },
-    .{ "xlink:show", .{ .prefix = LocalName.fromSlice("xlink"), .local_name = LocalName.fromSlice("show"), .namespace = .NS_XLink } },
-    .{ "xlink:title", .{ .prefix = LocalName.fromSlice("xlink"), .local_name = LocalName.fromSlice("title"), .namespace = .NS_XLink } },
-    .{ "xlink:type", .{ .prefix = LocalName.fromSlice("xlink"), .local_name = LocalName.fromSlice("type"), .namespace = .NS_XLink } },
-    .{ "xml:lang", .{ .prefix = LocalName.fromSlice("xml"), .local_name = LocalName.fromSlice("lang"), .namespace = .NS_Xml } },
-    .{ "xml:space", .{ .prefix = LocalName.fromSlice("xml"), .local_name = LocalName.fromSlice("space"), .namespace = .NS_Xml } },
-    .{ "xmlns", .{ .prefix = null, .local_name = LocalName.fromSlice("xmlns"), .namespace = .NS_Xmlns } },
-    .{ "xmlns:xlink", .{ .prefix = LocalName.fromSlice("xmlns"), .local_name = LocalName.fromSlice("xlink"), .namespace = .NS_Xmlns } },
-});
+const foreign_attribute_map =
+    std.StaticStringMap(ForeignAttrEntry).initComptime(.{
+        .{ "xlink:actuate", ForeignAttrEntry{
+            .prefix = .xlink,
+            .local_name = .actuate,
+            .namespace = .NS_XLink,
+        } },
+        .{ "xlink:arcrole", ForeignAttrEntry{
+            .prefix = .xlink,
+            .local_name = .arcrole,
+            .namespace = .NS_XLink,
+        } },
+        .{ "xlink:href", ForeignAttrEntry{
+            .prefix = .xlink,
+            .local_name = .href,
+            .namespace = .NS_XLink,
+        } },
+        .{ "xlink:role", ForeignAttrEntry{
+            .prefix = .xlink,
+            .local_name = .role,
+            .namespace = .NS_XLink,
+        } },
+        .{ "xlink:show", ForeignAttrEntry{
+            .prefix = .xlink,
+            .local_name = .show,
+            .namespace = .NS_XLink,
+        } },
+        .{ "xlink:title", ForeignAttrEntry{
+            .prefix = .xlink,
+            .local_name = .title,
+            .namespace = .NS_XLink,
+        } },
+        .{ "xlink:type", ForeignAttrEntry{
+            .prefix = .xlink,
+            .local_name = .type,
+            .namespace = .NS_XLink,
+        } },
+        .{ "xml:lang", ForeignAttrEntry{
+            .prefix = .xml,
+            .local_name = .lang,
+            .namespace = .NS_Xml,
+        } },
+        .{ "xml:space", ForeignAttrEntry{
+            .prefix = .xml,
+            .local_name = .space,
+            .namespace = .NS_Xml,
+        } },
+        .{ "xmlns", ForeignAttrEntry{
+            .prefix = null,
+            .local_name = .xmlns,
+            .namespace = .NS_Xmlns,
+        } },
+        .{ "xmlns:xlink", ForeignAttrEntry{
+            .prefix = .xmlns,
+            .local_name = .xlink,
+            .namespace = .NS_Xmlns,
+        } },
+    });

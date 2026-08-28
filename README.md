@@ -9,4 +9,6 @@ Build and run the test:
 zig build test
 ```
 
-You can add `debug` flag to show the debug informations.
+You can add `debug` flag to show the debug informations. <br>
+Add `-- [test_name]` to filter tests. <br>
+For example: `zig build test --summary all -- tokenizer`.

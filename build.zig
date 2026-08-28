@@ -69,6 +69,9 @@ pub fn build(b: *std.Build) !void {
         moduleAddCommon(test_module, anon_imports, depends, options);
         const unit_tests = b.addTest(.{ .name = "tests", .root_module = test_module });
 
+        if (b.args) |args| {
+            if (args.len > 0) unit_tests.filters = args;
+        }
         const run_unit_tests = b.addRunArtifact(unit_tests);
         test_step.dependOn(&run_unit_tests.step);
     }

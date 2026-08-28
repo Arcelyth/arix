@@ -679,8 +679,38 @@ pub fn parseError(self: *const TreeBuilder, err: TreeBuilderError) void {
     self.tree_adapter.handleError(err);
 }
 
+// https://html.spec.whatwg.org/multipage/parsing.html#reconstruct-the-active-formatting-elements
 pub fn reconstructActiveFormattingElements(self: *TreeBuilder) void {
-    _ = self;
+    if (self.active_fmt_els.items.len == 0) return;
+    var index = self.active_fmt_els.items.len - 1;
+    switch (self.active_fmt_els.items[index]) {
+        .AFE_Marker => return,
+        .AFE_Element => |el| if (std.mem.indexOfScalar(*Element, self.open_elements.els.items, el) != null) return,
+    }
+    while (index > 0) {
+        switch (self.active_fmt_els.items[index - 1]) {
+            .AFE_Marker => break,
+            .AFE_Element => |el| if (std.mem.indexOfScalar(*Element, self.open_elements.els.items, el) != null) break,
+        }
+        index -= 1;
+    }
+    while (index < self.active_fmt_els.items.len) : (index += 1) {
+        const old = switch (self.active_fmt_els.items[index]) {
+            .AFE_Element => |el| el,
+            .AFE_Marker => unreachable,
+        };
+        const replacement = Element.create(self.document, old.local_name, old.ns, old.prefix, old.is, false, old.custom_element_registry);
+        for (old.attrs.data.items) |attr| replacement.attrs.append(.{
+            .ns = attr.ns,
+            .prefix = attr.prefix,
+            .local_name = attr.local_name,
+            .value = attr.value.clone(),
+            .element = null,
+        }) catch @panic("out of memory");
+        self.insertElementAtAdjustedInsertionLocation(replacement);
+        self.open_elements.append(replacement) catch @panic("out of memory");
+        self.active_fmt_els.items[index] = .{ .AFE_Element = replacement };
+    }
 }
 
 pub fn closePElement(self: *TreeBuilder) void {

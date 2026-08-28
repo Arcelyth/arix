@@ -131,8 +131,8 @@ pub fn enqueueUpgradeReaction(self: *Element, def: *CustomElementDefinition) voi
 // https://dom.spec.whatwg.org/#create-an-element-internal
 pub fn createInternal(document: *Document, interface: bool, local: LocalName, namespace: ?Namespace, prefix: ?LocalName, state: CustomElementState, is: ?[]const u8, registry: ?*CustomElementRegistry) *Element {
     _ = interface;
-    var node = Node.create(document);
-    var element = node.downcast(Element);
+    const element = document.allocator.create(Element) catch @panic("out of memory");
+    element.* = Element.init(document.allocator, namespace orelse .NS_Html, local, document);
     element.ns = namespace;
     element.prefix = prefix;
     element.local_name = local;
@@ -143,6 +143,7 @@ pub fn createInternal(document: *Document, interface: bool, local: LocalName, na
     std.debug.assert(element.attrs.isEmpty());
     return element;
 }
+
 
 pub inline fn asNode(self: *Element) *Node {
     return &self.node;
@@ -200,7 +201,7 @@ pub fn appendAttrs(self: *Element, attrs: []Attribute) !void {
         try self.attrs.append(.{
             .ns = null,
             .prefix = null,
-            .local_name = attr.name,
+            .local_name = attr.name.clone(),
             .value = attr.value.clone(),
             .element = null,
         });
@@ -259,7 +260,7 @@ pub fn lookingUpCustomElementRegistry(intended_parent: *Node) ?*CustomElementReg
     return switch (intended_parent.type_id) {
         .DOM_Element => intended_parent.downcast(Element).custom_element_registry,
         .DOM_Document => intended_parent.downcast(Element).custom_element_registry,
-        .DOM_ShadowRoot => intended_parent.downcast(Element).custom_element_registry,
+        .DOM_ShadowRoot => null,
         else => null,
     };
 }

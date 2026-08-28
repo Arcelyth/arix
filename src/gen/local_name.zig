@@ -123,6 +123,13 @@ pub fn main(init: std.process.Init) !void {
         \\        }; 
         \\    }
         \\
+        \\    pub inline fn clone(self: LocalName) LocalName {
+        \\        return switch (self) {
+        \\             .static => |name| .{ .static = name },
+        \\             .dynamic => |name| .{ .dynamic = name.clone() },
+        \\        };
+        \\    }
+        \\
         \\    pub inline fn eql(self: LocalName, other: LocalName) bool {
         \\        if (self == .static and other == .static) {
         \\            return self.static == other.static;

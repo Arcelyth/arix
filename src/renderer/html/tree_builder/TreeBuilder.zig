@@ -766,10 +766,120 @@ fn anyOtherEndTag(self: *TreeBuilder, subject: LocalTag) void {
     }
 }
 
+fn cloneElementForAdoption(self: *TreeBuilder, old: *Element) *Element {
+    const replacement = Element.create(
+        self.document,
+        old.local_name.clone(),
+        old.ns,
+        if (old.prefix) |prefix| prefix.clone() else null,
+        old.is,
+        false,
+        old.custom_element_registry,
+    );
+    for (old.attrs.data.items) |attr| replacement.attrs.append(.{
+        .ns = attr.ns,
+        .prefix = if (attr.prefix) |prefix| prefix.clone() else null,
+        .local_name = attr.local_name.clone(),
+        .value = attr.value.clone(),
+        .element = null,
+    }) catch @panic("out of memory");
+    return replacement;
+}
+
 // https://html.spec.whatwg.org/multipage/parsing.html#adoption-agency-algorithm
 pub fn adoptionAgencyAlgorithm(self: *TreeBuilder, tk: token_.Tag) void {
-    _ = self;
-    _ = tk;
+    const subject = tk.name.toTag() orelse return;
+    if (self.currentNode().local_name.is(subject) and self.active_fmt_els.index(self.currentNode()) == null) {
+        _ = self.open_elements.pop();
+        return;
+    }
+
+    var outer_loop_counter: usize = 0;
+    while (outer_loop_counter < 8) : (outer_loop_counter += 1) {
+        const fmt_idx = self.active_fmt_els.lastWithTag(subject) orelse {
+            self.anyOtherEndTag(subject);
+            return;
+        };
+        const fmt_el = self.active_fmt_els.at(fmt_idx).AFE_Element;
+        const fmt_stack_idx = self.open_elements.index(fmt_el) orelse {
+            _ = self.active_fmt_els.removeAt(fmt_idx);
+            return;
+        };
+        if (fmt_el.local_name.toTag()) |tag| {
+            if (!self.open_elements.hasElementInScopeCustom(tag, &.{})) return;
+        }
+
+        var fur_block_idx: ?usize = null;
+        var stack_idx = fmt_stack_idx + 1;
+        while (stack_idx < self.open_elements.len()) : (stack_idx += 1) {
+            if (self.open_elements.at(stack_idx).isSpecial()) {
+                fur_block_idx = stack_idx;
+                break;
+            }
+        }
+        if (fur_block_idx == null) {
+            while (self.open_elements.len() > fmt_stack_idx) _ = self.open_elements.pop();
+            _ = self.active_fmt_els.removeAt(fmt_idx);
+            return;
+        }
+
+        const fur_block = self.open_elements.at(fur_block_idx.?);
+        const common_ancestor = self.open_elements.at(fmt_stack_idx - 1);
+        var bookmark = fmt_idx;
+        var node_idx = fur_block_idx.?;
+        var last_node = fur_block;
+        var inner_loop_counter: usize = 0;
+
+        while (true) {
+            inner_loop_counter += 1;
+            node_idx -= 1;
+            var node = self.open_elements.at(node_idx);
+            if (node == fmt_el) break;
+
+            var active_idx = self.active_fmt_els.index(node);
+            if (inner_loop_counter > 3 and active_idx != null) {
+                const removed_idx = active_idx.?;
+                _ = self.active_fmt_els.removeAt(removed_idx);
+                if (removed_idx < bookmark) bookmark -= 1;
+                active_idx = null;
+            }
+            if (active_idx == null) {
+                _ = self.open_elements.els.orderedRemove(node_idx);
+                continue;
+            }
+
+            const replacement = self.cloneElementForAdoption(node);
+            self.active_fmt_els.setAt(active_idx.?, .{ .AFE_Element = replacement });
+            self.open_elements.setAt(node_idx, replacement);
+            node = replacement;
+
+            if (last_node == fur_block) bookmark = active_idx.? + 1;
+            last_node.asNode().remove();
+            node.asNode().appendChild(last_node.asNode());
+            last_node = node;
+        }
+
+        const insertion_location = self.appropriatePlaceForInsertion(common_ancestor);
+        last_node.asNode().remove();
+        self.insertNodeAt(last_node.asNode(), insertion_location);
+
+        const new_element = self.cloneElementForAdoption(fmt_el);
+        while (fur_block.asNode().first_child) |child| {
+            fur_block.asNode().removeChild(child);
+            new_element.asNode().appendChild(child);
+        }
+        fur_block.asNode().appendChild(new_element.asNode());
+
+        if (self.active_fmt_els.index(fmt_el)) |old_idx| {
+            _ = self.active_fmt_els.removeAt(old_idx);
+            if (old_idx < bookmark) bookmark -= 1;
+        }
+        self.active_fmt_els.insertAt(bookmark, .{ .AFE_Element = new_element }) catch @panic("out of memory");
+
+        _ = self.open_elements.remove(fmt_el);
+        const cur_fur_idx = self.open_elements.index(fur_block).?;
+        self.open_elements.insertAt(cur_fur_idx + 1, new_element) catch @panic("out of memory");
+    }
 }
 
 pub inline fn unexpect(self: *TreeBuilder, tk: Token, mode: InsertionMode) void {
@@ -1329,7 +1439,17 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                                 self.frameset_ok = false;
                                 return .PR_Done;
                             } else if (tag_tk.name.is(.a)) {
-                                if (true) @panic("[TODO]:");
+                                if (self.active_fmt_els.lastWithTag(.a)) |old_idx| {
+                                    const old_anchor = self.active_fmt_els.at(old_idx).AFE_Element;
+                                    self.unexpect(tk, .InBodyMode);
+                                    self.adoptionAgencyAlgorithm(tag_tk);
+                                    if (self.active_fmt_els.index(old_anchor)) |remaining_idx|
+                                        _ = self.active_fmt_els.removeAt(remaining_idx);
+                                    _ = self.open_elements.remove(old_anchor);
+                                }
+                                self.reconstructActiveFormattingElements();
+                                const element = try self.insertHtmlElement_E(tag_tk);
+                                self.pushActiveFormattingElement(element);
                                 return .PR_Done;
                             } else if (tag_tk.name.oneOf(&.{ .b, .big, .code, .em, .font, .i, .s, .small, .strike, .strong, .tt, .u })) {
                                 self.reconstructActiveFormattingElements();

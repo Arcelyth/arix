@@ -30,6 +30,10 @@ pub inline fn append(self: *ActiveFormatElementList, el: ActiveFormatElement) !v
     try self.data.append(self.allocator, el);
 }
 
+pub inline fn removeAt(self: *ActiveFormatElementList, idx: usize) ?ActiveFormatElement {
+    return self.data.orderedRemove(idx);
+}
+
 pub inline fn pop(self: *ActiveFormatElementList) ?ActiveFormatElement {
     return self.data.pop();
 }
@@ -42,6 +46,10 @@ pub inline fn setAt(self: *ActiveFormatElementList, idx: usize, el: ActiveFormat
     self.data.items[idx] = el;
 }
 
+pub inline fn insertAt(self: *ActiveFormatElementList, idx: usize, item: ActiveFormatElement) !void {
+    try self.data.insert(self.allocator, idx, item);
+}
+
 pub inline fn index(self: *const ActiveFormatElementList, el: *Element) ?usize {
     for (self.data.items, 0..) |entry, i| switch (entry) {
         .AFE_Element => |candidate| if (candidate == el) return i,
@@ -52,9 +60,9 @@ pub inline fn index(self: *const ActiveFormatElementList, el: *Element) ?usize {
 
 pub inline fn lastWithTag(self: *const ActiveFormatElementList, subject: LocalTag) ?usize {
     var i = self.data.items.len;
-    while (index > 0) {
+    while (i > 0) {
         i -= 1;
-        switch (self.data[i]) {
+        switch (self.data.items[i]) {
             .AFE_Marker => return null,
             .AFE_Element => |el| if (el.local_name.is(subject)) return i,
         }

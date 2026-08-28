@@ -37,6 +37,14 @@ pub inline fn at(self: *OpenElementStack, idx: usize) *Element {
     return self.els.items[idx];
 }
 
+pub inline fn setAt(self: *OpenElementStack, idx: usize, el: *Element) void {
+    self.els.items[idx] = el;
+}
+
+pub inline fn insertAt(self: *OpenElementStack, idx: usize, item: *Element) !void {
+    try self.els.insert(self.allocator, idx, item);
+}
+
 pub inline fn index(self: *const OpenElementStack, element: *Element) ?usize {
     return std.mem.indexOfScalar(*Element, self.els.items, element);
 }

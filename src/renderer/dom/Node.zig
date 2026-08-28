@@ -4,6 +4,11 @@ const std = @import("std");
 const EventTarget = @import("EventTarget.zig");
 const DomTypeId = @import("type.zig").DomTypeId;
 const Document = @import("Document.zig");
+const Element = @import("Element.zig");
+const Text = @import("Text.zig");
+const Comment = @import("Comment.zig");
+const DocumentType = @import("DocumentType.zig");
+const ProcessingInstruction = @import("ProcessingInstruction.zig");
 
 /// For interface.
 pub const NodeType = enum(u4) {
@@ -53,6 +58,49 @@ pub fn init(type_id: DomTypeId, document: *Document) Node {
 pub fn create(document: *Document) Node {
     // TODO:
     return init(.DOM_Element, document);
+}
+
+pub fn destroy(self: *Node, alloc: std.mem.Allocator) void {
+    var child = self.first_child;
+    while (child) |item| {
+        const next = item.next_sibling;
+        item.destroy(alloc);
+        child = next;
+    }
+
+    switch (self.type_id) {
+        .DOM_Element => {
+            const element = self.downcast(Element);
+            for (element.attrs.data.items) |*attr| attr.deinit();
+            element.attrs.deinit();
+            element.local_name.deinit();
+            alloc.destroy(element);
+        },
+        .DOM_Text => {
+            const text = self.downcast(Text);
+            text.data.deinit();
+            alloc.destroy(text);
+        },
+        .DOM_Comment => {
+            const comment = self.downcast(Comment);
+            comment.data.deinit();
+            alloc.destroy(comment);
+        },
+        .DOM_DocumentType => {
+            const doctype = self.downcast(DocumentType);
+            doctype.name.deinit();
+            doctype.public_id.deinit();
+            doctype.system_id.deinit();
+            alloc.destroy(doctype);
+        },
+        .DOM_ProcessingInstruction => {
+            const pi = self.downcast(ProcessingInstruction);
+            pi.target.deinit();
+            pi.data.deinit();
+            alloc.destroy(pi);
+        },
+        else => {},
+    }
 }
 
 /// Attempts to downcast this Node into a more specific DOM type.

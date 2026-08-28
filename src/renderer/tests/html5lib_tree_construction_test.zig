@@ -125,9 +125,9 @@ fn runHtml5LibTestFile(
         const data = case.data;
         if (config.debug) std.debug.print("tree case: {s}\n", .{data});
         try buffer.pushBackSlice(data);
-        if (config.debug) 
+        if (config.debug)
             std.debug.print("==========\n {s} \n", .{data});
-        
+
         try tokenizer.step_E(&buffer);
 
         const actual = try serializeDocument(allocator, tree_builder.document.asNode());

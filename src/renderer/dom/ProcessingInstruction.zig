@@ -13,18 +13,24 @@ target: StraleUtf8Global,
 data: StraleUtf8Global,
 
 pub fn init(document: *Document) ProcessingInstruction {
-    return .{
+    var pi: ProcessingInstruction = .{
         .char_data = CharacterData.init(document),
+        .target = StraleUtf8Global.init(),
         .data = StraleUtf8Global.init(),
     };
+    pi.char_data.node.type_id = dom_type;
+    return pi;
 }
 
-pub fn create(document: *Document, target: StraleUtf8Global, data: StraleUtf8Global) ProcessingInstruction {
-    return .{
+pub fn create(document: *Document, target: StraleUtf8Global, data: StraleUtf8Global) *ProcessingInstruction {
+    const pi = document.allocator.create(ProcessingInstruction) catch @panic("out of memory");
+    pi.* = .{
         .char_data = CharacterData.init(document),
         .target = target,
         .data = data,
     };
+    pi.char_data.node.type_id = dom_type;
+    return pi;
 }
 
 pub inline fn asNode(self: *ProcessingInstruction) *Node {

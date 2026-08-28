@@ -11,17 +11,22 @@ char_data: CharacterData,
 data: StraleUtf8Global,
 
 pub fn init(document: *Document) Text {
-    return .{
+    var text: Text = .{
         .char_data = CharacterData.init(document),
         .data = StraleUtf8Global.init(),
     };
+    text.char_data.node.type_id = dom_type;
+    return text;
 }
 
-pub fn create(document: *Document, data: StraleUtf8Global) Text {
-    return .{
+pub fn create(document: *Document, data: StraleUtf8Global) *Text {
+    const text = document.allocator.create(Text) catch @panic("out of memory");
+    text.* = .{
         .char_data = CharacterData.init(document),
         .data = data,
     };
+    text.char_data.node.type_id = dom_type;
+    return text;
 }
 
 pub inline fn asNode(self: *Text) *Node {

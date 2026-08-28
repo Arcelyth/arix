@@ -11,17 +11,23 @@ char_data: CharacterData,
 data: StraleUtf8Global,
 
 pub fn init(document: *Document) Comment {
-    return .{
+    var comment: Comment = .{
         .char_data = CharacterData.init(document),
         .data = StraleUtf8Global.init(),
     };
+    // FIXME: Might need put in init's parameter.
+    comment.char_data.node.type_id = dom_type;
+    return comment;
 }
 
-pub fn create(document: *Document, data: StraleUtf8Global) Comment {
-    return .{
+pub fn create(document: *Document, data: StraleUtf8Global) *Comment {
+    const comment = document.allocator.create(Comment) catch @panic("out of memory");
+    comment.* = .{
         .char_data = CharacterData.init(document),
         .data = data,
     };
+    comment.char_data.node.type_id = dom_type;
+    return comment;
 }
 
 pub inline fn asNode(self: *Comment) *Node {

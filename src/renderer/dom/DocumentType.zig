@@ -22,13 +22,15 @@ pub fn init() DocumentType {
     };
 }
 
-pub fn create(doc: *Document, name: StraleUtf8Global, public_id: StraleUtf8Global, system_id: StraleUtf8Global) DocumentType {
-    return .{
+pub fn create(doc: *Document, name: StraleUtf8Global, public_id: StraleUtf8Global, system_id: StraleUtf8Global) *DocumentType {
+    const doctype = doc.allocator.create(DocumentType) catch @panic("out of memory");
+    doctype.* = .{
         .node = Node.init(dom_type, doc),
         .name = name,
         .public_id = public_id,
         .system_id = system_id,
     };
+    return doctype;
 }
 
 pub inline fn asNode(self: *DocumentType) *Node {

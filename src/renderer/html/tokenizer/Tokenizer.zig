@@ -97,7 +97,7 @@ pub fn deinit(self: *Tokenizer) void {
 }
 
 pub fn handleToken(self: *Tokenizer, t: token.Token) void {
-    self.adapter.handleToken(t);
+    if (self.adapter.handleToken(t)) |state| self.state = state;
 }
 
 pub fn emitChar(self: *Tokenizer, ch: u21) void {
@@ -183,7 +183,8 @@ pub fn createAttr_E(self: *Tokenizer, ch: ?u21) !void {
 pub fn sealAttr(self: *Tokenizer) !void {
     if (self.current_attribute_name.isEmpty()) return;
     const name_slice = self.current_attribute_name.slice();
-    const lc_attr = try LocalName.fromSlice(name_slice);
+    var lc_attr = try LocalName.fromSlice(name_slice);
+    defer lc_attr.deinit();
     const dup = for (self.current_tag_attrs.items) |attr| {
         if (attr.name.eql(lc_attr)) break true;
     } else false;

@@ -8,6 +8,7 @@ const TokenAdapter = @import("TokenAdapter.zig");
 const e = @import("error.zig");
 const tokenizerErrorToString = e.tokenizerErrorToString;
 const TokenizerError = e.TokenizerError;
+const TokenizerState = @import("state.zig").TokenizerState;
 const testing = std.testing;
 
 pub const ErrorMessage = struct {
@@ -52,9 +53,10 @@ pub fn deinit(self: *TestAdapter) void {
 }
 
 // Implement TokenAdapter's method.
-pub fn handleToken(ptr: *anyopaque, token: Token) void {
+pub fn handleToken(ptr: *anyopaque, token: Token) ?TokenizerState {
     const self: *TestAdapter = @ptrCast(@alignCast(ptr));
     self.tokens.append(self.allocator, token) catch unreachable;
+    return null;
 }
 
 // Implement TokenAdapter's method.

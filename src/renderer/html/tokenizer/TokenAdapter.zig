@@ -3,17 +3,18 @@ const TokenAdapter = @This();
 
 const Token = @import("token.zig").Token;
 const TokenizerError = @import("error.zig").TokenizerError;
+const TokenizerState = @import("state.zig").TokenizerState;
 
 ptr: *anyopaque,
 vtable: *const VTable,
 
 pub const VTable = struct {
-    handleTokenFn: *const fn (ptr: *anyopaque, token: Token) void,
+    handleTokenFn: *const fn (ptr: *anyopaque, token: Token) ?TokenizerState,
     handleErrorFn: *const fn (ptr: *anyopaque, err: TokenizerError, cur_line: usize) void,
 };
 
-pub fn handleToken(self: TokenAdapter, token: Token) void {
-    self.vtable.handleTokenFn(self.ptr, token);
+pub fn handleToken(self: TokenAdapter, token: Token) ?TokenizerState {
+    return self.vtable.handleTokenFn(self.ptr, token);
 }
 
 pub fn handleError(self: TokenAdapter, err: TokenizerError, cur_line: usize) void {

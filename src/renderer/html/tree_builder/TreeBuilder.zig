@@ -99,8 +99,10 @@ const vtable = Vtable{
     .handleErrorFn = handleError,
 };
 
-pub fn handleToken(ptr: *anyopaque, tk: Token) void {
+pub fn handleToken(ptr: *anyopaque, token_value: Token) ?TokenizerState {
     const self: *TreeBuilder = @ptrCast(@alignCast(ptr));
+    var tk = token_value;
+    defer tk.deinit(self.allocator);
     // If need to acknowledge the token's self-closing flag.
     const need_ack = switch (tk) {
         .TagToken => |tag| tag.kind == .StartTag and tag.self_closing,
@@ -114,9 +116,10 @@ pub fn handleToken(ptr: *anyopaque, tk: Token) void {
     else
         self.processToken(tk);
 
-    switch (result) {
-        else => {},
-    }
+    return switch (result) {
+        .PR_ChangeState => |state| state,
+        else => null,
+    };
 }
 
 pub fn handleError(ptr: *anyopaque, err: TokenizerError, cur_line: usize) void {

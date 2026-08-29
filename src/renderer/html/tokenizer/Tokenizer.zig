@@ -2291,7 +2291,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
             .HexadecimalCharacterReference => blk: {
                 if (ascii.isAsciiDigit(ch) and !is_eof)
                     self.char_ref_code = self.char_ref_code *| 16 +| (ch -| 0x0030)
-                else if (ascii.isAsciiUpperAlpha(ch) and !is_eof) self.char_ref_code = self.char_ref_code *| 16 +| (ch -| 0x0037) else if (ascii.isAsciiLowerAlpha(ch) and !is_eof) self.char_ref_code = self.char_ref_code *| 16 +| (ch -| 0x0057) else if (ch == ';') self.state = .NumericCharacterReferenceEnd else {
+                else if (ch >= 'A' and ch <= 'F' and !is_eof) self.char_ref_code = self.char_ref_code *| 16 +| (ch -| 0x0037) else if (ch >= 'a' and ch <= 'f' and !is_eof) self.char_ref_code = self.char_ref_code *| 16 +| (ch -| 0x0057) else if (ch == ';') self.state = .NumericCharacterReferenceEnd else {
                     self.handleError(.MissingSemicolonAfterCharacterReference);
                     self.state = .NumericCharacterReferenceEnd;
                     break :blk;

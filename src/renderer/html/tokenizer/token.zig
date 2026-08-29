@@ -18,9 +18,13 @@ const ids = @import("ids.zig");
 pub const Attribute = struct {
     name: LocalName,
     value: StraleUtf8Global,
+    // These fields will only be used during the treebuilder stage.
+    namespace: ?Namespace = null,
+    prefix: ?LocalName = null,
 
     pub fn deinit(self: *Attribute) void {
         self.name.deinit();
+        if (self.prefix) |*prefix| prefix.deinit();
         self.value.deinit();
     }
 
@@ -169,20 +173,55 @@ pub const Tag = struct {
         return .SR_Named;
     }
 
-    // FIXME: These three adjust need to be fixed.
     // https://html.spec.whatwg.org/multipage/parsing.html#adjust-mathml-attributes
-    pub fn adjustMathMLAttributes(self: *const Tag) void {
-        _ = self;
+    pub fn adjustMathMLAttributes(self: *Tag) void {
+        for (self.attrs.items) |*attr| {
+            if (std.mem.eql(u8, attr.name.slice(), "definitionurl")) {
+                attr.name.deinit();
+                attr.name = LocalName.fromTag(.definitionURL);
+            }
+        }
+    }
+
+    pub fn adjustSVGTagName(self: *Tag) void {
+        const adjusted = svg_element_name_map.get(self.name.slice());
+        if (adjusted) |name| self.name = LocalName.fromTag(name);
     }
 
     // https://html.spec.whatwg.org/multipage/parsing.html#adjust-svg-attributes
-    pub fn adjustSVGAttributes(self: *const Tag) void {
-        _ = self;
+    pub fn adjustSVGAttributes(self: *Tag) void {
+        for (self.attrs.items) |*attr| {
+            if (svg_attribute_map.get(attr.name.slice())) |adjusted| {
+                attr.name.deinit();
+                attr.name = LocalName.fromSlice(adjusted) catch @panic("out of memory");
+            }
+        }
     }
 
     // https://html.spec.whatwg.org/multipage/parsing.html#adjust-foreign-attributes
-    pub fn adjustForeignAttributes(self: *const Tag) void {
-        _ = self;
+    pub fn adjustForeignAttributes(self: *Tag) void {
+        for (self.attrs.items) |*attr| {
+            if (foreign_attribute_map.get(attr.name.slice())) |adjusted| {
+                attr.name.deinit();
+                attr.name = LocalName.fromTag(adjusted.local_name);
+                attr.namespace = adjusted.namespace;
+                attr.prefix = if (adjusted.prefix) |prefix| LocalName.fromTag(prefix) else null;
+            }
+        }
+    }
+
+    pub fn isForeignContentBreakout(tag: *const Tag) bool {
+        if (tag.kind == .EndTag) return tag.name.is(.br) or tag.name.is(.p);
+        if (tag.name.is(.font))
+            return tag.hasAttrName("color") or tag.hasAttrName("face") or tag.hasAttrName("size");
+        return tag.name.oneOf(&.{
+            .b,       .big,   .blockquote, .body,   .br,     .center, .code, .dd,
+            .div,     .dl,    .dt,         .em,     .embed,  .h1,     .h2,   .h3,
+            .h4,      .h5,    .h6,         .head,   .hr,     .i,      .img,  .li,
+            .listing, .menu,  .meta,       .nobr,   .ol,     .p,      .pre,  .ruby,
+            .s,       .small, .span,       .strong, .strike, .sub,    .sup,  .table,
+            .tt,      .u,     .ul,         .@"var",
+        });
     }
 };
 
@@ -372,6 +411,46 @@ pub fn expectToken(expected: Token, actual: Token) !void {
         },
     }
 }
+
+const svg_element_name_map = std.StaticStringMap(LocalTag).initComptime(.{
+    .{ "altglyph", .altGlyph },
+    .{ "altglyphdef", .altGlyphDef },
+    .{ "altglyphitem", .altGlyphItem },
+    .{ "animatecolor", .animateColor },
+    .{ "animatemotion", .animateMotion },
+    .{ "animatetransform", .animateTransform },
+    .{ "clippath", .clipPath },
+    .{ "feblend", .feBlend },
+    .{ "fecolormatrix", .feColorMatrix },
+    .{ "fecomponenttransfer", .feComponentTransfer },
+    .{ "fecomposite", .feComposite },
+    .{ "feconvolvematrix", .feConvolveMatrix },
+    .{ "fediffuselighting", .feDiffuseLighting },
+    .{ "fedisplacementmap", .feDisplacementMap },
+    .{ "fedistantlight", .feDistantLight },
+    .{ "fedropshadow", .feDropShadow },
+    .{ "feflood", .feFlood },
+    .{ "fefunca", .feFuncA },
+    .{ "fefuncb", .feFuncB },
+    .{ "fefuncg", .feFuncG },
+    .{ "fefuncr", .feFuncR },
+    .{ "fegaussianblur", .feGaussianBlur },
+    .{ "feimage", .feImage },
+    .{ "femerge", .feMerge },
+    .{ "femergenode", .feMergeNode },
+    .{ "femorphology", .feMorphology },
+    .{ "feoffset", .feOffset },
+    .{ "fepointlight", .fePointLight },
+    .{ "fespecularlighting", .feSpecularLighting },
+    .{ "fespotlight", .feSpotLight },
+    .{ "fetile", .feTile },
+    .{ "feturbulence", .feTurbulence },
+    .{ "foreignobject", .foreignObject },
+    .{ "glyphref", .glyphRef },
+    .{ "lineargradient", .linearGradient },
+    .{ "radialgradient", .radialGradient },
+    .{ "textpath", .textPath },
+});
 
 const svg_attribute_map = std.StaticStringMap([]const u8).initComptime(.{
     .{ "attributename", "attributeName" },

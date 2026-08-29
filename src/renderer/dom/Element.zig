@@ -10,6 +10,7 @@ const DocumentFragment = @import("DocumentFragment.zig");
 const NamedNodeMap = @import("NamedNodeMap.zig");
 const Attr = @import("Attr.zig");
 const Attribute = token.Attribute;
+const Token = token.Token;
 const Attrs = @import("Attrs.zig");
 const CustomElementRegistry = @import("CustomElementRegistry.zig");
 const CustomElementDefinition = @import("CustomElementDefinition.zig");
@@ -170,7 +171,7 @@ pub inline fn isMathMLTextIntegrationPoint(self: *const Element) bool {
         self.local_name.is(.mtext);
 }
 
-pub fn isHtmlIntegrationPoint(self: *const Element, tk: token.Token) bool {
+pub fn isHtmlIntegrationPoint(self: *const Element, tk: Token) bool {
     if (self.ns == .NS_Svg) {
         return self.local_name.is(.foreignObject) or
             self.local_name.is(.desc) or
@@ -198,8 +199,8 @@ pub inline fn isMathMLAnnotationXml(self: *const Element) bool {
 pub fn appendAttrs(self: *Element, attrs: []Attribute) !void {
     for (attrs) |attr| {
         try self.attrs.append(.{
-            .ns = null,
-            .prefix = null,
+            .ns = attr.namespace,
+            .prefix = if (attr.prefix) |prefix| prefix.clone() else null,
             .local_name = attr.name.clone(),
             .value = attr.value.clone(),
             .element = null,
@@ -234,6 +235,10 @@ pub fn isFormAssociatedCustomElement(self: *const Element) bool {
 pub fn isFormAssociatedElement(self: *const Element) bool {
     _ = self;
     return false;
+}
+
+pub fn isForeignIntegrationBoundary(el: *Element, tk: Token) bool {
+    return el.ns == .NS_Html or el.isMathMLTextIntegrationPoint() or el.isHtmlIntegrationPoint(tk);
 }
 
 pub fn attachShadowRoot(self: *Element, mode: ShadowRoot.ShadowRootMode, clonable: bool, serializable: bool, delegates_focus: bool, slot_ass: ShadowRoot.ShadowRootSlotAssignment, registry: ?*CustomElementRegistry) !void {

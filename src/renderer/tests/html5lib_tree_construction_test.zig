@@ -16,8 +16,28 @@ const Element = @import("../dom/Element.zig");
 const Text = @import("../dom/Text.zig");
 const Comment = @import("../dom/Comment.zig");
 const DocumentType = @import("../dom/DocumentType.zig");
+const Namespace = @import("../dom/namespace.zig").Namespace;
 
 const testing = std.testing;
+
+const FragmentContext = struct {
+    namespace: Namespace,
+    local_name: []const u8,
+};
+
+fn parseFragmentContext(value: []const u8) FragmentContext {
+    if (std.mem.indexOfScalar(u8, value, ' ')) |separator| {
+        const prefix = value[0..separator];
+        const namespace: Namespace = if (std.mem.eql(u8, prefix, "svg"))
+            .NS_Svg
+        else if (std.mem.eql(u8, prefix, "math"))
+            .NS_Math
+        else
+            .NS_Html;
+        return .{ .namespace = namespace, .local_name = value[separator + 1 ..] };
+    }
+    return .{ .namespace = .NS_Html, .local_name = value };
+}
 
 fn appendIndent(out: *std.ArrayList(u8), allocator: std.mem.Allocator, depth: usize) !void {
     try out.appendSlice(allocator, "| ");
@@ -44,6 +64,14 @@ fn serializeNode(out: *std.ArrayList(u8), allocator: std.mem.Allocator, node: *N
             for (element.attrs.data.items) |attr| {
                 try out.append(allocator, '\n');
                 try appendIndent(out, allocator, depth + 1);
+
+                const attr_prefix: []const u8 = switch (attr.ns orelse .NS_Html) {
+                    .NS_XLink => "xlink ",
+                    .NS_Xml => "xml ",
+                    .NS_Xmlns => "xmlns ",
+                    else => "",
+                };
+                try out.appendSlice(allocator, attr_prefix);
                 try out.appendSlice(allocator, attr.local_name.slice());
                 try out.appendSlice(allocator, "=\"");
                 try out.appendSlice(allocator, attr.value.slice());
@@ -131,15 +159,17 @@ fn runHtml5LibTestFile(
         defer if (fragment_context) |context| context.asNode().destroy(allocator);
         var fragment_root: ?*Element = null;
         if (case.fragment) |context_name| {
+            const parsed_context = parseFragmentContext(context_name);
             const context = Element.create(
                 tree_builder.document,
-                try LocalName.fromSlice(context_name),
-                .NS_Html,
+                try LocalName.fromSlice(parsed_context.local_name),
+                parsed_context.namespace,
                 null,
                 null,
                 false,
                 null,
             );
+
             fragment_context = context;
             tree_builder.context = context;
             tree_builder.scripting_mode = .Fragment;
@@ -233,12 +263,12 @@ test "html5lib tree_construction entities02" {
     try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html5lib-tests/tree-construction/entities02.dat", testing.io);
 }
 
-// test "html5lib tree_construction foreign-fragment" {
-//     var arena = std.heap.ArenaAllocator.init(testing.allocator);
-//     defer arena.deinit();
-//     try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html5lib-tests/tree-construction/foreign-fragment.dat", testing.io);
-// }
-//
+test "html5lib tree_construction foreign-fragment" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html5lib-tests/tree-construction/foreign-fragment.dat", testing.io);
+}
+
 //test "html5lib tree_construction html5test-com" {
 //    var arena = std.heap.ArenaAllocator.init(testing.allocator);
 //    defer arena.deinit();

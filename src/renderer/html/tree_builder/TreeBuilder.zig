@@ -189,33 +189,75 @@ pub fn processToken(self: *TreeBuilder, tk: Token) ProcessResult {
     return self.step_E(tk, null) catch @panic("[TODO]: handle error.");
 }
 
-// FIXME: Here is the preliminary foreign token processing,
-// need to see https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-inforeign
+// https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-inforeign
 pub fn processTokenForeign(self: *TreeBuilder, tk: Token) ProcessResult {
     return switch (tk) {
-        .CharacterToken => blk: {
-            self.insertCharacter_E(null, tk) catch @panic("out of memory");
+        .CharacterToken => |ch_tk| blk: {
+            const data = ch_tk.slice();
+            var start: usize = 0;
+            for (data, 0..) |ch, i| {
+                if (ch == 0) {
+                    if (start < i) self.insertCharacter_E(data[start..i], tk) catch @panic("out of memory");
+                    self.parseError(.null_character);
+                    self.insertCharacter_E("\u{FFFD}", tk) catch @panic("out of memory");
+                    start = i + 1;
+                } else if (!ascii.isAsciiWhitespace(u8, ch)) {
+                    self.frameset_ok = false;
+                }
+            }
+            if (start < data.len) self.insertCharacter_E(data[start..], tk) catch @panic("out of memory");
             break :blk .PR_Done;
         },
         .CommentToken => |data| blk: {
             self.insertComment(data, null);
             break :blk .PR_Done;
         },
-        .TagToken => |tag| blk: {
+        .ProcessingInstructionToken => |pi| blk: {
+            self.insertProcessingInstruction(pi, null);
+            break :blk .PR_Done;
+        },
+        .DoctypeToken => blk: {
+            self.unexpect(tk, self.insert_mode);
+            break :blk .PR_Done;
+        },
+        .TagToken => |tag_value| blk: {
+            if (tag_value.isForeignContentBreakout()) {
+                self.unexpect(tk, self.insert_mode);
+                while (!self.currentNode().isForeignIntegrationBoundary(tk))
+                    _ = self.open_elements.pop();
+                break :blk self.processToken(tk);
+            }
+
+            var tag = tag_value;
             if (tag.kind == .StartTag) {
-                const ns = self.adjustedCurrentNode().ns orelse .NS_Html;
+                const adjusted_current = self.adjustedCurrentNode();
+                if (adjusted_current.ns == .NS_Math) tag.adjustMathMLAttributes();
+                if (adjusted_current.ns == .NS_Svg) {
+                    tag.adjustSVGTagName();
+                    tag.adjustSVGAttributes();
+                }
+                tag.adjustForeignAttributes();
+
+                const ns = adjusted_current.ns orelse .NS_Html;
                 _ = self.insertForeignElement_E(tag, ns, false) catch @panic("out of memory");
-                if (tag.self_closing) _ = self.open_elements.pop();
+                if (tag.self_closing) {
+                    _ = self.open_elements.pop();
+                    break :blk .PR_AckSelfClosing;
+                }
             } else {
-                var i = self.open_elements.len();
+                var i = self.open_elements.len() - 1;
+                if (!std.ascii.eqlIgnoreCase(self.open_elements.at(i).local_name.slice(), tag.name.slice()))
+                    self.unexpect(tk, self.insert_mode);
+
                 while (i > 0) {
-                    i -= 1;
-                    const el = self.open_elements.at(i);
-                    if (std.mem.eql(u8, el.local_name.slice(), tag.name.slice())) {
+                    const node = self.open_elements.at(i);
+                    if (std.ascii.eqlIgnoreCase(node.local_name.slice(), tag.name.slice())) {
                         while (self.open_elements.len() > i) _ = self.open_elements.pop();
-                        break;
+                        break :blk .PR_Done;
                     }
-                    if (el.ns == .NS_Html) break;
+                    i -= 1;
+                    if (self.open_elements.at(i).ns == .NS_Html)
+                        break :blk self.processToken(tk);
                 }
             }
             break :blk .PR_Done;
@@ -1641,20 +1683,24 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                                 return .PR_Done;
                             } else if (tag_tk.name.is(.math)) {
                                 self.reconstructActiveFormattingElements();
-                                tag_tk.adjustMathMLAttributes();
-                                tag_tk.adjustForeignAttributes();
-                                _ = try self.insertForeignElement_E(tag_tk, .NS_Math, false);
-                                if (tag_tk.self_closing) {
+
+                                var adjusted_tag = tag_tk;
+                                adjusted_tag.adjustMathMLAttributes();
+                                adjusted_tag.adjustForeignAttributes();
+                                _ = try self.insertForeignElement_E(adjusted_tag, .NS_Math, false);
+                                if (adjusted_tag.self_closing) {
                                     _ = self.open_elements.pop();
                                     return .PR_AckSelfClosing;
                                 }
                                 return .PR_Done;
                             } else if (tag_tk.name.is(.svg)) {
                                 self.reconstructActiveFormattingElements();
-                                tag_tk.adjustSVGAttributes();
-                                tag_tk.adjustForeignAttributes();
-                                _ = try self.insertForeignElement_E(tag_tk, .NS_Svg, false);
-                                if (tag_tk.self_closing) {
+
+                                var adjusted_tag = tag_tk;
+                                adjusted_tag.adjustSVGAttributes();
+                                adjusted_tag.adjustForeignAttributes();
+                                _ = try self.insertForeignElement_E(adjusted_tag, .NS_Svg, false);
+                                if (adjusted_tag.self_closing) {
                                     _ = self.open_elements.pop();
                                     return .PR_AckSelfClosing;
                                 }

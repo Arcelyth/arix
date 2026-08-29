@@ -1677,8 +1677,12 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                                 self.reconstructActiveFormattingElements();
                                 _ = try self.insertHtmlElement_E(tag_tk);
                                 return .PR_Done;
-                            } else if (tag_tk.name.oneOf(&.{ .rb, .rtc, .rp, .rt })) {
+                            } else if (tag_tk.name.oneOf(&.{ .rb, .rtc })) {
                                 if (self.hasElementInScope(.ruby)) self.generateImpliedEndTags(null);
+                                _ = try self.insertHtmlElement_E(tag_tk);
+                                return .PR_Done;
+                            } else if (tag_tk.name.oneOf(&.{ .rp, .rt })) {
+                                if (self.hasElementInScope(.ruby)) self.generateImpliedEndTags(.rtc);
                                 _ = try self.insertHtmlElement_E(tag_tk);
                                 return .PR_Done;
                             } else if (tag_tk.name.is(.math)) {

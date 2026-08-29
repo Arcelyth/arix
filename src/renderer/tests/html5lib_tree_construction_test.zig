@@ -350,11 +350,11 @@ test "html5lib tree_construction quirks01" {
 //     try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html5lib-tests/tree-construction/plain-text-unsafe.dat", testing.io);
 // }
 
-//test "html5lib tree_construction ruby" {
-//    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-//    defer arena.deinit();
-//    try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html5lib-tests/tree-construction/ruby.dat", testing.io);
-//}
+test "html5lib tree_construction ruby" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html5lib-tests/tree-construction/ruby.dat", testing.io);
+}
 
 //test "html5lib tree_construction scriptdata01" {
 //    var arena = std.heap.ArenaAllocator.init(testing.allocator);
@@ -362,11 +362,11 @@ test "html5lib tree_construction quirks01" {
 //    try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html5lib-tests/tree-construction/scriptdata01.dat", testing.io);
 //}
 
-//test "html5lib tree_construction search-element" {
-//    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-//    defer arena.deinit();
-//    try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html5lib-tests/tree-construction/search-element.dat", testing.io);
-//}
+test "html5lib tree_construction search-element" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html5lib-tests/tree-construction/search-element.dat", testing.io);
+}
 
 //test "html5lib tree_construction svg" {
 //    var arena = std.heap.ArenaAllocator.init(testing.allocator);

@@ -1356,12 +1356,12 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                 } else if (self.match_sensitive(input, "[CDATA[")) {
                     // TODO
                     if (self.is_adjusted()) {
-                        self.setStateAndAdvance(.CDATASection, input);
+                        self.state = .CDATASection;
                     } else {
                         self.handleError(.CDATAInHtmlContent);
 
                         try self.current_comment.append("[CDATA[");
-                        self.setStateAndAdvance(.BogusComment, input);
+                        self.state = .BogusComment;
                     }
                 } else {
                     self.handleError(.IncorrectlyOpenedComment);

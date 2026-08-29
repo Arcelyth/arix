@@ -269,11 +269,11 @@ test "html5lib tree_construction foreign-fragment" {
     try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html5lib-tests/tree-construction/foreign-fragment.dat", testing.io);
 }
 
-//test "html5lib tree_construction html5test-com" {
-//    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-//    defer arena.deinit();
-//    try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html5lib-tests/tree-construction/html5test-com.dat", testing.io);
-//}
+test "html5lib tree_construction html5test-com" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html5lib-tests/tree-construction/html5test-com.dat", testing.io);
+}
 
 test "html5lib tree_construction inbody01" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);

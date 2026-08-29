@@ -10,6 +10,7 @@ const Text = @import("../../dom/Text.zig");
 const Comment = @import("../../dom/Comment.zig");
 const Document = @import("../../dom/Document.zig");
 const DocumentType = @import("../../dom/DocumentType.zig");
+const DocumentFragment = @import("../../dom/DocumentFragment.zig");
 const Attrs = @import("../../dom/Attrs.zig");
 const CustomElementRegistry = @import("../../dom/CustomElementRegistry.zig");
 const CustomElementDefinition = @import("../../dom/CustomElementDefinition.zig");
@@ -278,7 +279,7 @@ pub inline fn isAdjustedCurrentNodeTopmost(self: *TreeBuilder) bool {
     if (self.fragment_case and self.open_elements.len() == 1)
         return false;
 
-    return true;
+    return self.open_elements.len() == 1;
 }
 
 // https://html.spec.whatwg.org/#appropriate-place-for-inserting-a-node
@@ -297,8 +298,12 @@ pub fn appropriatePlaceForInsertion(self: *TreeBuilder, override_target: ?*Eleme
                 last_table_pos = idx;
                 break :blk;
             }
-            if (el.local_name.is(.template))
-                return .{ .last_child = el.asNode() };
+            if (el.local_name.is(.template)) {
+                return .{ .last_child = if (el.temp_contents) |contents|
+                    &contents.node
+                else
+                    el.asNode() };
+            }
         }
 
         if (last_table) |table| {
@@ -313,6 +318,10 @@ pub fn appropriatePlaceForInsertion(self: *TreeBuilder, override_target: ?*Eleme
             else
                 @panic("This should never happen: last_table_pos <= 0");
         } else return .{ .last_child = (self.htmlElement() orelse target).asNode() };
+    }
+    // FIXME: Move to other suitable place.
+    if (target.ns == .NS_Html and target.local_name.is(.template)) {
+        if (target.temp_contents) |contents| return .{ .last_child = &contents.node };
     }
     return .{ .last_child = target.asNode() };
 }
@@ -339,6 +348,13 @@ pub fn createElementForToken_E(self: *TreeBuilder, tag: token_.Tag, namespace: ?
     var element = Element.create(document, local, namespace, null, is, will_exec_script, registry);
     try element.appendAttrs(token_attrs.items);
 
+    // FIXME: Move this logic to other place.
+    if (namespace == .NS_Html and element.local_name.is(.template)) {
+        const contents = try self.allocator.create(DocumentFragment);
+        contents.* = DocumentFragment.init(document);
+        element.temp_contents = contents;
+        element.temp_contents_owned = true;
+    }
     // Step 12.
     if (will_exec_script) {
         document.*.todmi_counter += 1;
@@ -569,7 +585,11 @@ pub fn resetInsertionModeAppropriately(self: *TreeBuilder) void {
 
     while (i > 0) {
         i -= 1;
-        const node = self.open_elements.at(i);
+
+        const node = if (self.fragment_case and i == 0)
+            self.context orelse self.open_elements.at(i)
+        else
+            self.open_elements.at(i);
 
         // Only HTML elements participate in these tag-name checks.
         if (node.ns != .NS_Html) continue;
@@ -1241,9 +1261,12 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                                 const adjust_loc = self.appropriatePlaceForInsertion(null);
                                 const intended_parent = adjust_loc.getParent();
                                 self.document = intended_parent.node_doc;
-                                if (tmp_tag.shadowRootMode() != .SRM_None or !self.allow_decl_shadow_roots or self.isAdjustedCurrentNodeTopmost()) {
-                                    _ = try self.insertHtmlElement_E(tag_tk);
-                                } else {
+                                if (tmp_tag.shadowRootMode() != .SRM_None) {
+                                    if (!self.allow_decl_shadow_roots or self.isAdjustedCurrentNodeTopmost()) {
+                                        _ = try self.insertHtmlElement_E(tag_tk);
+                                        return .PR_Done;
+                                    }
+
                                     const decl_she = self.adjustedCurrentNode();
                                     const temp = try self.insertForeignElement_E(tmp_tag, .NS_Html, true);
                                     const sr_mode = tmp_tag.shadowRootMode();
@@ -1253,29 +1276,49 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                                     const serializable = tmp_tag.hasAttrName("shadowrootserializable");
                                     const delegate_focus = tmp_tag.hasAttrName("shadowrootdelegatesfocus");
                                     if (decl_she.shadow_root != null) {
-                                        self.insertElementAtAdjustedInsertionLocation(temp);
-                                    } else {
-                                        const registry =
-                                            if (tmp_tag.hasAttrName("shadowrootcustomelementregistry"))
-                                                null
-                                            else
-                                                decl_she.asNode().node_doc.custom_element_registry;
-                                        decl_she.attachShadowRoot(sr_mode, clonable, serializable, delegate_focus, slot_ass, registry) catch {
-                                            self.insertElementAtAdjustedInsertionLocation(temp);
-                                            // TODO: Optionally report the error.
-                                            return;
-                                        };
-                                        const shadow = decl_she.shadow_root;
-                                        if (shadow) |s| {
-                                            s.declarative = true;
-                                            temp.temp_contents = &s.doc_frag;
-                                            s.available = true;
-                                            s.keep_cer_null = tmp_tag.hasAttrName("shadowrootcustomelementregistry");
-                                        }
+                                        self.insertElementAt(temp, adjust_loc);
+                                        return .PR_Done;
                                     }
+
+                                    const registry =
+                                        if (tmp_tag.hasAttrName("shadowrootcustomelementregistry"))
+                                            null
+                                        else
+                                            decl_she.asNode().node_doc.custom_element_registry;
+                                    decl_she.attachShadowRoot(sr_mode, clonable, serializable, delegate_focus, slot_ass, registry) catch {
+                                        self.insertElementAt(temp, adjust_loc);
+                                        // TODO: Optionally report the error.
+                                        return .PR_Done;
+                                    };
+                                    const shadow = decl_she.shadow_root.?;
+                                    shadow.available = true;
+                                    shadow.declarative = true;
+                                    if (temp.temp_contents_owned) {
+                                        const old_contents = temp.temp_contents.?;
+                                        old_contents.node.destroy(self.allocator);
+                                        self.allocator.destroy(old_contents);
+                                    }
+                                    temp.temp_contents = &shadow.doc_frag;
+                                    temp.temp_contents_owned = false;
+                                    if (tmp_tag.hasAttrName("shadowrootcustomelementregistry"))
+                                        shadow.keep_cer_null = true;
+                                    return .PR_Done;
+                                } else if (tmp_tag.hasAttrName("for")) {
+                                    // Content patching is not supported by this DOM yet, so
+                                    // prepare content patching necessarily returns false. Apply
+                                    // the specification's failure path, undoing the stack-only
+                                    // insertion and inserting the template at the saved location.
+                                    const template = try self.insertForeignElement_E(tmp_tag, .NS_Html, true);
+                                    std.debug.assert(self.open_elements.pop() == template);
+                                    self.insertElementAt(template, adjust_loc);
+                                    try self.open_elements.append(template);
+                                } else {
+                                    _ = try self.insertHtmlElement_E(tag_tk);
                                 }
+                                return .PR_Done;
                             } else if (tag_tk.name.is(.head)) {
                                 self.unexpect(tk, .InHeadMode);
+                                return .PR_Done;
                             }
                         },
                         .EndTag => {
@@ -1895,7 +1938,7 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
             sw: switch (tk) {
                 .CharacterToken => {
                     if (self.currentNode().local_name.oneOf(&.{ .table, .tbody, .template, .tfoot, .thead, .tr })) {
-                        self.pending_table_char_tks = .empty;
+                        self.pending_table_char_tks.clearRetainingCapacity();
                         self.orig_insert_mode = self.insert_mode;
                         self.insert_mode = .InTableTextMode;
                         return try self.step_E(tk, null);
@@ -2062,7 +2105,7 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
             } else {
                 for (self.pending_table_char_tks.items) |pending_tk| {
                     if (pending_tk == .CharacterToken)
-                        try self.insertCharacter_E(null, tk);
+                        try self.insertCharacter_E(null, pending_tk);
                 }
             }
 

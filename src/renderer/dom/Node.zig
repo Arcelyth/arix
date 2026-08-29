@@ -72,6 +72,15 @@ pub fn destroy(self: *Node, alloc: std.mem.Allocator) void {
         .DOM_Element => {
             const element = self.downcast(Element);
             for (element.attrs.data.items) |*attr| attr.deinit();
+            if (element.shadow_root) |shadow| {
+                shadow.doc_frag.node.destroy(alloc);
+                alloc.destroy(shadow);
+            }
+            if (element.temp_contents_owned) {
+                const contents = element.temp_contents.?;
+                contents.node.destroy(alloc);
+                alloc.destroy(contents);
+            }
             element.attrs.deinit();
             element.local_name.deinit();
             alloc.destroy(element);

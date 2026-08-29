@@ -7,7 +7,7 @@ node: Node,
 
 pub const dom_type = .DOM_DocumentFragment;
 
-pub fn init(doc: Document) DocumentFragment {
+pub fn init(doc: *Document) DocumentFragment {
     return .{ .node = Node.init(dom_type, doc) };
 }
 

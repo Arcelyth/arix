@@ -61,6 +61,8 @@ result: ?ScriptResult,
 // --
 // -- Template element's field:
 temp_contents: ?*DocumentFragment,
+// FIXME: For template's ownership.
+temp_contents_owned: bool,
 
 pub const dom_type = .DOM_Element;
 
@@ -87,6 +89,7 @@ pub fn init(alloc: std.mem.Allocator, ns: Namespace, local: LocalName, document:
         .ty = null,
         .result = .SR_Uninitialized,
         .temp_contents = null,
+        .temp_contents_owned = false,
     };
 }
 
@@ -241,15 +244,19 @@ pub fn isForeignIntegrationBoundary(el: *Element, tk: Token) bool {
     return el.ns == .NS_Html or el.isMathMLTextIntegrationPoint() or el.isHtmlIntegrationPoint(tk);
 }
 
+// FIXME: Preliminary implementation currently, see: https://dom.spec.whatwg.org/#concept-attach-a-shadow-root.
 pub fn attachShadowRoot(self: *Element, mode: ShadowRoot.ShadowRootMode, clonable: bool, serializable: bool, delegates_focus: bool, slot_ass: ShadowRoot.ShadowRootSlotAssignment, registry: ?*CustomElementRegistry) !void {
-    //TODO
-    _ = self;
-    _ = mode;
-    _ = clonable;
-    _ = delegates_focus;
-    _ = slot_ass;
-    _ = serializable;
-    _ = registry;
+    if (self.shadow_root != null) return error.ShadowRootAlreadyAttached;
+
+    const shadow = try self.node.node_doc.allocator.create(ShadowRoot);
+    shadow.* = ShadowRoot.init(self.node.node_doc);
+    shadow.mode = mode;
+    shadow.clonable = clonable;
+    shadow.serialize = serializable;
+    shadow.delegates_focus = delegates_focus;
+    shadow.slot_assignment = slot_ass;
+    shadow.custom_element_registry = registry;
+    self.shadow_root = shadow;
 }
 
 /// If the type attribute define a value sanitization algorithm.

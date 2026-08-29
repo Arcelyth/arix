@@ -34,15 +34,15 @@ keep_cer_null: bool,
 
 pub const dom_type = .DOM_ShadowRoot;
 
-pub fn init(doc: Document) ShadowRoot {
+pub fn init(doc: *Document) ShadowRoot {
     return .{
         .doc_frag = DocumentFragment.init(doc),
         .custom_element_registry = null,
-        .mode = .SR_Open,
+        .mode = .SRM_Open,
         .delegates_focus = false,
         .available = false,
         .declarative = false,
-        .slot_assignment = .SR_Manual,
+        .slot_assignment = .SR_Named,
         .clonable = false,
         .serialize = false,
         .keep_cer_null = false,

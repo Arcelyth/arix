@@ -16,6 +16,7 @@ const Element = @import("../dom/Element.zig");
 const Text = @import("../dom/Text.zig");
 const Comment = @import("../dom/Comment.zig");
 const DocumentType = @import("../dom/DocumentType.zig");
+const Attr = @import("../dom/Attr.zig");
 const Namespace = @import("../dom/namespace.zig").Namespace;
 
 const testing = std.testing;
@@ -44,6 +45,11 @@ fn appendIndent(out: *std.ArrayList(u8), allocator: std.mem.Allocator, depth: us
     for (0..depth) |_| try out.appendSlice(allocator, "  ");
 }
 
+/// For sorting.
+fn attrLessThan(_: void, lhs: Attr, rhs: Attr) bool {
+    return std.mem.order(u8, lhs.local_name.slice(), rhs.local_name.slice()) == .lt;
+}
+
 /// Serialize a DOM node and its children into html5lib tree format.
 fn serializeNode(out: *std.ArrayList(u8), allocator: std.mem.Allocator, node: *Node, depth: usize) !void {
     if (out.items.len != 0) try out.append(allocator, '\n');
@@ -61,7 +67,10 @@ fn serializeNode(out: *std.ArrayList(u8), allocator: std.mem.Allocator, node: *N
             try out.appendSlice(allocator, element.local_name.slice());
             try out.append(allocator, '>');
 
-            for (element.attrs.data.items) |attr| {
+            const attrs = try allocator.dupe(Attr, element.attrs.data.items);
+            defer allocator.free(attrs);
+            std.mem.sort(Attr, attrs, {}, attrLessThan);
+            for (attrs) |attr| {
                 try out.append(allocator, '\n');
                 try appendIndent(out, allocator, depth + 1);
 
@@ -281,11 +290,11 @@ test "html5lib tree_construction inbody01" {
     try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html5lib-tests/tree-construction/inbody01.dat", testing.io);
 }
 
-//test "html5lib tree_construction isindex" {
-//    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-//    defer arena.deinit();
-//    try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html5lib-tests/tree-construction/isindex.dat", testing.io);
-//}
+test "html5lib tree_construction isindex" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html5lib-tests/tree-construction/isindex.dat", testing.io);
+}
 
 // test "html5lib tree_construction main-element" {
 //     var arena = std.heap.ArenaAllocator.init(testing.allocator);

@@ -338,11 +338,11 @@ test "html5lib tree_construction namespace-sensitivity" {
 //    try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html5lib-tests/tree-construction/pending-spec-changes.dat", testing.io);
 //}
 
-//test "html5lib tree_construction quirk01" {
-//    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-//    defer arena.deinit();
-//    try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html5lib-tests/tree-construction/quirk01.dat", testing.io);
-//}
+test "html5lib tree_construction quirks01" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html5lib-tests/tree-construction/quirks01.dat", testing.io);
+}
 
 // test "html5lib tree_construction plain-text-unsafe" {
 //     var arena = std.heap.ArenaAllocator.init(testing.allocator);

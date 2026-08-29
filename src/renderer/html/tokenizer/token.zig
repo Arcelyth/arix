@@ -65,9 +65,8 @@ pub const Doctype = struct {
 
         if (!self.name.eqlIgnoreCase("html")) return true;
 
-        if (self.public_id.isEmpty()) return false;
-
         if (self.system_id.eqlIgnoreCase("http://www.ibm.com/data/dtd/v11/ibmxhtml1-transitional.dtd")) return true;
+        if (self.public_id.isEmpty()) return false;
 
         const pub_slice = self.public_id.slice();
         const first_char = std.ascii.toLower(pub_slice[0]);

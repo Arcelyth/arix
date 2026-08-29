@@ -296,17 +296,17 @@ test "html5lib tree_construction isindex" {
     try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html5lib-tests/tree-construction/isindex.dat", testing.io);
 }
 
-// test "html5lib tree_construction main-element" {
-//     var arena = std.heap.ArenaAllocator.init(testing.allocator);
-//     defer arena.deinit();
-//     try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html5lib-tests/tree-construction/main-element.dat", testing.io);
-// }
+test "html5lib tree_construction main-element" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html5lib-tests/tree-construction/main-element.dat", testing.io);
+}
 
-//test "html5lib tree_construction math" {
-//    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-//    defer arena.deinit();
-//    try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html5lib-tests/tree-construction/math.dat", testing.io);
-//}
+test "html5lib tree_construction math" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html5lib-tests/tree-construction/math.dat", testing.io);
+}
 
 test "html5lib tree_construction menuitem-element" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
@@ -314,11 +314,11 @@ test "html5lib tree_construction menuitem-element" {
     try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html5lib-tests/tree-construction/menuitem-element.dat", testing.io);
 }
 
-//test "html5lib tree_construction namespace-senseitivity" {
-//    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-//    defer arena.deinit();
-//    try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html5lib-tests/tree-construction/namespace-senseitivity.dat", testing.io);
-//}
+test "html5lib tree_construction namespace-sensitivity" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html5lib-tests/tree-construction/namespace-sensitivity.dat", testing.io);
+}
 
 //test "html5lib tree_construction noscript01" {
 //    var arena = std.heap.ArenaAllocator.init(testing.allocator);

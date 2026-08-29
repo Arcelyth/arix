@@ -103,14 +103,14 @@ pub inline fn htmlElement(self: *OpenElementStack) ?*Element {
 pub inline fn popUntilPopped(self: *OpenElementStack, tag: LocalTag) void {
     while (self.len() > 0) {
         const el = self.els.pop();
-        if (el) |e| if (e.local_name.is(tag)) break;
+        if (el) |e| if (e.ns == .NS_Html and e.local_name.is(tag)) break;
     }
 }
 
 pub inline fn popUntil(self: *OpenElementStack, tag: LocalTag) void {
     while (self.len() > 0) {
         const node = self.currentNode();
-        if (node.local_name.is(tag)) break;
+        if (node.ns == .NS_Html and node.local_name.is(tag)) break;
         _ = self.els.pop();
     }
 }
@@ -118,7 +118,7 @@ pub inline fn popUntil(self: *OpenElementStack, tag: LocalTag) void {
 pub inline fn popUntilOneOfPopped(self: *OpenElementStack, tags: []const LocalTag) void {
     while (self.len() > 0) {
         const node = self.currentNode();
-        if (node.local_name.oneOf(tags)) break;
+        if (node.ns == .NS_Html and node.local_name.oneOf(tags)) break;
         _ = self.els.pop();
     }
 }

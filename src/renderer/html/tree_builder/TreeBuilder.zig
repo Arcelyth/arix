@@ -128,6 +128,27 @@ pub fn handlePendingToken(self: *TreeBuilder, token: PendingToken) ?TokenizerSta
     }
 
     while (true) {
+        if (self.ignore_next_lf) {
+            self.ignore_next_lf = false;
+            if (tk == .CharacterToken) {
+                const chars = tk.CharacterToken.slice();
+                if (chars.len > 0 and chars[0] == '\n') {
+                    if (chars.len == 1) {
+                        if (pending_tokens.items.len == 0) return null;
+                        tk.deinit(self.allocator);
+                        tk = pending_tokens.orderedRemove(0);
+                        continue;
+                    }
+                    const remainder = initPendingCharacter(
+                        tk.CharacterToken.split_status,
+                        chars[1..],
+                    );
+                    tk.deinit(self.allocator);
+                    tk = remainder;
+                }
+            }
+        }
+
         const result = if (self.isForeign(tk)) self.processTokenForeign(tk) else self.processToken(tk);
 
         switch (result) {
@@ -161,6 +182,13 @@ pub fn handlePendingToken(self: *TreeBuilder, token: PendingToken) ?TokenizerSta
             },
         }
     }
+}
+
+fn initPendingCharacter(status: types.SplitStatus, chars: []const u8) PendingToken {
+    return .{ .CharacterToken = .{
+        .split_status = status,
+        .data = StraleUtf8Global.initSlice(chars) catch @panic("OutOfMemory"),
+    } };
 }
 
 pub fn handleError(ptr: *anyopaque, err: TokenizerError, cur_line: usize) void {
@@ -526,6 +554,49 @@ pub fn insertCharacter_E(self: *TreeBuilder, chars: ?[]const u8, tk: PendingToke
     const document = parent.node_doc;
     var text = Text.create(document, data);
     self.insertNodeAt(text.asNode(), insert_loc);
+}
+
+fn processCharacterTokenIgnoringNull_E(
+    self: *TreeBuilder,
+    tk: PendingToken,
+    comptime process_run: fn (*TreeBuilder, []const u8, PendingToken, bool) anyerror!void,
+) !void {
+    const chars = tk.CharacterToken.slice();
+    const first_null = std.mem.indexOfScalar(u8, chars, 0) orelse {
+        try process_run(self, chars, tk, true);
+        return;
+    };
+
+    var start: usize = 0;
+    var null_at: ?usize = first_null;
+    while (null_at) |i| {
+        try process_run(self, chars[start..i], tk, false);
+        self.parseError(.null_character);
+        start = i + 1;
+        null_at = std.mem.indexOfScalarPos(u8, chars, start, 0);
+    }
+    try process_run(self, chars[start..], tk, false);
+}
+
+fn processInBodyCharacterRun_E(self: *TreeBuilder, chars: []const u8, tk: PendingToken, whole_token: bool) anyerror!void {
+    _ = whole_token;
+    if (chars.len == 0) return;
+    self.reconstructActiveFormattingElements();
+    try self.insertCharacter_E(chars, tk);
+    for (chars) |c| {
+        if (!ascii.isAsciiWhitespace(u8, c)) {
+            self.frameset_ok = false;
+            break;
+        }
+    }
+}
+
+fn bufferTableCharacterRun_E(self: *TreeBuilder, chars: []const u8, tk: PendingToken, whole_token: bool) anyerror!void {
+    if (chars.len == 0) return;
+    try self.pending_table_char_tks.append(self.allocator, .{ .CharacterToken = .{
+        .split_status = tk.CharacterToken.split_status,
+        .data = if (whole_token) tk.CharacterToken.data.clone() else try StraleUtf8Global.initSlice(chars),
+    } });
 }
 
 // https://html.spec.whatwg.org/multipage/parsing.html#insert-a-comment
@@ -1503,24 +1574,8 @@ pub fn step_E(self: *TreeBuilder, tk: PendingToken, mode: ?InsertionMode) !Proce
         // https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-inbody
         .InBodyMode => {
             switch (tk) {
-                .CharacterToken => |ch_tk| {
-                    if (ch_tk.eql("\u{0000}")) {
-                        self.unexpect(tk, .InBodyMode);
-                        return .PR_Done;
-                    }
-
-                    self.reconstructActiveFormattingElements();
-                    try self.insertCharacter_E(null, tk);
-
-                    var is_all_ws = true;
-                    for (ch_tk.slice()) |c| {
-                        if (!ascii.isAsciiWhitespace(u8, c)) {
-                            is_all_ws = false;
-                            break;
-                        }
-                    }
-
-                    if (!is_all_ws) self.frameset_ok = false;
+                .CharacterToken => {
+                    try self.processCharacterTokenIgnoringNull_E(tk, processInBodyCharacterRun_E);
                     return .PR_Done;
                 },
                 .CommentToken => |cmt_tk| {
@@ -2092,32 +2147,8 @@ pub fn step_E(self: *TreeBuilder, tk: PendingToken, mode: ?InsertionMode) !Proce
         // https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-intabletext
         .InTableTextMode => {
             switch (tk) {
-                .CharacterToken => |ch_tk| {
-                    const chars = ch_tk.slice();
-                    var start: usize = 0;
-                    var found_null = false;
-                    for (chars, 0..) |c, i| {
-                        if (c == 0) {
-                            found_null = true;
-                            self.parseError(.null_character);
-                            if (start < i) try self.pending_table_char_tks.append(self.allocator, .{ .CharacterToken = .{
-                                .split_status = .NotSplit,
-                                .data = try StraleUtf8Global.initSlice(chars[start..i]),
-                            } });
-                            start = i + 1;
-                        }
-                    }
-                    if (found_null) {
-                        if (start < chars.len) try self.pending_table_char_tks.append(self.allocator, .{ .CharacterToken = .{
-                            .split_status = .NotSplit,
-                            .data = try StraleUtf8Global.initSlice(chars[start..]),
-                        } });
-                    } else {
-                        try self.pending_table_char_tks.append(self.allocator, .{ .CharacterToken = .{
-                            .split_status = ch_tk.split_status,
-                            .data = ch_tk.data.clone(),
-                        } });
-                    }
+                .CharacterToken => {
+                    try self.processCharacterTokenIgnoringNull_E(tk, bufferTableCharacterRun_E);
                     return .PR_Done;
                 },
                 else => {},

@@ -345,11 +345,11 @@ test "html5lib tree_construction pending-spec-changes-plain-text-unsafe" {
     try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html5lib-tests/tree-construction/pending-spec-changes-plain-text-unsafe.dat", testing.io);
 }
 
-//test "html5lib tree_construction pending-spec-changes" {
-//    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-//    defer arena.deinit();
-//    try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html5lib-tests/tree-construction/pending-spec-changes.dat", testing.io);
-//}
+test "html5lib tree_construction pending-spec-changes" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html5lib-tests/tree-construction/pending-spec-changes.dat", testing.io);
+}
 
 test "html5lib tree_construction quirks01" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
@@ -357,11 +357,11 @@ test "html5lib tree_construction quirks01" {
     try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html5lib-tests/tree-construction/quirks01.dat", testing.io);
 }
 
-// test "html5lib tree_construction plain-text-unsafe" {
-//     var arena = std.heap.ArenaAllocator.init(testing.allocator);
-//     defer arena.deinit();
-//     try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html5lib-tests/tree-construction/plain-text-unsafe.dat", testing.io);
-// }
+test "html5lib tree_construction plain-text-unsafe" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html5lib-tests/tree-construction/plain-text-unsafe.dat", testing.io);
+}
 
 test "html5lib tree_construction ruby" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);

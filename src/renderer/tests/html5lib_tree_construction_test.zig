@@ -339,11 +339,11 @@ test "html5lib tree_construction noscript01" {
     try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html5lib-tests/tree-construction/noscript01.dat", testing.io);
 }
 
-//test "html5lib tree_construction pending-spec-changes-plain-text-unsafe" {
-//    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-//    defer arena.deinit();
-//    try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html5lib-tests/tree-construction/pending-spec-changes-plain-text-unsafe.dat", testing.io);
-//}
+test "html5lib tree_construction pending-spec-changes-plain-text-unsafe" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html5lib-tests/tree-construction/pending-spec-changes-plain-text-unsafe.dat", testing.io);
+}
 
 //test "html5lib tree_construction pending-spec-changes" {
 //    var arena = std.heap.ArenaAllocator.init(testing.allocator);

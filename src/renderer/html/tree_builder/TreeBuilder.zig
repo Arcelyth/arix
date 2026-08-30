@@ -101,6 +101,7 @@ pub fn deinit(self: *TreeBuilder) void {
     self.open_elements.deinit();
     self.temp_insert_modes.deinit(self.allocator);
     self.active_fmt_els.deinit();
+    for (self.pending_table_char_tks.items) |*tk| tk.deinit(self.allocator);
     self.pending_table_char_tks.deinit(self.allocator);
     self.document.destroy(self.allocator);
 }
@@ -2092,13 +2093,31 @@ pub fn step_E(self: *TreeBuilder, tk: PendingToken, mode: ?InsertionMode) !Proce
         .InTableTextMode => {
             switch (tk) {
                 .CharacterToken => |ch_tk| {
-                    for (ch_tk.slice()) |c| {
+                    const chars = ch_tk.slice();
+                    var start: usize = 0;
+                    var found_null = false;
+                    for (chars, 0..) |c, i| {
                         if (c == 0) {
+                            found_null = true;
                             self.parseError(.null_character);
-                            return .PR_Done;
+                            if (start < i) try self.pending_table_char_tks.append(self.allocator, .{ .CharacterToken = .{
+                                .split_status = .NotSplit,
+                                .data = try StraleUtf8Global.initSlice(chars[start..i]),
+                            } });
+                            start = i + 1;
                         }
                     }
-                    try self.pending_table_char_tks.append(self.allocator, tk);
+                    if (found_null) {
+                        if (start < chars.len) try self.pending_table_char_tks.append(self.allocator, .{ .CharacterToken = .{
+                            .split_status = .NotSplit,
+                            .data = try StraleUtf8Global.initSlice(chars[start..]),
+                        } });
+                    } else {
+                        try self.pending_table_char_tks.append(self.allocator, .{ .CharacterToken = .{
+                            .split_status = ch_tk.split_status,
+                            .data = ch_tk.data.clone(),
+                        } });
+                    }
                     return .PR_Done;
                 },
                 else => {},
@@ -2133,6 +2152,7 @@ pub fn step_E(self: *TreeBuilder, tk: PendingToken, mode: ?InsertionMode) !Proce
                 }
             }
 
+            for (self.pending_table_char_tks.items) |*pending_tk| pending_tk.deinit(self.allocator);
             self.pending_table_char_tks.clearRetainingCapacity();
             self.insert_mode = self.orig_insert_mode;
             return try self.step_E(tk, null);

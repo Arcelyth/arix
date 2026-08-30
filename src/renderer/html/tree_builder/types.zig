@@ -2,10 +2,11 @@ const std = @import("std");
 const Element = @import("../../dom/Element.zig");
 const Node = @import("../../dom/Node.zig");
 const token_ = @import("../tokenizer/token.zig");
-const TokenTag = token_.TokenTag; 
+const Token = token_.Token;
+const TokenTag = token_.TokenTag;
 const Tag = token_.Tag;
-const ProcessingInstruction =  token_.ProcessingInstruction;
-const Doctype = token_.Doctype; 
+const ProcessingInstruction = token_.ProcessingInstruction;
+const Doctype = token_.Doctype;
 const strale = @import("strale");
 const StraleUtf8Global = strale.StraleUtf8Global;
 
@@ -93,19 +94,27 @@ pub const Character = struct {
     data: StraleUtf8Global,
 
     pub fn init(data: StraleUtf8Global) Character {
-        defer data.deinit();
         return .{
             .split_status = .NotSplit,
             .data = data,
-        }; 
+        };
     }
 
-    pub fn deinit(self: Character) void {
+    pub fn deinit(self: *Character) void {
         self.data.deinit();
+    }
+
+    pub fn slice(self: *const Character) []const u8 {
+        return self.data.slice();
+    }
+
+    pub fn eql(self: *const Character, other: []const u8) bool {
+        return self.data.eql(other);
     }
 };
 
 pub const PendingToken = union(TokenTag) {
+    UndefinedToken,
     DoctypeToken: Doctype,
     TagToken: Tag,
     CommentToken: StraleUtf8Global,
@@ -113,8 +122,35 @@ pub const PendingToken = union(TokenTag) {
     EofToken,
     ProcessingInstructionToken: ProcessingInstruction,
 
+    pub fn init(raw_token: Token) PendingToken {
+        return switch (raw_token) {
+            .UndefinedToken => .UndefinedToken,
+            .DoctypeToken => |doctype| .{ .DoctypeToken = doctype },
+            .TagToken => |tag| .{ .TagToken = tag },
+            .CommentToken => |comment| .{ .CommentToken = comment },
+            .CharacterToken => |character| .{ .CharacterToken = Character.init(character) },
+            .EofToken => .EofToken,
+            .ProcessingInstructionToken => |pi| .{ .ProcessingInstructionToken = pi },
+        };
+    }
+
+    /// Borrow the pending token's payload for the existing tree-construction
+    /// algorithms. Ownership remains with the PendingToken.
+    pub fn token(self: PendingToken) Token {
+        return switch (self) {
+            .UndefinedToken => .UndefinedToken,
+            .DoctypeToken => |doctype| .{ .DoctypeToken = doctype },
+            .TagToken => |tag| .{ .TagToken = tag },
+            .CommentToken => |comment| .{ .CommentToken = comment },
+            .CharacterToken => |character| .{ .CharacterToken = character.data },
+            .EofToken => .EofToken,
+            .ProcessingInstructionToken => |pi| .{ .ProcessingInstructionToken = pi },
+        };
+    }
+
     pub fn deinit(self: *PendingToken, alloc: std.mem.Allocator) void {
         switch (self.*) {
+            .UndefinedToken => {},
             .EofToken => {},
 
             .DoctypeToken => |*doctype| {
@@ -201,7 +237,7 @@ pub const PendingToken = union(TokenTag) {
             .CharacterToken => |character| {
                 try writer.print(
                     "CharacterToken{{ split_status=\"{s}\", data=\"{s}\" }}",
-                    .{@typeName(character.split_status), character.data.slice()},
+                    .{ @tagName(character.split_status), character.data.slice() },
                 );
             },
 

@@ -36,6 +36,7 @@ const ActiveFormatElement = types.ActiveFormatElement;
 const InsertionMode = types.InsertionMode;
 const InsertionLocation = types.InsertionLocation;
 const ScriptingMode = types.ScriptingMode;
+const PendingToken = types.PendingToken;
 const dom_type = @import("../../dom/type.zig");
 const OpenElementStack = @import("OpenElementStack.zig");
 const ActiveFormatElementList = @import("ActiveFormatElementList.zig");
@@ -68,7 +69,7 @@ form_el_ptr: ?*Element,
 // List of active formatting elements.
 active_fmt_els: ActiveFormatElementList,
 allow_decl_shadow_roots: bool,
-pending_table_char_tks: std.ArrayList(Token),
+pending_table_char_tks: std.ArrayList(PendingToken),
 // Set after inserting pre, listing, or textarea. The tree builder ignores a
 // single leading LF in the next character token.
 ignore_next_lf: bool,
@@ -111,22 +112,54 @@ const vtable = Vtable{
     .adjustCurrentNodeAndNotInHtmlNamespace = adjustCurrentNodeAndNotInHtmlNamespace,
 };
 
-pub fn handleToken(ptr: *anyopaque, token_value: Token) ?TokenizerState {
+pub fn handleToken(ptr: *anyopaque, token: Token) ?TokenizerState {
     const self: *TreeBuilder = @ptrCast(@alignCast(ptr));
-    var tk = token_value;
-    defer tk.deinit(self.allocator);
-    // If need to acknowledge the token's self-closing flag.
-    const need_ack = switch (tk) {
-        .TagToken => |tag| tag.kind == .StartTag and tag.self_closing,
-        else => false,
-    };
-    _ = need_ack;
+    return self.handlePendingToken(PendingToken.init(token));
+}
 
-    const result = if (self.isForeign(tk)) self.processTokenForeign(tk) else self.processToken(tk);
-    return switch (result) {
-        .PR_ChangeState => |state| state,
-        else => null,
-    };
+pub fn handlePendingToken(self: *TreeBuilder, token: PendingToken) ?TokenizerState {
+    var tk = token;
+    var pending_tokens: std.ArrayList(PendingToken) = .empty;
+    defer {
+        tk.deinit(self.allocator);
+        for (pending_tokens.items) |*pending| pending.deinit(self.allocator);
+        pending_tokens.deinit(self.allocator);
+    }
+
+    while (true) {
+        const result = if (self.isForeign(tk)) self.processTokenForeign(tk) else self.processToken(tk);
+
+        switch (result) {
+            .PR_SplitWhitespace => {
+                const chars = tk.CharacterToken.slice();
+                if (chars.len == 0) return null;
+                const is_whitespace = ascii.isAsciiWhitespace(u8, chars[0]);
+                var split_at: usize = 1;
+                while (split_at < chars.len and ascii.isAsciiWhitespace(u8, chars[split_at]) == is_whitespace) : (split_at += 1) {}
+
+                var remainder: ?PendingToken = null;
+                if (split_at < chars.len) {
+                    remainder = .{ .CharacterToken = .{
+                        .split_status = .NotSplit,
+                        .data = StraleUtf8Global.initSlice(chars[split_at..]) catch @panic("OutOfMemory"),
+                    } };
+                }
+                const first = StraleUtf8Global.initSlice(chars[0..split_at]) catch @panic("OutOfMemory");
+                tk.deinit(self.allocator);
+                tk = .{ .CharacterToken = .{
+                    .split_status = if (is_whitespace) .Whitespace else .NotWhitespace,
+                    .data = first,
+                } };
+                if (remainder) |pending| pending_tokens.append(self.allocator, pending) catch @panic("OutOfMemory");
+            },
+            .PR_ChangeState => |state| return state,
+            .PR_Done, .PR_AckSelfClosing, .PR_StopParsing => {
+                if (pending_tokens.items.len == 0) return null;
+                tk.deinit(self.allocator);
+                tk = pending_tokens.orderedRemove(0);
+            },
+        }
+    }
 }
 
 pub fn handleError(ptr: *anyopaque, err: TokenizerError, cur_line: usize) void {
@@ -149,7 +182,7 @@ pub fn adapter(self: *TreeBuilder) TokenAdapter {
 // --- ---
 
 // https://html.spec.whatwg.org/#tree-construction-dispatcher
-pub fn isForeign(self: *TreeBuilder, tk: Token) bool {
+pub fn isForeign(self: *TreeBuilder, tk: PendingToken) bool {
     if (self.open_elements.len() == 0 or std.meta.activeTag(tk) == .EofToken) return false;
     const cur_el = self.adjustedCurrentNode();
 
@@ -174,7 +207,7 @@ pub fn isForeign(self: *TreeBuilder, tk: Token) bool {
         }
     }
 
-    if (cur_el.isHtmlIntegrationPoint(tk)) {
+    if (cur_el.isHtmlIntegrationPoint(tk.token())) {
         switch (tk) {
             .TagToken => |tag| {
                 if (tag.kind == .StartTag) return false;
@@ -187,12 +220,12 @@ pub fn isForeign(self: *TreeBuilder, tk: Token) bool {
     return true;
 }
 
-pub fn processToken(self: *TreeBuilder, tk: Token) ProcessResult {
+pub fn processToken(self: *TreeBuilder, tk: PendingToken) ProcessResult {
     return self.step_E(tk, null) catch @panic("[TODO]: handle error.");
 }
 
 // https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-inforeign
-pub fn processTokenForeign(self: *TreeBuilder, tk: Token) ProcessResult {
+pub fn processTokenForeign(self: *TreeBuilder, tk: PendingToken) ProcessResult {
     return switch (tk) {
         .CharacterToken => |ch_tk| blk: {
             const data = ch_tk.slice();
@@ -225,7 +258,7 @@ pub fn processTokenForeign(self: *TreeBuilder, tk: Token) ProcessResult {
         .TagToken => |tag_value| blk: {
             if (tag_value.isForeignContentBreakout()) {
                 self.unexpect(tk, self.insert_mode);
-                while (!self.currentNode().isForeignIntegrationBoundary(tk))
+                while (!self.currentNode().isForeignIntegrationBoundary(tk.token()))
                     _ = self.open_elements.pop();
                 break :blk self.processToken(tk);
             }
@@ -468,11 +501,11 @@ pub fn isPossibleToInsert(self: *const TreeBuilder) bool {
 }
 
 // https://html.spec.whatwg.org/multipage/parsing.html#insert-a-character
-pub fn insertCharacter_E(self: *TreeBuilder, chars: ?[]const u8, tk: Token) !void {
+pub fn insertCharacter_E(self: *TreeBuilder, chars: ?[]const u8, tk: PendingToken) !void {
     const data = if (chars) |slice|
         try StraleUtf8Global.initSlice(slice)
     else switch (tk) {
-        .CharacterToken => |ct| ct.clone(),
+        .CharacterToken => |ct| ct.data.clone(),
         else => return,
     };
 
@@ -1004,8 +1037,8 @@ pub fn adoptionAgencyAlgorithm(self: *TreeBuilder, tk: token_.Tag) void {
     }
 }
 
-pub inline fn unexpect(self: *TreeBuilder, tk: Token, mode: InsertionMode) void {
-    self.parseError(.{ .unexpected = .{ .tk = tk, .mode = mode } });
+pub inline fn unexpect(self: *TreeBuilder, tk: PendingToken, mode: InsertionMode) void {
+    self.parseError(.{ .unexpected = .{ .tk = tk.token(), .mode = mode } });
 }
 
 pub fn debugDetail(self: *const TreeBuilder) void {
@@ -1015,22 +1048,15 @@ pub fn debugDetail(self: *const TreeBuilder) void {
 /// A `null` mode means the token is processed or reprocessed using the current
 /// `self.insert_mode`. A non-null mode temporarily overrides the insertion mode
 /// for this call without modifying `self.insert_mode`.
-pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResult {
+pub fn step_E(self: *TreeBuilder, tk: PendingToken, mode: ?InsertionMode) !ProcessResult {
     switch (mode orelse self.insert_mode) {
         // https://html.spec.whatwg.org/multipage/parsing.html#the-initial-insertion-mode
         .InitialMode => {
             sw: switch (tk) {
-                .CharacterToken => |ch_tk| {
-                    const chars = ch_tk.slice();
-                    var prefix_len: usize = 0;
-                    while (prefix_len < chars.len and ascii.isAsciiWhitespace(u8, chars[prefix_len])) : (prefix_len += 1) {}
-                    if (prefix_len == chars.len) return .PR_Done;
-                    if (prefix_len > 0) {
-                        var remainder = Token{ .CharacterToken = try StraleUtf8Global.initSlice(chars[prefix_len..]) };
-                        defer remainder.CharacterToken.deinit();
-                        return try self.step_E(remainder, null);
-                    }
-                    break :sw;
+                .CharacterToken => |ch_tk| switch (ch_tk.split_status) {
+                    .NotSplit => return .PR_SplitWhitespace,
+                    .Whitespace => return .PR_Done,
+                    .NotWhitespace => break :sw,
                 },
                 .CommentToken => |cmt_tk| {
                     self.insertCommentToDocument(cmt_tk);
@@ -1081,17 +1107,10 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                     self.insertProcessingInstructionToDocument(pi_tk);
                     return .PR_Done;
                 },
-                .CharacterToken => |ch_tk| {
-                    const chars = ch_tk.slice();
-                    var prefix_len: usize = 0;
-                    while (prefix_len < chars.len and ascii.isAsciiWhitespace(u8, chars[prefix_len])) : (prefix_len += 1) {}
-                    if (prefix_len == chars.len) return .PR_Done;
-                    if (prefix_len > 0) {
-                        var remainder = Token{ .CharacterToken = try StraleUtf8Global.initSlice(chars[prefix_len..]) };
-                        defer remainder.CharacterToken.deinit();
-                        return try self.step_E(remainder, null);
-                    }
-                    break :sw;
+                .CharacterToken => |ch_tk| switch (ch_tk.split_status) {
+                    .NotSplit => return .PR_SplitWhitespace,
+                    .Whitespace => return .PR_Done,
+                    .NotWhitespace => break :sw,
                 },
                 .TagToken => |tag_tk| {
                     switch (tag_tk.kind) {
@@ -1127,11 +1146,10 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
         // https://html.spec.whatwg.org/multipage/parsing.html#the-before-head-insertion-mode
         .BeforeHeadMode => {
             sw: switch (tk) {
-                .CharacterToken => |ch_tk| {
-                    for (ch_tk.slice()) |c| {
-                        if (!ascii.isAsciiWhitespace(u8, c)) break :sw;
-                    }
-                    return .PR_Done;
+                .CharacterToken => |ch_tk| switch (ch_tk.split_status) {
+                    .NotSplit => return .PR_SplitWhitespace,
+                    .Whitespace => return .PR_Done,
+                    .NotWhitespace => break :sw,
                 },
                 .CommentToken => |cmt_tk| {
                     self.insertComment(cmt_tk, null);
@@ -1183,19 +1201,13 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
         // https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-inhead
         .InHeadMode => {
             sw: switch (tk) {
-                .CharacterToken => |ch_tk| {
-                    const chars = ch_tk.slice();
-                    var prefix_len: usize = 0;
-                    while (prefix_len < chars.len and ascii.isAsciiWhitespace(u8, chars[prefix_len])) : (prefix_len += 1) {}
-                    if (prefix_len > 0) try self.insertCharacter_E(chars[0..prefix_len], tk);
-                    if (prefix_len < chars.len) {
-                        _ = self.open_elements.pop();
-                        self.insert_mode = .AfterHeadMode;
-                        var remainder = Token{ .CharacterToken = try StraleUtf8Global.initSlice(chars[prefix_len..]) };
-                        defer remainder.CharacterToken.deinit();
-                        return try self.step_E(remainder, null);
-                    }
-                    return .PR_Done;
+                .CharacterToken => |ch_tk| switch (ch_tk.split_status) {
+                    .NotSplit => return .PR_SplitWhitespace,
+                    .Whitespace => {
+                        try self.insertCharacter_E(null, tk);
+                        return .PR_Done;
+                    },
+                    .NotWhitespace => break :sw,
                 },
                 .CommentToken => |cmt_tk| {
                     self.insertComment(cmt_tk, null);
@@ -1383,10 +1395,10 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                         },
                     }
                 },
-                .CharacterToken => |ch_tk| {
-                    for (ch_tk.slice()) |c| {
-                        if (!ascii.isAsciiWhitespace(u8, c)) return try self.step_E(tk, .InHeadMode);
-                    }
+                .CharacterToken => |ch_tk| switch (ch_tk.split_status) {
+                    .NotSplit => return .PR_SplitWhitespace,
+                    .Whitespace => return try self.step_E(tk, .InHeadMode),
+                    .NotWhitespace => {},
                 },
                 .CommentToken => {
                     return try self.step_E(tk, .InHeadMode);
@@ -1407,12 +1419,13 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
         // https://html.spec.whatwg.org/multipage/parsing.html#the-after-head-insertion-mode
         .AfterHeadMode => {
             sw: switch (tk) {
-                .CharacterToken => |ch_tk| {
-                    for (ch_tk.slice()) |c| {
-                        if (!ascii.isAsciiWhitespace(u8, c)) break :sw;
-                    }
-                    try self.insertCharacter_E(null, tk);
-                    return .PR_Done;
+                .CharacterToken => |ch_tk| switch (ch_tk.split_status) {
+                    .NotSplit => return .PR_SplitWhitespace,
+                    .Whitespace => {
+                        try self.insertCharacter_E(null, tk);
+                        return .PR_Done;
+                    },
+                    .NotWhitespace => break :sw,
                 },
                 .CommentToken => |cmt_tk| {
                     self.insertComment(cmt_tk, null);
@@ -2180,12 +2193,13 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
         // https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-incolgroup
         .InColumnGroupMode => {
             sw: switch (tk) {
-                .CharacterToken => |ch_tk| {
-                    for (ch_tk.slice()) |c| {
-                        if (!ascii.isAsciiWhitespace(u8, c)) break :sw;
-                    }
-                    try self.insertCharacter_E(null, tk);
-                    return .PR_Done;
+                .CharacterToken => |ch_tk| switch (ch_tk.split_status) {
+                    .NotSplit => return .PR_SplitWhitespace,
+                    .Whitespace => {
+                        try self.insertCharacter_E(null, tk);
+                        return .PR_Done;
+                    },
+                    .NotWhitespace => break :sw,
                 },
                 .CommentToken => |cmt_tk| {
                     self.insertComment(cmt_tk, null);
@@ -2507,11 +2521,10 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
         // https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-afterbody
         .AfterBodyMode => {
             sw: switch (tk) {
-                .CharacterToken => |ch_tk| {
-                    for (ch_tk.slice()) |c| {
-                        if (!ascii.isAsciiWhitespace(u8, c)) break :sw;
-                    }
-                    return try self.step_E(tk, .InBodyMode);
+                .CharacterToken => |ch_tk| switch (ch_tk.split_status) {
+                    .NotSplit => return .PR_SplitWhitespace,
+                    .Whitespace => return try self.step_E(tk, .InBodyMode),
+                    .NotWhitespace => break :sw,
                 },
                 .CommentToken => |cmt_tk| {
                     self.insertComment(cmt_tk, &.{ .last_child = self.open_elements.at(0).asNode() });
@@ -2555,11 +2568,13 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
         // https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-inframeset
         .InFramesetMode => {
             sw: switch (tk) {
-                .CharacterToken => |ch_tk| {
-                    for (ch_tk.slice()) |c| {
-                        if (!ascii.isAsciiWhitespace(u8, c)) break :sw;
-                    }
-                    return try self.step_E(tk, .InBodyMode);
+                .CharacterToken => |ch_tk| switch (ch_tk.split_status) {
+                    .NotSplit => return .PR_SplitWhitespace,
+                    .Whitespace => {
+                        try self.insertCharacter_E(null, tk);
+                        return .PR_Done;
+                    },
+                    .NotWhitespace => break :sw,
                 },
 
                 .CommentToken => |cmt_tk| {
@@ -2622,12 +2637,13 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
         // https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-afterframeset
         .AfterFramesetMode => {
             sw: switch (tk) {
-                .CharacterToken => |ch_tk| {
-                    for (ch_tk.slice()) |c| {
-                        if (!ascii.isAsciiWhitespace(u8, c)) break :sw;
-                    }
-                    try self.insertCharacter_E(null, tk);
-                    return .PR_Done;
+                .CharacterToken => |ch_tk| switch (ch_tk.split_status) {
+                    .NotSplit => return .PR_SplitWhitespace,
+                    .Whitespace => {
+                        try self.insertCharacter_E(null, tk);
+                        return .PR_Done;
+                    },
+                    .NotWhitespace => break :sw,
                 },
                 .CommentToken => |cmt_tk| {
                     self.insertComment(cmt_tk, null);
@@ -2683,11 +2699,10 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                 .DoctypeToken => {
                     return try self.step_E(tk, .InBodyMode);
                 },
-                .CharacterToken => |ch_tk| {
-                    for (ch_tk.slice()) |c| {
-                        if (!ascii.isAsciiWhitespace(u8, c)) break :sw;
-                    }
-                    return try self.step_E(tk, .InBodyMode);
+                .CharacterToken => |ch_tk| switch (ch_tk.split_status) {
+                    .NotSplit => return .PR_SplitWhitespace,
+                    .Whitespace => return try self.step_E(tk, .InBodyMode),
+                    .NotWhitespace => break :sw,
                 },
                 .TagToken => |tag_tk| {
                     if (tag_tk.kind == .StartTag and tag_tk.name.is(.html)) {
@@ -2720,11 +2735,10 @@ pub fn step_E(self: *TreeBuilder, tk: Token, mode: ?InsertionMode) !ProcessResul
                 .DoctypeToken => {
                     return try self.step_E(tk, .InBodyMode);
                 },
-                .CharacterToken => |ch_tk| {
-                    for (ch_tk.slice()) |c| {
-                        if (!ascii.isAsciiWhitespace(u8, c)) break :sw;
-                    }
-                    return try self.step_E(tk, .InBodyMode);
+                .CharacterToken => |ch_tk| switch (ch_tk.split_status) {
+                    .NotSplit => return .PR_SplitWhitespace,
+                    .Whitespace => return try self.step_E(tk, .InBodyMode),
+                    .NotWhitespace => break :sw,
                 },
                 .TagToken => |tag_tk| {
                     if (tag_tk.kind == .StartTag) {

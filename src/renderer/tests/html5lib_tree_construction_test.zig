@@ -174,6 +174,8 @@ fn runHtml5LibTestFile(
         const tree_adapter = test_tr_adapter.adapter();
         var tree_builder = TreeBuilder.init(allocator, tree_adapter, case.fragment != null);
         defer tree_builder.deinit();
+        if (case.scripting) |enabled|
+            tree_builder.scripting_mode = if (enabled) .Normal else .Disabled;
 
         var fragment_context: ?*Element = null;
         defer if (fragment_context) |context| context.asNode().destroy(allocator);
@@ -331,11 +333,11 @@ test "html5lib tree_construction namespace-sensitivity" {
     try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html5lib-tests/tree-construction/namespace-sensitivity.dat", testing.io);
 }
 
-//test "html5lib tree_construction noscript01" {
-//    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-//    defer arena.deinit();
-//    try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html5lib-tests/tree-construction/noscript01.dat", testing.io);
-//}
+test "html5lib tree_construction noscript01" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html5lib-tests/tree-construction/noscript01.dat", testing.io);
+}
 
 //test "html5lib tree_construction pending-spec-changes-plain-text-unsafe" {
 //    var arena = std.heap.ArenaAllocator.init(testing.allocator);

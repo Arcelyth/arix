@@ -739,12 +739,18 @@ pub fn closeCell(self: *TreeBuilder) void {
 pub inline fn addAttributesToElement_E(self: *TreeBuilder, el: *Element, attrs: []Attribute) !void {
     _ = self;
     for (attrs) |attr| {
-        const entry = el.attrs.getFromLocalName(attr.name.toTag().?);
-        if (entry) |e| try el.attrs.append(.{
-            .ns = null,
-            .prefix = null,
-            .local_name = e.local_name,
-            .value = e.value,
+        var already_present = false;
+        for (el.attrs.data.items) |existing| {
+            if (existing.local_name.eql(attr.name)) {
+                already_present = true;
+                break;
+            }
+        }
+        if (!already_present) try el.attrs.append(.{
+            .ns = attr.namespace,
+            .prefix = if (attr.prefix) |prefix| prefix.clone() else null,
+            .local_name = attr.name.clone(),
+            .value = attr.value.clone(),
             .element = null,
         });
     }
@@ -1380,7 +1386,11 @@ pub fn step_E(self: *TreeBuilder, tk: PendingToken, mode: ?InsertionMode) !Proce
                             if (tag_tk.name.is(.html)) {
                                 return try self.step_E(tk, .InBodyMode);
                             }
-                            if (tag_tk.name.oneOf(&.{ .basefont, .bgsound, .link, .meta, .noframes })) return try self.step_E(tk, .InHeadMode);
+                            if (tag_tk.name.oneOf(&.{ .basefont, .bgsound, .link, .meta, .noframes, .style })) return try self.step_E(tk, .InHeadMode);
+                            if (tag_tk.name.oneOf(&.{ .head, .noscript })) {
+                                self.unexpect(tk, .InHeadNoscriptMode);
+                                return .PR_Done;
+                            }
                         },
                         .EndTag => {
                             if (tag_tk.name.is(.noscript)) {

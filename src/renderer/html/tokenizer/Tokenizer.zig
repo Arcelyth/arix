@@ -1056,6 +1056,10 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                         self.setStateAndAdvance(.ScriptDataDoubleEscapedLessThanSign, input);
                         self.emitChar('<');
                     },
+                    '>' => {
+                        self.setStateAndAdvance(.ScriptData, input);
+                        self.emitChar('>');
+                    },
                     0x0000 => {
                         self.handleError(.UnexpectedNullCharacter);
                         self.setStateAndAdvance(.ScriptDataDoubleEscaped, input);

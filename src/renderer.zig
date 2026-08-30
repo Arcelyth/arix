@@ -10,6 +10,10 @@ pub const html5lib_tree_builder_test = @import("renderer/tests/html5lib_tree_con
 pub const TestParser = @import("renderer/tests/TestParser.zig");
 pub const TreeBuilder = @import("renderer/html/tree_builder/TreeBuilder.zig");
 
+// CSS
+pub const decode = @import("renderer/css/decode.zig");
+
+
 test {
     @import("std").testing.refAllDecls(@This());
 }

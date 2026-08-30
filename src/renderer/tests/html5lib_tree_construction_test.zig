@@ -265,11 +265,11 @@ test "html5lib tree_construction doctype01" {
     try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html5lib-tests/tree-construction/doctype01.dat", testing.io);
 }
 
-// test "html5lib tree_construction domjs-unsafe" {
-//     var arena = std.heap.ArenaAllocator.init(testing.allocator);
-//     defer arena.deinit();
-//     try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html5lib-tests/tree-construction/domjs-unsafe.dat", testing.io);
-// }
+test "html5lib tree_construction domjs-unsafe" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html5lib-tests/tree-construction/domjs-unsafe.dat", testing.io);
+}
 
 test "html5lib tree_construction entities01" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);

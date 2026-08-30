@@ -993,11 +993,11 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                 }
                 switch (ch) {
                     '-' => {
-                        self.setStateAndAdvance(.ScriptDataEscapedDash, input);
+                        self.setStateAndAdvance(.ScriptDataDoubleEscapedDash, input);
                         self.emitChar('-');
                     },
                     '<' => {
-                        self.setStateAndAdvance(.ScriptDataEscapedLessThanSign, input);
+                        self.setStateAndAdvance(.ScriptDataDoubleEscapedLessThanSign, input);
                         self.emitChar('<');
                     },
                     0x0000 => {
@@ -1091,7 +1091,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     },
                     else => {
                         if (ascii.isAsciiUpperAlpha(ch) and !is_eof) {
-                            try self.temporary_buffer.push(ch);
+                            try self.temporary_buffer.push(ch + 0x0020);
                             self.emitChar(ch);
                             self.nextChar(input);
                         } else if (ascii.isAsciiLowerAlpha(ch) and !is_eof) {
@@ -1354,8 +1354,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     if (!self.is_eof) self.preprocessChar(input, &self.ch);
                     self.state = .DOCTYPE;
                 } else if (self.match_sensitive(input, "[CDATA[")) {
-                    // TODO
-                    if (self.is_adjusted()) {
+                    if (self.adapter.adjustCurrentNodeAndNotInHtmlNamespace()) {
                         self.state = .CDATASection;
                     } else {
                         self.handleError(.CDATAInHtmlContent);

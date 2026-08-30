@@ -27,6 +27,7 @@ errors: std.ArrayList(ErrorMessage),
 const vtable = Vtable{
     .handleTokenFn = handleToken,
     .handleErrorFn = handleError,
+    .adjustCurrentNodeAndNotInHtmlNamespace = adjustCurrentNodeAndNotInHtmlNamespace,
 };
 
 pub fn init(alloc: std.mem.Allocator) TestAdapter {
@@ -63,6 +64,12 @@ pub fn handleToken(ptr: *anyopaque, token: Token) ?TokenizerState {
 pub fn handleError(ptr: *anyopaque, err: TokenizerError, cur_line: usize) void {
     const self: *TestAdapter = @ptrCast(@alignCast(ptr));
     self.errors.append(self.allocator, .{ .code = tokenizerErrorToString(err), .line = cur_line }) catch unreachable;
+}
+
+// Implement TokenAdapter's method.
+pub fn adjustCurrentNodeAndNotInHtmlNamespace(ptr: *anyopaque) bool {
+    _ = ptr;
+    return false;
 }
 
 pub fn expectError(self: *TestAdapter, idx: usize, expected_err: []const u8, cur_line: usize) !void {

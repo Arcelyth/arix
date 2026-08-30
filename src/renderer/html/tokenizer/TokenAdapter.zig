@@ -11,6 +11,7 @@ vtable: *const VTable,
 pub const VTable = struct {
     handleTokenFn: *const fn (ptr: *anyopaque, token: Token) ?TokenizerState,
     handleErrorFn: *const fn (ptr: *anyopaque, err: TokenizerError, cur_line: usize) void,
+    adjustCurrentNodeAndNotInHtmlNamespace: *const fn (ptr: *anyopaque) bool,
 };
 
 pub fn handleToken(self: TokenAdapter, token: Token) ?TokenizerState {
@@ -19,4 +20,9 @@ pub fn handleToken(self: TokenAdapter, token: Token) ?TokenizerState {
 
 pub fn handleError(self: TokenAdapter, err: TokenizerError, cur_line: usize) void {
     self.vtable.handleErrorFn(self.ptr, err, cur_line);
+}
+
+/// For markup-declaration-open-state.
+pub fn adjustCurrentNodeAndNotInHtmlNamespace(self: TokenAdapter) bool {
+    return self.vtable.adjustCurrentNodeAndNotInHtmlNamespace(self.ptr);
 }

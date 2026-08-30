@@ -108,6 +108,7 @@ pub fn deinit(self: *TreeBuilder) void {
 const vtable = Vtable{
     .handleTokenFn = handleToken,
     .handleErrorFn = handleError,
+    .adjustCurrentNodeAndNotInHtmlNamespace = adjustCurrentNodeAndNotInHtmlNamespace,
 };
 
 pub fn handleToken(ptr: *anyopaque, token_value: Token) ?TokenizerState {
@@ -121,12 +122,7 @@ pub fn handleToken(ptr: *anyopaque, token_value: Token) ?TokenizerState {
     };
     _ = need_ack;
 
-    // Dispatch token.
-    const result = if (self.isForeign(tk))
-        self.processTokenForeign(tk)
-    else
-        self.processToken(tk);
-
+    const result = if (self.isForeign(tk)) self.processTokenForeign(tk) else self.processToken(tk);
     return switch (result) {
         .PR_ChangeState => |state| state,
         else => null,
@@ -137,6 +133,11 @@ pub fn handleError(ptr: *anyopaque, err: TokenizerError, cur_line: usize) void {
     _ = ptr;
     _ = err;
     _ = cur_line;
+}
+
+pub fn adjustCurrentNodeAndNotInHtmlNamespace(ptr: *anyopaque) bool {
+    const self: *TreeBuilder = @ptrCast(@alignCast(ptr));
+    return self.open_elements.len() != 0 and self.adjustedCurrentNode().ns != .NS_Html;
 }
 
 pub fn adapter(self: *TreeBuilder) TokenAdapter {

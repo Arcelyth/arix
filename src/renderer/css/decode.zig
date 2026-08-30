@@ -1,6 +1,7 @@
 const std = @import("std");
 const encoding = @import("../html/encoding/encoding.zig");
 
+// https://drafts.csswg.org/css-syntax/#determine-the-fallback-encoding
 pub fn determineFallbackEncoding(
     http_encoding: ?[]const u8,
     byte_stream: []const u8,
@@ -27,9 +28,8 @@ pub fn determineFallbackEncoding(
                     const label = prefix[marker.len..i];
 
                     if (encoding.enc_map.get(label)) |enc| {
-                        if (enc == .utf16be or enc == .utf16le) {
+                        if (enc == .utf16be or enc == .utf16le)
                             return .utf8;
-                        }
                         return enc;
                     }
                 }
@@ -50,7 +50,7 @@ pub fn determineFallbackEncoding(
     return .utf8;
 }
 
-test "css encode: determine fallback encoding from @charset" {
+test "CSS encode: determine fallback encoding from @charset" {
     const css =
         \\@charset "windows-1252";
         \\body { color: red; }

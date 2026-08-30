@@ -11,4 +11,4 @@ test_tree:
 	zig build test --summary all -- tree_construction
 
 test_css: 
-	zig build test --summary all -- css 
+	zig build test --summary all -- CSS 

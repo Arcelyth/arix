@@ -1,4 +1,4 @@
-const Preprocessor = @This();
+const InputStream = @This();
 
 const std = @import("std");
 const ascii = @import("../utils/ascii.zig");
@@ -6,12 +6,12 @@ const ascii = @import("../utils/ascii.zig");
 utf8_bytes: []const u8,
 pos: usize = 0,
 
-pub fn init(bytes: []const u8) Preprocessor {
+pub fn init(bytes: []const u8) InputStream {
     return .{ .utf8_bytes = bytes };
 }
 
 /// Get next filtered code point, see: https://drafts.csswg.org/css-syntax/#css-filter-code-points.
-pub fn next(self: *Preprocessor) ?u21 {
+pub fn next(self: *InputStream) ?u21 {
     var cp = self.nextRaw() orelse return null;
 
     if (cp == '\r') {
@@ -26,11 +26,11 @@ pub fn next(self: *Preprocessor) ?u21 {
     return cp;
 }
 
-pub inline fn slice(self: *const Preprocessor, start: usize, end: usize) []const u8 {
+pub inline fn slice(self: *const InputStream, start: usize, end: usize) []const u8 {
     return self.utf8_bytes[start..end];
 }
 
-fn nextRaw(self: *Preprocessor) ?u21 {
+fn nextRaw(self: *InputStream) ?u21 {
     if (self.pos >= self.utf8_bytes.len) return null;
 
     // If code point is ASCII, return directly.
@@ -62,10 +62,10 @@ fn nextRaw(self: *Preprocessor) ?u21 {
 
 const testing = std.testing;
 
-test "CSS Preprocessor: handles invalid UTF-8" {
+test "CSS InputStream: handles invalid UTF-8" {
     const input = [_]u8{ 'a', 0xFF, 'b' };
 
-    var pre = Preprocessor.init(&input);
+    var pre = InputStream.init(&input);
 
     try testing.expectEqual(@as(u21, 'a'), pre.next().?);
     try testing.expectEqual(@as(u21, 0xFFFD), pre.next().?);
@@ -73,18 +73,18 @@ test "CSS Preprocessor: handles invalid UTF-8" {
     try testing.expect(pre.next() == null);
 }
 
-test "CSS Preprocessor: handles CR CR LF" {
+test "CSS InputStream: handles CR CR LF" {
     const input = "\r\r\n";
 
-    var pre = Preprocessor.init(input);
+    var pre = InputStream.init(input);
 
     try testing.expectEqual(@as(u21, '\n'), pre.next().?);
     try testing.expectEqual(@as(u21, '\n'), pre.next().?);
     try testing.expect(pre.next() == null);
 }
 
-test "CSS Preprocessor: source positions and slices" {
-    var pre = Preprocessor.init("abc");
+test "CSS InputStream: source positions and slices" {
+    var pre = InputStream.init("abc");
     const start = pre.pos;
     try testing.expectEqual(@as(u21, 'a'), pre.next().?);
     try testing.expectEqualStrings("a", pre.slice(start, pre.pos));

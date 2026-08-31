@@ -1,10 +1,10 @@
 const Tokenizer = @This();
 
 const std = @import("std");
-const Preprocessor = @import("Preprocessor.zig");
+const InputStream = @import("InputStream.zig");
 
 allocator: std.mem.Allocator,
-stream: Preprocessor,
+stream: InputStream,
 
 /// Fixed 3-code-point Ring-buffer lookahead. 
 lookahead: [3]u21 = undefined,
@@ -21,7 +21,7 @@ scratch: std.ArrayList(u8) = .empty,
 pub fn init(alloc: std.mem.Allocator, input_stream: []const u8) Tokenizer {
     return .{
         .allocator = alloc,
-        .stream = Preprocessor.init(input_stream),
+        .stream = InputStream.init(input_stream),
     };
 }
 

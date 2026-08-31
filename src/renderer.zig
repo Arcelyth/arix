@@ -13,6 +13,7 @@ pub const TreeBuilder = @import("renderer/html/tree_builder/TreeBuilder.zig");
 // CSS
 pub const decode = @import("renderer/css/decode.zig");
 pub const Preprocessor = @import("renderer/css/Preprocessor.zig");
+pub const CSSTokenizer = @import("renderer/css/Tokenizer.zig");
 
 test {
     @import("std").testing.refAllDecls(@This());

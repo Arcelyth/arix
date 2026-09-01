@@ -405,11 +405,14 @@ pub fn validEscape(first: ?u21, second: ?u21) bool {
 }
 
 // https://drafts.csswg.org/css-syntax/#would-start-an-identifier
-fn wouldStartIdentSequence(first: ?u21, second: ?u21, third: ?u21) bool {
-    _ = first;
-    _ = second;
-    _ = third;
-    @panic("TODO CSS Syntax §4.3.9");
+pub fn wouldStartIdentSequence(first: ?u21, second: ?u21, third: ?u21) bool {
+    const first_cp = first orelse return false;
+    return switch (first_cp) {
+        '-' => (if (second) |cp| ascii.isCssIdentStart(cp) or cp == '-' else false) or
+            validEscape(second, third),
+        '\\' => validEscape(first, second),
+        else => ascii.isCssIdentStart(first_cp),
+    };
 }
 
 // https://drafts.csswg.org/css-syntax/#starts-with-a-number

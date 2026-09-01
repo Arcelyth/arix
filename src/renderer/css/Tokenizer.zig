@@ -16,7 +16,7 @@ const ConsumedNumber = struct {
 allocator: std.mem.Allocator,
 stream: InputStream,
 
-/// Fixed 3-code-point Ring-buffer lookahead. 
+/// Fixed 3-code-point Ring-buffer lookahead.
 lookahead: [3]u21 = undefined,
 /// UTF-8 byte length of each buffered code point.
 lookahead_byte_len: [3]u3 = undefined,
@@ -254,8 +254,30 @@ pub fn consumeNumeric(self: *Tokenizer) Token {
 
 // https://drafts.csswg.org/css-syntax/#consume-ident-like-token
 pub fn consumeIdentLike(self: *Tokenizer) Token {
-    _ = self;
-    @panic("TODO CSS Syntax §4.3.4");
+    const name = self.consumeIdentSequence();
+
+    if (ascii.asciiCaseInsensitiveEq(name, "url") and self.peek(0) == '(') {
+        _ = self.next();
+
+        while (ascii.isCssWhitespace(self.peek(0)) and ascii.isCssWhitespace(self.peek(1)))
+            _ = self.next();
+
+        const first = self.peek(0);
+        if (first == '"' or first == '\'' or
+            (ascii.isCssWhitespace(first) and (self.peek(1) == '"' or self.peek(1) == '\'')))
+        {
+            return .{ .function = name };
+        }
+
+        return self.consumeUrl();
+    }
+
+    if (self.peek(0) == '(') {
+        _ = self.next();
+        return .{ .function = name };
+    }
+
+    return .{ .ident = name };
 }
 
 // https://drafts.csswg.org/css-syntax/#consume-string-token
@@ -263,6 +285,12 @@ pub fn consumeString(self: *Tokenizer, ending: u21) Token {
     _ = self;
     _ = ending;
     @panic("TODO CSS Syntax §4.3.5");
+}
+
+// https://drafts.csswg.org/css-syntax/#consume-url-token
+pub fn consumeUrl(self: *Tokenizer) Token {
+    _ = self;
+    @panic("TODO CSS Syntax §4.3.6");
 }
 
 // https://drafts.csswg.org/css-syntax/#starts-with-a-valid-escape
@@ -304,11 +332,11 @@ pub fn consumeIdentSequence(self: *Tokenizer) []const u21 {
 
 // https://drafts.csswg.org/css-syntax/#consume-number
 pub fn consumeNumber(self: *Tokenizer) ConsumedNumber {
-     _ = self;
+    _ = self;
     @panic("TODO CSS Syntax §4.3.13");
 }
 
-// https://drafts.csswg.org/css-syntax/#consume-unicode-range-token 
+// https://drafts.csswg.org/css-syntax/#consume-unicode-range-token
 pub fn consumeUnicodeRange(self: *Tokenizer) Token {
     _ = self;
     @panic("TODO CSS Syntax §4.3.14");

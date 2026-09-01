@@ -124,6 +124,15 @@ pub inline fn isCssWhitespace(c: u21) bool {
     return isCssNewline(c) or c == '\t' or c == ' ';
 }
 
+pub inline fn asciiCaseInsensitiveEq(value: []const u21, expected: []const u8) bool {
+    if (value.len != expected.len) return false;
+    for (value, expected) |cp, byte| {
+        if (cp > 0x7f) return false;
+        if (std.ascii.toLower(@as(u8, @intCast(cp))) != std.ascii.toLower(byte))
+            return false;
+    }
+    return true;
+}
 
 const testing = std.testing;
 

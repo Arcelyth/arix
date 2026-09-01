@@ -316,11 +316,62 @@ pub fn consumeString(self: *Tokenizer, ending: u21) Token {
 
 // https://drafts.csswg.org/css-syntax/#consume-url-token
 pub fn consumeUrl(self: *Tokenizer) Token {
-    _ = self;
-    @panic("TODO CSS Syntax §4.3.6");
+    self.resetScratch();
+
+    while (ascii.isCssWhitespace(self.peek(0))) _ = self.next();
+
+    while (true) {
+        const cp = self.next() orelse {
+            self.parseError();
+            return .{ .url = self.scratch.items };
+        };
+
+        switch (cp) {
+            ')' => return .{ .url = self.scratch.items },
+            ' ', '\t', '\n' => {
+                while (ascii.isCssWhitespace(self.peek(0))) _ = self.next();
+
+                if (self.peek(0) == ')') {
+                    _ = self.next();
+                    return .{ .url = self.scratch.items };
+                }
+                if (self.peek(0) == null) {
+                    self.parseError();
+                    return .{ .url = self.scratch.items };
+                }
+
+                self.consumeBadUrlRemnants();
+                return .bad_url;
+            },
+            '"', '\'', '(' => {
+                self.parseError();
+                self.consumeBadUrlRemnants();
+                return .bad_url;
+            },
+            '\\' => {
+                if (validEscape(cp, self.peek(0))) {
+                    const escaped = self.consumeEscapedCodePoint();
+                    self.appendScratch(escaped);
+                    continue;
+                }
+
+                self.parseError();
+                self.consumeBadUrlRemnants();
+                return .bad_url;
+            },
+            else => {
+                if (ascii.isCssNonPrintable(cp)) {
+                    self.parseError();
+                    self.consumeBadUrlRemnants();
+                    return .bad_url;
+                }
+                self.appendScratch(cp);
+            },
+        }
+    }
 }
 
-// https://drafts.csswg.org/css-syntax/#consume-escaped-code-point 
+// https://drafts.csswg.org/css-syntax/#consume-escaped-code-point
 pub fn consumeEscapedCodePoint(self: *Tokenizer) u21 {
     _ = self;
     @panic("TODO CSS Syntax §4.3.7");
@@ -373,6 +424,12 @@ pub fn consumeNumber(self: *Tokenizer) ConsumedNumber {
 pub fn consumeUnicodeRange(self: *Tokenizer) Token {
     _ = self;
     @panic("TODO CSS Syntax §4.3.14");
+}
+
+// https://drafts.csswg.org/css-syntax/#consume-remnants-of-bad-url
+pub fn consumeBadUrlRemnants(self: *Tokenizer) Token {
+    _ = self;
+    @panic("TODO CSS Syntax §4.3.15");
 }
 
 pub fn parseError(self: *Tokenizer) void {

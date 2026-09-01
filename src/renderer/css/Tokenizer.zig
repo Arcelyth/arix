@@ -432,10 +432,10 @@ fn wouldStartNumber(first: ?u21, second: ?u21, third: ?u21) bool {
 
 // https://drafts.csswg.org/css-syntax/#starts-a-unicode-range
 fn wouldStartUnicodeRange(first: ?u21, second: ?u21, third: ?u21) bool {
-    _ = first;
-    _ = second;
-    _ = third;
-    @panic("TODO CSS Syntax §4.3.11");
+    if (first != 'U' and first != 'u') return false;
+    if (second != '+') return false;
+    const third_cp = third orelse return false;
+    return third_cp == '?' or ascii.isAsciiHexDigit(third_cp);
 }
 
 // https://drafts.csswg.org/css-syntax/#consume-name

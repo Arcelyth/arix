@@ -373,8 +373,30 @@ pub fn consumeUrl(self: *Tokenizer) Token {
 
 // https://drafts.csswg.org/css-syntax/#consume-escaped-code-point
 pub fn consumeEscapedCodePoint(self: *Tokenizer) u21 {
-    _ = self;
-    @panic("TODO CSS Syntax §4.3.7");
+    const first = self.next() orelse {
+        self.parseError();
+        return 0xFFFD;
+    };
+
+    if (!ascii.isAsciiHexDigit(first)) return first;
+
+    var value: u32 = ascii.toHexDigit(first);
+    var count: u3 = 0;
+    while (count < 5) : (count += 1) {
+        const cp = self.peek(0) orelse break;
+        if (!ascii.isAsciiHexDigit(cp)) break;
+        _ = self.next();
+        value = value * 16 + ascii.toHexDigit(cp);
+    }
+
+    if (ascii.isCssWhitespace(self.peek(0))) _ = self.next();
+
+    if (value == 0 or value > ascii.maximum_code_point or
+        ascii.isSurrogate(u21, value))
+    {
+        return 0xFFFD;
+    }
+    return @intCast(value);
 }
 
 // https://drafts.csswg.org/css-syntax/#starts-with-a-valid-escape

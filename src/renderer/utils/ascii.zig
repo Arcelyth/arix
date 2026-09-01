@@ -134,6 +134,15 @@ pub inline fn asciiCaseInsensitiveEq(value: []const u21, expected: []const u8) b
     return true;
 }
 
+pub inline fn toHexDigit(comptime T: type, cp: T) u4 {
+    return switch (cp) {
+        '0'...'9' => @intCast(cp - '0'),
+        'A'...'F' => @intCast(cp - 'A' + 10),
+        'a'...'f' => @intCast(cp - 'a' + 10),
+        else => unreachable,
+    };
+}
+
 const testing = std.testing;
 
 test "CSS: code-point definitions" {

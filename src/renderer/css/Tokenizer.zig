@@ -416,7 +416,7 @@ pub fn wouldStartIdentSequence(first: ?u21, second: ?u21, third: ?u21) bool {
 }
 
 // https://drafts.csswg.org/css-syntax/#starts-with-a-number
-fn wouldStartNumber(first: ?u21, second: ?u21, third: ?u21) bool {
+pub fn wouldStartNumber(first: ?u21, second: ?u21, third: ?u21) bool {
     const first_cp = first orelse return false;
     return switch (first_cp) {
         '+', '-' => if (second) |second_cp|
@@ -431,7 +431,7 @@ fn wouldStartNumber(first: ?u21, second: ?u21, third: ?u21) bool {
 }
 
 // https://drafts.csswg.org/css-syntax/#starts-a-unicode-range
-fn wouldStartUnicodeRange(first: ?u21, second: ?u21, third: ?u21) bool {
+pub fn wouldStartUnicodeRange(first: ?u21, second: ?u21, third: ?u21) bool {
     if (first != 'U' and first != 'u') return false;
     if (second != '+') return false;
     const third_cp = third orelse return false;
@@ -440,8 +440,28 @@ fn wouldStartUnicodeRange(first: ?u21, second: ?u21, third: ?u21) bool {
 
 // https://drafts.csswg.org/css-syntax/#consume-name
 pub fn consumeIdentSequence(self: *Tokenizer) []const u21 {
-    _ = self;
-    @panic("TODO CSS Syntax §4.3.12");
+    self.resetScratch();
+
+    while (true) {
+        const cp = self.next() orelse {
+            self.reconsume();
+            return self.scratch.items;
+        };
+
+        if (ascii.isCssIdent(cp)) {
+            self.appendScratch(cp);
+            continue;
+        }
+
+        if (validEscape(cp, self.peek(0))) {
+            const escaped = self.consumeEscapedCodePoint();
+            self.appendScratch(escaped);
+            continue;
+        }
+
+        self.reconsume();
+        return self.scratch.items;
+    }
 }
 
 // https://drafts.csswg.org/css-syntax/#consume-number

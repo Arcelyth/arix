@@ -6,6 +6,13 @@ const ascii = @import("../utils/ascii.zig");
 const token = @import("token.zig");
 const Token = token.Token;
 
+// Result for 4.3.13.
+const ConsumedNumber = struct {
+    value: f64,
+    sign: ?token.Sign = null,
+    type_flag: token.NumberType = .integer,
+};
+
 allocator: std.mem.Allocator,
 stream: InputStream,
 
@@ -219,8 +226,30 @@ pub fn consumeComments(self: *Tokenizer) void {
 
 // https://drafts.csswg.org/css-syntax/#consume-numeric-token
 pub fn consumeNumeric(self: *Tokenizer) Token {
-    _ = self;
-    @panic("TODO CSS Syntax §4.3.3");
+    const number = self.consumeNumber();
+
+    if (wouldStartIdentSequence(self.peek(0), self.peek(1), self.peek(2))) {
+        return .{ .dimension = .{
+            .value = number.value,
+            .sign = number.sign,
+            .type_flag = number.type_flag,
+            .unit = self.consumeIdentSequence(),
+        } };
+    }
+
+    if (self.peek(0) == '%') {
+        _ = self.next();
+        return .{ .percentage = .{
+            .value = number.value,
+            .sign = number.sign,
+        } };
+    }
+
+    return .{ .number = .{
+        .value = number.value,
+        .sign = number.sign,
+        .type_flag = number.type_flag,
+    } };
 }
 
 // https://drafts.csswg.org/css-syntax/#consume-ident-like-token
@@ -271,6 +300,12 @@ fn wouldStartUnicodeRange(first: ?u21, second: ?u21, third: ?u21) bool {
 pub fn consumeIdentSequence(self: *Tokenizer) []const u21 {
     _ = self;
     @panic("TODO CSS Syntax §4.3.12");
+}
+
+// https://drafts.csswg.org/css-syntax/#consume-number
+pub fn consumeNumber(self: *Tokenizer) ConsumedNumber {
+     _ = self;
+    @panic("TODO CSS Syntax §4.3.13");
 }
 
 // https://drafts.csswg.org/css-syntax/#consume-unicode-range-token 

@@ -393,7 +393,7 @@ pub fn consumeEscapedCodePoint(self: *Tokenizer) u21 {
 
     if (value == 0 or value > ascii.maximum_code_point or ascii.isSurrogate(u21, value))
         return 0xFFFD;
-    
+
     return @intCast(value);
 }
 
@@ -546,8 +546,50 @@ pub fn consumeNumber(self: *Tokenizer) ConsumedNumber {
 
 // https://drafts.csswg.org/css-syntax/#consume-unicode-range-token
 pub fn consumeUnicodeRange(self: *Tokenizer) Token {
-    _ = self;
-    @panic("TODO CSS Syntax §4.3.14");
+    _ = self.next();
+    _ = self.next();
+
+    var start: u32 = 0;
+    var end: u32 = 0;
+    var count: u3 = 0;
+
+    while (count < 6) : (count += 1) {
+        const cp = self.peek(0) orelse break;
+        if (!ascii.isAsciiHexDigit(cp)) break;
+        _ = self.next();
+        start = start * 16 + ascii.toHexDigit(u21, cp);
+    }
+    end = start;
+
+    var has_wildcard = false;
+    while (count < 6 and self.peek(0) == '?') : (count += 1) {
+        _ = self.next();
+        has_wildcard = true;
+        start *= 16;
+        end = end * 16 + 0xF;
+    }
+
+    if (has_wildcard)
+        return .{ .unicode_range = .{ .start = start, .end = end } };
+
+    if (self.peek(0) == '-') {
+        if (self.peek(1)) |cp| {
+            if (ascii.isAsciiHexDigit(cp)) {
+                _ = self.next();
+                end = 0;
+                count = 0;
+                while (count < 6) : (count += 1) {
+                    const digit = self.peek(0) orelse break;
+                    if (!ascii.isAsciiHexDigit(digit)) break;
+                    _ = self.next();
+                    end = end * 16 + ascii.toHexDigit(u21, digit);
+                }
+                return .{ .unicode_range = .{ .start = start, .end = end } };
+            }
+        }
+    }
+
+    return .{ .unicode_range = .{ .start = start, .end = start } };
 }
 
 // https://drafts.csswg.org/css-syntax/#consume-remnants-of-bad-url

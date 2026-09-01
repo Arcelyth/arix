@@ -417,10 +417,17 @@ pub fn wouldStartIdentSequence(first: ?u21, second: ?u21, third: ?u21) bool {
 
 // https://drafts.csswg.org/css-syntax/#starts-with-a-number
 fn wouldStartNumber(first: ?u21, second: ?u21, third: ?u21) bool {
-    _ = first;
-    _ = second;
-    _ = third;
-    @panic("TODO CSS Syntax §4.3.10");
+    const first_cp = first orelse return false;
+    return switch (first_cp) {
+        '+', '-' => if (second) |second_cp|
+            ascii.isAsciiDigit(second_cp) or
+                (second_cp == '.' and if (third) |third_cp| ascii.isAsciiDigit(third_cp) else false)
+        else
+            false,
+        '.' => if (second) |cp| ascii.isAsciiDigit(cp) else false,
+        '0'...'9' => true,
+        else => false,
+    };
 }
 
 // https://drafts.csswg.org/css-syntax/#starts-a-unicode-range

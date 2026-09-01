@@ -593,9 +593,12 @@ pub fn consumeUnicodeRange(self: *Tokenizer) Token {
 }
 
 // https://drafts.csswg.org/css-syntax/#consume-remnants-of-bad-url
-pub fn consumeBadUrlRemnants(self: *Tokenizer) Token {
-    _ = self;
-    @panic("TODO CSS Syntax §4.3.15");
+pub fn consumeBadUrlRemnants(self: *Tokenizer) void {
+    while (true) {
+        const cp = self.next() orelse return;
+        if (cp == ')') return;
+        if (validEscape(cp, self.peek(0))) _ = self.consumeEscapedCodePoint();
+    }
 }
 
 pub fn parseError(self: *Tokenizer) void {

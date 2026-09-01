@@ -101,6 +101,10 @@ pub inline fn isCssIdent(c: u21) bool {
     return isCssIdentStart(c) or isAsciiDigit(c) or c == '-';
 }
 
+pub inline fn isCssIdent_O(cp: ?u21) bool {
+    return if (cp) |value| isCssIdent(value) else false;
+}
+
 //https://drafts.csswg.org/css-syntax/#non-printable-code-point
 pub inline fn isCssNonPrintable(c: u21) bool {
     return c <= 0x0008 or

@@ -2,6 +2,9 @@ const Tokenizer = @This();
 
 const std = @import("std");
 const InputStream = @import("InputStream.zig");
+const ascii = @import("../utils/ascii.zig");
+const token = @import("token.zig");
+const Token = token.Token;
 
 allocator: std.mem.Allocator,
 stream: InputStream,
@@ -91,6 +94,179 @@ inline fn ringIndex(head: u2, offset: u2) usize {
     var index: u3 = @as(u3, head) + @as(u3, offset);
     if (index >= 3) index -= 3;
     return index;
+}
+
+// https://drafts.csswg.org/css-syntax/#consume-token
+pub fn consume(self: *Tokenizer, unicode_ranges_allowed: bool) Token {
+    self.consumeComments();
+    const cp = self.next() orelse return .eof;
+
+    if (ascii.isCssWhitespace(cp)) {
+        while (if (self.peek(0)) |next_cp| ascii.isCssWhitespace(next_cp) else false) _ = self.next();
+        return .whitespace;
+    }
+
+    switch (cp) {
+        '"', '\'' => return self.consumeString(cp),
+        '#' => {
+            if (ascii.isCssIdent_O(self.peek(0)) or validEscape(self.peek(0), self.peek(1))) {
+                const type_flag: token.HashType = if (wouldStartIdentSequence(self.peek(0), self.peek(1), self.peek(2))) .id else .unrestricted;
+                return .{ .hash = .{ .value = self.consumeIdentSequence(), .type_flag = type_flag } };
+            }
+            return .{ .delim = cp };
+        },
+        '(' => return .left_paren,
+        ')' => return .right_paren,
+        '+' => {
+            if (wouldStartNumber(cp, self.peek(0), self.peek(1))) {
+                self.reconsume();
+                return self.consumeNumeric();
+            }
+            return .{ .delim = cp };
+        },
+        ',' => return .comma,
+        '-' => {
+            if (wouldStartNumber(cp, self.peek(0), self.peek(1))) {
+                self.reconsume();
+                return self.consumeNumeric();
+            }
+            if (self.peek(0) == '-' and self.peek(1) == '>') {
+                _ = self.next();
+                _ = self.next();
+                return .cdc;
+            }
+            if (wouldStartIdentSequence(cp, self.peek(0), self.peek(1))) {
+                self.reconsume();
+                return self.consumeIdentLike();
+            }
+            return .{ .delim = cp };
+        },
+        '.' => {
+            if (wouldStartNumber(cp, self.peek(0), self.peek(1))) {
+                self.reconsume();
+                return self.consumeNumeric();
+            }
+            return .{ .delim = cp };
+        },
+        ':' => return .colon,
+        ';' => return .semicolon,
+        '<' => {
+            if (self.peek(0) == '!' and self.peek(1) == '-' and self.peek(2) == '-') {
+                _ = self.next();
+                _ = self.next();
+                _ = self.next();
+                return .cdo;
+            }
+            return .{ .delim = cp };
+        },
+        '@' => {
+            if (wouldStartIdentSequence(self.peek(0), self.peek(1), self.peek(2)))
+                return .{ .at_keyword = self.consumeIdentSequence() };
+            return .{ .delim = cp };
+        },
+        '[' => return .left_bracket,
+        '\\' => {
+            if (validEscape(cp, self.peek(0))) {
+                self.reconsume();
+                return self.consumeIdentLike();
+            }
+            self.parseError();
+            return .{ .delim = cp };
+        },
+        ']' => return .right_bracket,
+        '{' => return .left_brace,
+        '}' => return .right_brace,
+        '0'...'9' => {
+            self.reconsume();
+            return self.consumeNumeric();
+        },
+        'U', 'u' => {
+            if (unicode_ranges_allowed and wouldStartUnicodeRange(cp, self.peek(0), self.peek(1))) {
+                self.reconsume();
+                return self.consumeUnicodeRange();
+            }
+            self.reconsume();
+            return self.consumeIdentLike();
+        },
+        else => {
+            if (ascii.isCssIdentStart(cp)) {
+                self.reconsume();
+                return self.consumeIdentLike();
+            }
+            return .{ .delim = cp };
+        },
+    }
+}
+
+// https://drafts.csswg.org/css-syntax/#consume-comment
+pub fn consumeComments(self: *Tokenizer) void {
+    _ = self;
+}
+
+// https://drafts.csswg.org/css-syntax/#consume-numeric-token
+pub fn consumeNumeric(self: *Tokenizer) Token {
+    _ = self;
+    @panic("TODO CSS Syntax §4.3.3");
+}
+
+// https://drafts.csswg.org/css-syntax/#consume-ident-like-token
+pub fn consumeIdentLike(self: *Tokenizer) Token {
+    _ = self;
+    @panic("TODO CSS Syntax §4.3.4");
+}
+
+// https://drafts.csswg.org/css-syntax/#consume-string-token
+pub fn consumeString(self: *Tokenizer, ending: u21) Token {
+    _ = self;
+    _ = ending;
+    @panic("TODO CSS Syntax §4.3.5");
+}
+
+// https://drafts.csswg.org/css-syntax/#starts-with-a-valid-escape
+fn validEscape(first: ?u21, second: ?u21) bool {
+    _ = first;
+    _ = second;
+    @panic("TODO CSS Syntax §4.3.8");
+}
+
+// https://drafts.csswg.org/css-syntax/#would-start-an-identifier
+fn wouldStartIdentSequence(first: ?u21, second: ?u21, third: ?u21) bool {
+    _ = first;
+    _ = second;
+    _ = third;
+    @panic("TODO CSS Syntax §4.3.9");
+}
+
+// https://drafts.csswg.org/css-syntax/#starts-with-a-number
+fn wouldStartNumber(first: ?u21, second: ?u21, third: ?u21) bool {
+    _ = first;
+    _ = second;
+    _ = third;
+    @panic("TODO CSS Syntax §4.3.10");
+}
+
+// https://drafts.csswg.org/css-syntax/#starts-a-unicode-range
+fn wouldStartUnicodeRange(first: ?u21, second: ?u21, third: ?u21) bool {
+    _ = first;
+    _ = second;
+    _ = third;
+    @panic("TODO CSS Syntax §4.3.11");
+}
+
+// https://drafts.csswg.org/css-syntax/#consume-name
+pub fn consumeIdentSequence(self: *Tokenizer) []const u21 {
+    _ = self;
+    @panic("TODO CSS Syntax §4.3.12");
+}
+
+// https://drafts.csswg.org/css-syntax/#consume-unicode-range-token 
+pub fn consumeUnicodeRange(self: *Tokenizer) Token {
+    _ = self;
+    @panic("TODO CSS Syntax §4.3.14");
+}
+
+pub fn parseError(self: *Tokenizer) void {
+    _ = self;
 }
 
 test "CSS Tokenizer: caches three-code-point lookahead" {

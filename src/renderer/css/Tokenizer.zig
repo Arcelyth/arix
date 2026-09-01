@@ -26,7 +26,7 @@ current: ?u21 = null,
 reconsume_current: bool = false,
 /// Reused for decoded escapes and replacement characters. Common tokens
 /// borrow the original input and never touch this buffer.
-scratch: std.ArrayList(u8) = .empty,
+scratch: std.ArrayList(u21) = .empty,
 
 pub fn init(alloc: std.mem.Allocator, input_stream: []const u8) Tokenizer {
     return .{
@@ -466,8 +466,82 @@ pub fn consumeIdentSequence(self: *Tokenizer) []const u21 {
 
 // https://drafts.csswg.org/css-syntax/#consume-number
 pub fn consumeNumber(self: *Tokenizer) ConsumedNumber {
-    _ = self;
-    @panic("TODO CSS Syntax §4.3.13");
+    var result: ConsumedNumber = .{ .value = 0 };
+    var negative = false;
+
+    if (self.peek(0)) |cp| {
+        switch (cp) {
+            '+' => {
+                _ = self.next();
+                result.sign = .plus;
+            },
+            '-' => {
+                _ = self.next();
+                result.sign = .minus;
+                negative = true;
+            },
+            else => {},
+        }
+    }
+
+    while (self.peek(0)) |cp| {
+        if (!ascii.isAsciiDigit(cp)) break;
+        _ = self.next();
+        result.value = result.value * 10.0 + @as(f64, @floatFromInt(cp - '0'));
+    }
+
+    if (self.peek(0) == '.') {
+        if (self.peek(1)) |cp| {
+            if (ascii.isAsciiDigit(cp)) {
+                _ = self.next();
+                result.type_flag = .number;
+
+                var place: f64 = 0.1;
+                while (self.peek(0)) |digit| {
+                    if (!ascii.isAsciiDigit(digit)) break;
+                    _ = self.next();
+                    result.value += @as(f64, @floatFromInt(digit - '0')) * place;
+                    place *= 0.1;
+                }
+            }
+        }
+    }
+
+    const exp_marker = self.peek(0);
+    if (exp_marker == 'E' or exp_marker == 'e') {
+        const second = self.peek(1);
+        const has_exp = if (second) |cp|
+            ascii.isAsciiDigit(cp) or
+                ((cp == '+' or cp == '-') and
+                    (if (self.peek(2)) |third| ascii.isAsciiDigit(third) else false))
+        else
+            false;
+
+        if (has_exp) {
+            _ = self.next();
+            result.type_flag = .number;
+
+            var exp_negative = false;
+            if (self.peek(0)) |cp| {
+                if (cp == '+' or cp == '-') {
+                    _ = self.next();
+                    exp_negative = cp == '-';
+                }
+            }
+
+            var exp: f64 = 0;
+            while (self.peek(0)) |cp| {
+                if (!ascii.isAsciiDigit(cp)) break;
+                _ = self.next();
+                exp = exp * 10.0 + @as(f64, @floatFromInt(cp - '0'));
+            }
+            if (exp_negative) exp = -exp;
+            result.value *= std.math.pow(f64, 10.0, exp);
+        }
+    }
+
+    if (negative) result.value = -result.value;
+    return result;
 }
 
 // https://drafts.csswg.org/css-syntax/#consume-unicode-range-token

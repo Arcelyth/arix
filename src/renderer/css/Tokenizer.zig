@@ -391,19 +391,17 @@ pub fn consumeEscapedCodePoint(self: *Tokenizer) u21 {
 
     if (ascii.isCssWhitespace(self.peek(0))) _ = self.next();
 
-    if (value == 0 or value > ascii.maximum_code_point or
-        ascii.isSurrogate(u21, value))
-    {
+    if (value == 0 or value > ascii.maximum_code_point or ascii.isSurrogate(u21, value))
         return 0xFFFD;
-    }
+    
     return @intCast(value);
 }
 
 // https://drafts.csswg.org/css-syntax/#starts-with-a-valid-escape
-fn validEscape(first: ?u21, second: ?u21) bool {
-    _ = first;
-    _ = second;
-    @panic("TODO CSS Syntax §4.3.8");
+pub fn validEscape(first: ?u21, second: ?u21) bool {
+    if (first != '\\') return false;
+    const following = second orelse return false;
+    return !ascii.isCssNewline(following);
 }
 
 // https://drafts.csswg.org/css-syntax/#would-start-an-identifier

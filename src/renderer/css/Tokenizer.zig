@@ -282,15 +282,48 @@ pub fn consumeIdentLike(self: *Tokenizer) Token {
 
 // https://drafts.csswg.org/css-syntax/#consume-string-token
 pub fn consumeString(self: *Tokenizer, ending: u21) Token {
-    _ = self;
-    _ = ending;
-    @panic("TODO CSS Syntax §4.3.5");
+    self.resetScratch();
+
+    while (true) {
+        const cp = self.next() orelse {
+            self.parseError();
+            return .{ .string = self.scratch.items };
+        };
+
+        if (cp == ending) return .{ .string = self.scratch.items };
+
+        if (ascii.isCssNewline(cp)) {
+            self.parseError();
+            self.reconsume();
+            return .bad_string;
+        }
+
+        if (cp == '\\') {
+            const following = self.peek(0) orelse continue;
+            if (ascii.isCssNewline(following)) {
+                _ = self.next();
+                continue;
+            }
+
+            const escaped = self.consumeEscapedCodePoint();
+            self.appendScratch(escaped);
+            continue;
+        }
+
+        self.appendScratch(cp);
+    }
 }
 
 // https://drafts.csswg.org/css-syntax/#consume-url-token
 pub fn consumeUrl(self: *Tokenizer) Token {
     _ = self;
     @panic("TODO CSS Syntax §4.3.6");
+}
+
+// https://drafts.csswg.org/css-syntax/#consume-escaped-code-point 
+pub fn consumeEscapedCodePoint(self: *Tokenizer) u21 {
+    _ = self;
+    @panic("TODO CSS Syntax §4.3.7");
 }
 
 // https://drafts.csswg.org/css-syntax/#starts-with-a-valid-escape
@@ -344,6 +377,10 @@ pub fn consumeUnicodeRange(self: *Tokenizer) Token {
 
 pub fn parseError(self: *Tokenizer) void {
     _ = self;
+}
+
+inline fn appendScratch(self: *Tokenizer, cp: u21) void {
+    self.scratch.append(self.allocator, cp) catch @panic("out of memory");
 }
 
 test "CSS Tokenizer: caches three-code-point lookahead" {

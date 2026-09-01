@@ -200,7 +200,21 @@ pub fn consume(self: *Tokenizer, unicode_ranges_allowed: bool) Token {
 
 // https://drafts.csswg.org/css-syntax/#consume-comment
 pub fn consumeComments(self: *Tokenizer) void {
-    _ = self;
+    while (self.peek(0) == '/' and self.peek(1) == '*') {
+        _ = self.next();
+        _ = self.next();
+
+        while (true) {
+            const cp = self.next() orelse {
+                self.parseError();
+                return;
+            };
+            if (cp == '*' and self.peek(0) == '/') {
+                _ = self.next();
+                break;
+            }
+        }
+    }
 }
 
 // https://drafts.csswg.org/css-syntax/#consume-numeric-token

@@ -11,6 +11,8 @@ pub const Item = union(enum) {
     component_value: ComponentValue,
 };
 
+const eof_item: Item = .{ .token = .eof };
+
 /// Half-open byte offsets into the decoded UTF-8 source.
 pub const Span = struct {
     start: u32,
@@ -64,16 +66,20 @@ pub fn deinit(self: *TokenStream) void {
     self.marked_indexes.deinit(self.allocator);
 }
 
-pub inline fn nextToken(self: *const TokenStream) Item {
-    if (self.index < self.tokens.len) return self.tokens[self.index];
-    return .{ .token = .eof };
+/// Return a reference to the item at the current index or the conceptual EOF
+/// token. 
+/// "process" operation is intentionally expressed at each call site so there
+/// is no callback or dynamic dispatch in the parser hot path.
+pub inline fn nextToken(self: *const TokenStream) *const Item {
+    if (self.index < self.tokens.len) return &self.tokens[self.index];
+    return &eof_item;
 }
 
 pub inline fn empty(self: *const TokenStream) bool {
     return isEof(self.nextToken());
 }
 
-pub inline fn consumeToken(self: *TokenStream) Item {
+pub inline fn consumeToken(self: *TokenStream) *const Item {
     const item = self.nextToken();
     self.index += 1;
     return item;
@@ -99,17 +105,6 @@ pub fn discardWhitespace(self: *TokenStream) void {
     while (isWhitespace(self.nextToken())) self.discardToken();
 }
 
-pub fn process(
-    self: *TokenStream,
-    comptime Result: type,
-    context: anytype,
-    action: anytype,
-) Result {
-    while (true) {
-        if (action(context, self, self.nextToken())) |result| return result;
-    }
-}
-
 pub fn originalText(self: *const TokenStream, first: usize, past_last: usize) ?[]const u8 {
     const source = self.source orelse return null;
     const spans = self.spans orelse return null;
@@ -123,15 +118,15 @@ pub fn originalText(self: *const TokenStream, first: usize, past_last: usize) ?[
     return source[spans[first].start..spans[past_last - 1].end];
 }
 
-inline fn isEof(item: Item) bool {
-    return switch (item) {
+inline fn isEof(item: *const Item) bool {
+    return switch (item.*) {
         .token => |value| value == .eof,
         .component_value => false,
     };
 }
 
-inline fn isWhitespace(item: Item) bool {
-    return switch (item) {
+inline fn isWhitespace(item: *const Item) bool {
+    return switch (item.*) {
         .token => |value| value == .whitespace,
         .component_value => |value| switch (value) {
             .preserved_token => |preserved| preserved == .whitespace,
@@ -141,3 +136,64 @@ inline fn isWhitespace(item: Item) bool {
 }
 
 
+const testing = std.testing;
+
+test "CSS Token Stream: consumes discards and reaches conceptual EOF" {
+    const items = [_]Item{
+        .{ .token = .whitespace },
+        .{ .token = .{ .ident = &.{'a'} } },
+    };
+    var stream = TokenStream.init(testing.allocator, &items);
+    defer stream.deinit();
+
+    stream.discardWhitespace();
+    try testing.expectEqual(1, stream.index);
+    const ident = stream.consumeToken().token.ident;
+    try testing.expectEqualSlices(u21, &.{'a'}, ident);
+    try testing.expect(stream.empty());
+    stream.discardToken();
+    try testing.expectEqual(2, stream.index);
+    try testing.expectEqual(std.meta.Tag(Token).eof, std.meta.activeTag(stream.consumeToken().token));
+    try testing.expectEqual(3, stream.index);
+}
+
+test "CSS Token Stream: restores and discards nested marks" {
+    const items = [_]Item{
+        .{ .token = .colon },
+        .{ .token = .semicolon },
+    };
+    var stream = TokenStream.init(testing.allocator, &items);
+    defer stream.deinit();
+
+    try stream.mark();
+    stream.discardToken();
+    try stream.mark();
+    stream.discardToken();
+    try stream.restoreMark();
+    try testing.expectEqual(1, stream.index);
+    try stream.discardMark();
+    try testing.expectEqual(1, stream.index);
+    try testing.expectError(error.NoMark, stream.restoreMark());
+    try testing.expectError(error.NoMark, stream.discardMark());
+}
+
+test "CSS Token Stream: reproduces original text" {
+    const source = "color /* retained */ : red";
+    const items = [_]Item{
+        .{ .token = .{ .ident = &.{ 'c', 'o', 'l', 'o', 'r' } } },
+        .{ .token = .colon },
+        .{ .token = .{ .ident = &.{ 'r', 'e', 'd' } } },
+    };
+    const spans = [_]Span{
+        .{ .start = 0, .end = 5 },
+        .{ .start = 21, .end = 22 },
+        .{ .start = 23, .end = 26 },
+    };
+    var stream = try TokenStream.initWithSource(testing.allocator, &items, source, &spans);
+    defer stream.deinit();
+
+    try testing.expectEqualStrings(source, stream.originalText(0, 3).?);
+    try testing.expectEqualStrings(": red", stream.originalText(1, 3).?);
+    try testing.expectEqualStrings("", stream.originalText(3, 3).?);
+    try testing.expect(stream.originalText(2, 1) == null);
+}

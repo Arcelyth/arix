@@ -1,4 +1,4 @@
-/// CSS Syntax §5.2 parsing result types.
+/// Implementation of CSS Syntax §5.2 parsing result types.
 const token = @import("token.zig");
 
 // FIXME: Use Strale will be better?

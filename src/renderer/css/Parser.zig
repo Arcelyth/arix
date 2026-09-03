@@ -107,7 +107,7 @@ pub fn parseComponentValue(self: *Parser) ParserError!results.ComponentValue {
 
 // https://drafts.csswg.org/css-syntax/#parse-list-of-component-values
 pub fn parseListOfComponentValues(self: *Parser) ParserError![]results.ComponentValue {
-    return self.consumeListOfComponentValues(self.input);
+    return self.consumeListOfComponentValues(self.input, null, false);
 }
 
 // https://drafts.csswg.org/css-syntax/#parse-comma-separated-list-of-component-values
@@ -611,15 +611,29 @@ fn containsInvalidTopLevelBrace(value: []const results.ComponentValue) bool {
 // https://drafts.csswg.org/css-syntax/#consume-list-of-components
 fn consumeListOfComponentValues(
     self: *Parser,
-    stream: *TokenStream,
-    stop: ?Token,
+    input: *TokenStream,
+    stop: ?StopToken,
     nested: bool,
 ) ParserError![]results.ComponentValue {
-    _ = self;
-    _ = stream;
-    _ = stop;
-    _ = nested;
-    @panic("TODO CSS Syntax §5.5.7");
+    var values: std.ArrayList(results.ComponentValue) = .empty;
+    errdefer values.deinit(self.allocator);
+
+    while (true) switch (input.nextToken().*) {
+        .token => |tk| {
+            if (tk == .eof or isStopToken_O(tk, stop))
+                return values.toOwnedSlice(self.allocator);
+
+            if (tk == .right_brace and nested)
+                return values.toOwnedSlice(self.allocator);
+
+            if (tk == .right_brace) self.parseError();
+            try values.append(self.allocator, try self.consumeComponentValue(input));
+        },
+        .component_value => try values.append(
+            self.allocator,
+            try self.consumeComponentValue(input),
+        ),
+    };
 }
 
 // https://drafts.csswg.org/css-syntax/#consume-component-value

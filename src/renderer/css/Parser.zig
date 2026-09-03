@@ -689,9 +689,24 @@ fn consumeFunction(
     self: *Parser,
     input: *TokenStream,
 ) ParserError!results.Function {
-    _ = self;
-    _ = input;
-    @panic("TODO CSS Syntax §5.5.10");
+    const name = input.nextToken().token.function;
+    input.discardToken();
+
+    var value: std.ArrayList(results.ComponentValue) = .empty;
+    errdefer value.deinit(self.allocator);
+    while (true) switch (input.nextToken().*) {
+        .token => |tk| if (tk == .eof or tk == .right_paren) {
+            input.discardToken();
+            return .{
+                .name = name,
+                .value = try value.toOwnedSlice(self.allocator),
+            };
+        } else try value.append(self.allocator, try self.consumeComponentValue(input)),
+        .component_value => try value.append(
+            self.allocator,
+            try self.consumeComponentValue(input),
+        ),
+    };
 }
 
 // https://drafts.csswg.org/css-syntax/#consume-unicode-range-value

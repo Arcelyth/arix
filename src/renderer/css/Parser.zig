@@ -87,6 +87,23 @@ pub fn parseRule(self: *Parser) ParserError!results.Rule {
     return rule;
 }
 
+// https://drafts.csswg.org/css-syntax/#parse-declaration
+pub fn parseDeclaration(self: *Parser) ParserError!results.Declaration {
+    self.input.discardWhitespace();
+    return (try self.consumeDeclaration(self.input, false)) orelse error.Syntax;
+}
+
+// https://drafts.csswg.org/css-syntax/#parse-component-value
+pub fn parseComponentValue(self: *Parser) ParserError!results.ComponentValue {
+    self.input.discardWhitespace();
+    if (self.input.empty()) return error.Syntax;
+
+    const value = try self.consumeComponentValue(self.input);
+    self.input.discardWhitespace();
+    if (!self.input.empty()) return error.Syntax;
+    return value;
+}
+
 // https://drafts.csswg.org/css-syntax/#parse-list-of-component-values
 pub fn parseListOfComponentValues(self: *Parser) ParserError![]results.ComponentValue {
     return self.consumeListOfComponentValues(self.input);
@@ -153,6 +170,18 @@ fn consumeBlockContents(
     @panic("TODO CSS Syntax §5.5.5");
 }
 
+// https://drafts.csswg.org/css-syntax/#consume-declaration
+fn consumeDeclaration(
+    self: *Parser,
+    input: *TokenStream,
+    nested: bool,
+) ParserError!?results.Declaration {
+    _ = self;
+    _ = input;
+    _ = nested;
+    @panic("TODO CSS Syntax §5.5.6");
+}
+
 // https://drafts.csswg.org/css-syntax/#consume-list-of-components
 fn consumeListOfComponentValues(
     self: *Parser,
@@ -165,4 +194,14 @@ fn consumeListOfComponentValues(
     _ = stop;
     _ = nested;
     @panic("TODO CSS Syntax §5.5.7");
+}
+
+// https://drafts.csswg.org/css-syntax/#consume-component-value
+fn consumeComponentValue(
+    self: *Parser,
+    input: *TokenStream,
+) ParserError!results.ComponentValue {
+    _ = self;
+    _ = input;
+    @panic("TODO CSS Syntax §5.5.8");
 }

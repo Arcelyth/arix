@@ -11,7 +11,7 @@ const results = @import("parsing_results.zig");
 pub const ParserError =
     std.mem.Allocator.Error ||
     TokenStream.SourceMapError ||
-    error{ Syntax, InputTooLarge };
+    error{ Syntax, InvalidRule, InputTooLarge };
 
 allocator: std.mem.Allocator,
 input: *TokenStream,
@@ -77,8 +77,8 @@ pub fn parseRule(self: *Parser) ParserError!results.Rule {
         .token => |tk| if (tk == .at_keyword)
             (try self.consumeAtRule(self.input, false)) orelse return error.Syntax
         else
-            (try self.consumeQualifiedRule(self.input, false)) orelse return error.Syntax,
-        .component_value => (try self.consumeQualifiedRule(self.input, false)) orelse
+            (try self.consumeQualifiedRule(self.input, null, false)) orelse return error.Syntax,
+        .component_value => (try self.consumeQualifiedRule(self.input, null, false)) orelse
             return error.Syntax,
     };
 
@@ -140,10 +140,10 @@ fn consumeStylesheetContents(
             .eof => return rules.toOwnedSlice(self.allocator),
             .at_keyword => if (try self.consumeAtRule(input, false)) |rule|
                 try rules.append(self.allocator, rule),
-            else => if (try self.consumeQualifiedRule(input, false)) |rule|
+            else => if (try self.consumeQualifiedRule(input, null, false)) |rule|
                 try rules.append(self.allocator, rule),
         },
-        .component_value => if (try self.consumeQualifiedRule(input, false)) |rule|
+        .component_value => if (try self.consumeQualifiedRule(input, null, false)) |rule|
             try rules.append(self.allocator, rule),
     };
 }
@@ -181,7 +181,8 @@ fn consumeAtRule(
                         .prelude = try prelude.toOwnedSlice(self.allocator),
                     } };
                 }
-                try prelude.append(self.allocator, input.consumeToken());
+                input.discardToken();
+                try prelude.append(self.allocator, .{ .preserved_token = .right_brace });
             },
             .left_brace => {
                 const block = try self.consumeBlock(input);
@@ -190,7 +191,7 @@ fn consumeAtRule(
                     .prelude = try prelude.toOwnedSlice(self.allocator),
                 };
                 errdefer self.allocator.free(rule.prelude);
-                try self.handleBlockItems(block, &rule);
+                try self.materializeAtRuleRuleBlock(block, &rule);
                 return .{ .at_rule = rule };
             },
             else => try prelude.append(self.allocator, try self.consumeComponentValue(input)),
@@ -203,7 +204,7 @@ fn consumeAtRule(
 }
 
 // FIXME: This function should be optimized.
-fn handleBlockItems(self: *Parser, block: []results.BlockItem, rule: *results.AtRule) std.mem.Allocator.Error!void {
+fn materializeAtRuleRuleBlock(self: *Parser, block: []results.BlockItem, rule: *results.AtRule) std.mem.Allocator.Error!void {
     defer {
         for (block) |item| switch (item) {
             .declarations => |decls| self.allocator.free(decls),
@@ -245,12 +246,137 @@ fn handleBlockItems(self: *Parser, block: []results.BlockItem, rule: *results.At
 fn consumeQualifiedRule(
     self: *Parser,
     input: *TokenStream,
+    stop: ?StopToken,
     nested: bool,
-) ParserError![]results.BlockItem {
-    _ = self;
-    _ = input;
-    _ = nested;
-    @panic("TODO CSS Syntax §5.5.3");
+) ParserError!?results.Rule {
+    var prelude: std.ArrayList(results.ComponentValue) = .empty;
+    defer prelude.deinit(self.allocator);
+
+    while (true) {
+        const item = input.nextToken();
+        switch (item.*) {
+            .token => |tk| {
+                if (tk == .eof or isStopToken_O(tk, stop)) {
+                    self.parseError();
+                    return null;
+                }
+
+                switch (tk) {
+                    .right_brace => {
+                        self.parseError();
+                        if (nested) return null;
+                        input.discardToken();
+                        try prelude.append(self.allocator, .{ .preserved_token = .right_brace });
+                    },
+                    .left_brace => {
+                        if (startsCustomPropertyDeclaration(prelude.items)) {
+                            if (nested) {
+                                try self.consumeBadDeclarationRemnants(input, true);
+                            } else {
+                                const discarded = try self.consumeBlock(input);
+                                self.freeBlockItems(discarded);
+                            }
+                            return null;
+                        }
+
+                        const block = try self.consumeBlock(input);
+                        var rule: results.QualifiedRule = .{
+                            .prelude = try prelude.toOwnedSlice(self.allocator),
+                        };
+                        errdefer self.allocator.free(rule.prelude);
+                        try self.materializeQualifiedRuleBlock(block, &rule);
+                        return .{ .qualified_rule = rule };
+                    },
+                    else => try prelude.append(
+                        self.allocator,
+                        try self.consumeComponentValue(input),
+                    ),
+                }
+            },
+            .component_value => try prelude.append(
+                self.allocator,
+                try self.consumeComponentValue(input),
+            ),
+        }
+    }
+}
+
+inline fn isStopToken_O(tk: Token, stop: ?StopToken) bool {
+    const value = stop orelse return false;
+    return switch (value) {
+        .comma => tk == .comma,
+        .semicolon => tk == .semicolon,
+    };
+}
+
+/// A custom property declaration starts with an identifier whose name begins
+/// with `--`, followed by optional whitespace and a colon.
+/// For example: `--foo: value`
+fn startsCustomPropertyDeclaration(prelude: []const results.ComponentValue) bool {
+    var first: ?results.PreservedToken = null;
+    var second: ?results.PreservedToken = null;
+
+    for (prelude) |value| {
+        const preserved = switch (value) {
+            .preserved_token => |tk| tk,
+            else => return false,
+        };
+        if (preserved == .whitespace) continue;
+        if (first == null) {
+            first = preserved;
+        } else {
+            second = preserved;
+            break;
+        }
+    }
+
+    const name = switch (first orelse return false) {
+        .ident => |value| value,
+        else => return false,
+    };
+    if (name.len < 2 or name[0] != '-' or name[1] != '-') return false;
+    return (second orelse return false) == .colon;
+}
+
+// FIXME: This function should be optimized.
+fn materializeQualifiedRuleBlock(
+    self: *Parser,
+    block: []results.BlockItem,
+    rule: *results.QualifiedRule,
+) std.mem.Allocator.Error!void {
+    errdefer self.freeBlockItems(block);
+
+    var first_child: usize = 0;
+    if (block.len > 0) switch (block[0]) {
+        .declarations => |declarations| {
+            rule.declarations = declarations;
+            first_child = 1;
+        },
+        .rule => {},
+    };
+
+    const child_rules = try self.allocator.alloc(results.Rule, block.len - first_child);
+    errdefer self.allocator.free(child_rules);
+
+    for (block[first_child..], child_rules) |item, *child| {
+        child.* = switch (item) {
+            .rule => |child_rule| child_rule,
+            .declarations => |declarations| .{ .qualified_rule = .{
+                .declarations = declarations,
+            } },
+        };
+    }
+
+    self.allocator.free(block);
+    rule.child_rules = child_rules;
+}
+
+fn freeBlockItems(self: *Parser, block: []results.BlockItem) void {
+    for (block) |item| switch (item) {
+        .declarations => |declarations| self.allocator.free(declarations),
+        .rule => {},
+    };
+    self.allocator.free(block);
 }
 
 // https://drafts.csswg.org/css-syntax/#consume-block
@@ -343,6 +469,18 @@ fn consumeDeclaration(
     @panic("TODO CSS Syntax §5.5.6");
 }
 
+// https://drafts.csswg.org/css-syntax/#consume-the-remnants-of-a-bad-declaration 
+fn consumeBadDeclarationRemnants(
+    self: *Parser,
+    input: *TokenStream,
+    nested: bool,
+) ParserError!void {
+    _ = self;
+    _ = input;
+    _ = nested;
+    @panic("TODO CSS Syntax ");
+}
+
 // https://drafts.csswg.org/css-syntax/#consume-list-of-components
 fn consumeListOfComponentValues(
     self: *Parser,
@@ -365,4 +503,8 @@ fn consumeComponentValue(
     _ = self;
     _ = input;
     @panic("TODO CSS Syntax §5.5.8");
+}
+
+fn parseError(self: *Parser) void {
+    _ = self;
 }

@@ -5,6 +5,7 @@ const InputStream = @import("InputStream.zig");
 const ascii = @import("../utils/ascii.zig");
 const token = @import("token.zig");
 const Token = token.Token;
+const String = @import("String.zig");
 
 // Result for 4.3.13.
 const ConsumedNumber = struct {
@@ -23,6 +24,7 @@ lookahead_byte_len: [3]u3 = undefined,
 lookahead_head: u2 = 0,
 lookahead_len: u2 = 0,
 current: ?u21 = null,
+current_byte_len: u3 = 0,
 reconsume_current: bool = false,
 /// Reused for decoded escapes and replacement characters. Common tokens
 /// borrow the original input and never touch this buffer.
@@ -50,10 +52,14 @@ pub inline fn next(self: *Tokenizer) ?u21 {
         return self.current;
     }
 
-    const code_point = if (self.lookahead_len == 0)
-        self.stream.next()
-    else blk: {
+    const code_point = if (self.lookahead_len == 0) blk: {
+        const before = self.stream.pos;
+        const cp = self.stream.next();
+        self.current_byte_len = @intCast(self.stream.pos - before);
+        break :blk cp;
+    } else blk: {
         const buffered = self.lookahead[self.lookahead_head];
+        self.current_byte_len = self.lookahead_byte_len[self.lookahead_head];
         self.lookahead_head += 1;
         if (self.lookahead_head == 3) self.lookahead_head = 0;
         self.lookahead_len -= 1;
@@ -94,7 +100,8 @@ pub fn position(self: *const Tokenizer) usize {
     while (offset < self.lookahead_len) : (offset += 1) {
         buffered_bytes += self.lookahead_byte_len[ringIndex(self.lookahead_head, offset)];
     }
-    return self.stream.pos - buffered_bytes;
+    const reconsumed_bytes: usize = if (self.reconsume_current) self.current_byte_len else 0;
+    return self.stream.pos - buffered_bytes - reconsumed_bytes;
 }
 
 inline fn ringIndex(head: u2, offset: u2) usize {
@@ -256,7 +263,7 @@ pub fn consumeNumeric(self: *Tokenizer) Token {
 pub fn consumeIdentLike(self: *Tokenizer) Token {
     const name = self.consumeIdentSequence();
 
-    if (ascii.asciiCaseInsensitiveEq(name, "url") and self.peek(0) == '(') {
+    if (name.eqlAscii("url") and self.peek(0) == '(') {
         _ = self.next();
 
         while (ascii.isCssWhitespace_O(self.peek(0)) and ascii.isCssWhitespace_O(self.peek(1)))
@@ -287,10 +294,10 @@ pub fn consumeString(self: *Tokenizer, ending: u21) Token {
     while (true) {
         const cp = self.next() orelse {
             self.parseError();
-            return .{ .string = self.scratch.items };
+            return .{ .string = String.fromDecoded(self.scratch.items) };
         };
 
-        if (cp == ending) return .{ .string = self.scratch.items };
+        if (cp == ending) return .{ .string = String.fromDecoded(self.scratch.items) };
 
         if (ascii.isCssNewline(cp)) {
             self.parseError();
@@ -323,21 +330,21 @@ pub fn consumeUrl(self: *Tokenizer) Token {
     while (true) {
         const cp = self.next() orelse {
             self.parseError();
-            return .{ .url = self.scratch.items };
+            return .{ .url = String.fromDecoded(self.scratch.items) };
         };
 
         switch (cp) {
-            ')' => return .{ .url = self.scratch.items },
+            ')' => return .{ .url = String.fromDecoded(self.scratch.items) },
             ' ', '\t', '\n' => {
                 while (ascii.isCssWhitespace_O(self.peek(0))) _ = self.next();
 
                 if (self.peek(0) == ')') {
                     _ = self.next();
-                    return .{ .url = self.scratch.items };
+                    return .{ .url = String.fromDecoded(self.scratch.items) };
                 }
                 if (self.peek(0) == null) {
                     self.parseError();
-                    return .{ .url = self.scratch.items };
+                    return .{ .url = String.fromDecoded(self.scratch.items) };
                 }
 
                 self.consumeBadUrlRemnants();
@@ -439,28 +446,44 @@ pub fn wouldStartUnicodeRange(first: ?u21, second: ?u21, third: ?u21) bool {
 }
 
 // https://drafts.csswg.org/css-syntax/#consume-name
-pub fn consumeIdentSequence(self: *Tokenizer) []const u21 {
+pub fn consumeIdentSequence(self: *Tokenizer) String {
     self.resetScratch();
+    const start = self.position();
+    var source_compatible = true;
 
     while (true) {
+        const before = self.position();
         const cp = self.next() orelse {
             self.reconsume();
-            return self.scratch.items;
+            const end = self.position();
+            return if (source_compatible)
+                String.fromSource(self.stream.slice(start, end))
+            else
+                String.fromDecoded(self.scratch.items);
         };
 
         if (ascii.isCssIdent(cp)) {
+            const end = self.position();
+            var encoded: [4]u8 = undefined;
+            const len = std.unicode.utf8Encode(cp, &encoded) catch 0;
+            if (len == 0 or !std.mem.eql(u8, self.stream.slice(end - len, end), encoded[0..len]))
+                source_compatible = false;
             self.appendScratch(cp);
             continue;
         }
 
         if (validEscape(cp, self.peek(0))) {
+            source_compatible = false;
             const escaped = self.consumeEscapedCodePoint();
             self.appendScratch(escaped);
             continue;
         }
 
         self.reconsume();
-        return self.scratch.items;
+        return if (source_compatible)
+            String.fromSource(self.stream.slice(start, before))
+        else
+            String.fromDecoded(self.scratch.items);
     }
 }
 

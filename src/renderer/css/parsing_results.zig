@@ -53,7 +53,7 @@ pub const BlockToken = enum {
 // For 5.5.5.
 pub const BlockItem = union(enum) {
     rule: Rule,
-    declaration: []Declaration,
+    declarations: []Declaration,
 };
 
 pub const SimpleBlock = struct {

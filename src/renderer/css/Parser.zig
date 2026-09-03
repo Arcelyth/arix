@@ -131,9 +131,21 @@ fn consumeStylesheetContents(
     self: *Parser,
     input: *TokenStream,
 ) ParserError![]results.Rule {
-    _ = self;
-    _ = input;
-    @panic("TODO CSS Syntax §5.5.1");
+    var rules: std.ArrayList(results.Rule) = .empty;
+    errdefer rules.deinit(self.allocator);
+
+    while (true) switch (input.nextToken().*) {
+        .token => |tk| switch (tk) {
+            .whitespace, .cdo, .cdc => input.discardToken(),
+            .eof => return rules.toOwnedSlice(self.allocator),
+            .at_keyword => if (try self.consumeAtRule(input, false)) |rule|
+                try rules.append(self.allocator, rule),
+            else => if (try self.consumeQualifiedRule(input, false)) |rule|
+                try rules.append(self.allocator, rule),
+        },
+        .component_value => if (try self.consumeQualifiedRule(input, false)) |rule|
+            try rules.append(self.allocator, rule),
+    };
 }
 
 // https://drafts.csswg.org/css-syntax/#consume-at-rule
@@ -142,10 +154,91 @@ fn consumeAtRule(
     input: *TokenStream,
     nested: bool,
 ) ParserError!?results.Rule {
-    _ = self;
-    _ = input;
-    _ = nested;
-    @panic("TODO CSS Syntax §5.5.2");
+    const name = switch (input.consumeToken().*) {
+        .token => |tk| switch (tk) {
+            .at_keyword => |value| value,
+            else => unreachable,
+        },
+        .component_value => unreachable,
+    };
+
+    var prelude: std.ArrayList(results.ComponentValue) = .empty;
+    errdefer prelude.deinit(self.allocator);
+
+    while (true) switch (input.nextToken().*) {
+        .token => |tk| switch (tk) {
+            .semicolon, .eof => {
+                input.discardToken();
+                return .{ .at_rule = .{
+                    .name = name,
+                    .prelude = try prelude.toOwnedSlice(self.allocator),
+                } };
+            },
+            .right_brace => {
+                if (nested) {
+                    return .{ .at_rule = .{
+                        .name = name,
+                        .prelude = try prelude.toOwnedSlice(self.allocator),
+                    } };
+                }
+                try prelude.append(self.allocator, input.consumeToken());
+            },
+            .left_brace => {
+                const block = try self.consumeBlock(input);
+                var rule: results.AtRule = .{
+                    .name = name,
+                    .prelude = try prelude.toOwnedSlice(self.allocator),
+                };
+                errdefer self.allocator.free(rule.prelude);
+                try self.handleBlockItems(block, &rule);
+                return .{ .at_rule = rule };
+            },
+            else => try prelude.append(self.allocator, try self.consumeComponentValue(input)),
+        },
+        .component_value => try prelude.append(
+            self.allocator,
+            try self.consumeComponentValue(input),
+        ),
+    };
+}
+
+// FIXME: This function should be optimized.
+fn handleBlockItems(self: *Parser, block: []results.BlockItem, rule: *results.AtRule) std.mem.Allocator.Error!void {
+    defer {
+        for (block) |item| switch (item) {
+            .declarations => |decls| self.allocator.free(decls),
+            .rule => {},
+        };
+        self.allocator.free(block);
+    }
+
+    var decl_count: usize = 0;
+    var child_rule_count: usize = 0;
+    for (block) |item| switch (item) {
+        .declarations => |decls| decl_count += decls.len,
+        .rule => child_rule_count += 1,
+    };
+
+    const decls = try self.allocator.alloc(results.Declaration, decl_count);
+    errdefer self.allocator.free(decls);
+    const child_rules = try self.allocator.alloc(results.Rule, child_rule_count);
+    errdefer self.allocator.free(child_rules);
+
+    var decl_idx: usize = 0;
+    var child_rule_index: usize = 0;
+    for (block) |item| switch (item) {
+        .declarations => |items| {
+            @memcpy(decls[decl_idx..][0..items.len], items);
+            decl_idx += items.len;
+        },
+        .rule => |child_rule| {
+            child_rules[child_rule_index] = child_rule;
+            child_rule_index += 1;
+        },
+    };
+
+    rule.declarations = decls;
+    rule.child_rules = child_rules;
 }
 
 // https://drafts.csswg.org/css-syntax/#consume-qualified-rule
@@ -153,11 +246,18 @@ fn consumeQualifiedRule(
     self: *Parser,
     input: *TokenStream,
     nested: bool,
-) ParserError!?results.Rule {
+) ParserError![]results.BlockItem {
     _ = self;
     _ = input;
     _ = nested;
     @panic("TODO CSS Syntax §5.5.3");
+}
+
+// https://drafts.csswg.org/css-syntax/#consume-block
+fn consumeBlock(self: *Parser, input: *TokenStream) ParserError![]results.BlockItem {
+    _ = self;
+    _ = input;
+    @panic("TODO CSS Syntax §5.5.4");
 }
 
 // https://drafts.csswg.org/css-syntax/#consume-block-contents

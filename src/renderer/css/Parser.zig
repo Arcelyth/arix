@@ -255,9 +255,10 @@ fn consumeQualifiedRule(
 
 // https://drafts.csswg.org/css-syntax/#consume-block
 fn consumeBlock(self: *Parser, input: *TokenStream) ParserError![]results.BlockItem {
-    _ = self;
-    _ = input;
-    @panic("TODO CSS Syntax §5.5.4");
+    input.discardToken();
+    const rules = try self.consumeBlockContents(input);
+    input.discardToken();
+    return rules;
 }
 
 // https://drafts.csswg.org/css-syntax/#consume-block-contents
@@ -265,9 +266,69 @@ fn consumeBlockContents(
     self: *Parser,
     input: *TokenStream,
 ) ParserError![]results.BlockItem {
-    _ = self;
-    _ = input;
-    @panic("TODO CSS Syntax §5.5.5");
+    var rules: std.ArrayList(results.BlockItem) = .empty;
+    errdefer rules.deinit(self.allocator);
+    var decls: std.ArrayList(results.Declaration) = .empty;
+    defer decls.deinit(self.allocator);
+
+    while (true) switch (input.nextToken().*) {
+        .token => |tk| switch (tk) {
+            .whitespace, .semicolon => input.discardToken(),
+            .eof, .right_brace => return rules.toOwnedSlice(self.allocator),
+            .at_keyword => {
+                try self.flushDeclarations(&rules, &decls);
+                if (try self.consumeAtRule(input, true)) |rule|
+                    try rules.append(self.allocator, .{ .rule = rule });
+            },
+            else => try self.consumeBlockContentItem(input, &rules, &decls),
+        },
+        .component_value => try self.consumeBlockContentItem(input, &rules, &decls),
+    };
+}
+
+fn consumeBlockContentItem(
+    self: *Parser,
+    input: *TokenStream,
+    rules: *std.ArrayList(results.BlockItem),
+    decls: *std.ArrayList(results.Declaration),
+) ParserError!void {
+    try input.mark();
+    const declaration = self.consumeDeclaration(input, true) catch |err| {
+        input.restoreMark() catch unreachable;
+        return err;
+    };
+
+    if (declaration) |decl| {
+        input.discardMark() catch unreachable;
+        try decls.append(self.allocator, decl);
+        return;
+    }
+
+    input.restoreMark() catch unreachable;
+    const rule = self.consumeQualifiedRule(input, .semicolon, true) catch |err| switch (err) {
+        error.InvalidRule => {
+            try self.flushDeclarations(rules, decls);
+            return;
+        },
+        else => return err,
+    };
+
+    if (rule) |parsed| {
+        try self.flushDeclarations(rules, decls);
+        try rules.append(self.allocator, .{ .rule = parsed });
+    }
+}
+
+fn flushDeclarations(
+    self: *Parser,
+    rules: *std.ArrayList(results.BlockItem),
+    declarations: *std.ArrayList(results.Declaration),
+) std.mem.Allocator.Error!void {
+    if (declarations.items.len == 0) return;
+
+    const owned = try declarations.toOwnedSlice(self.allocator);
+    errdefer self.allocator.free(owned);
+    try rules.append(self.allocator, .{ .declarations = owned });
 }
 
 // https://drafts.csswg.org/css-syntax/#consume-declaration

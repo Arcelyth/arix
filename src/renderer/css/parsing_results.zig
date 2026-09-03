@@ -102,3 +102,14 @@ pub const PreservedToken = union(enum) {
     right_paren,
     right_brace,
 };
+
+pub fn preservedToken(tk: token.Token) PreservedToken {
+    return switch (tk) {
+        .function, .left_bracket, .left_paren, .left_brace, .eof => unreachable,
+        inline else => |value| @unionInit(
+            PreservedToken,
+            @tagName(tk),
+            value,
+        ),
+    };
+}

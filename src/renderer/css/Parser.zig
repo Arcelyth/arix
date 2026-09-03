@@ -641,9 +641,36 @@ fn consumeComponentValue(
     self: *Parser,
     input: *TokenStream,
 ) ParserError!results.ComponentValue {
+    return switch (input.nextToken().*) {
+        .component_value => input.consumeToken().component_value,
+        .token => |tk| switch (tk) {
+            .left_brace, .left_bracket, .left_paren => .{
+                .simple_block = try self.consumeSimpleBlock(input),
+            },
+            .function => .{ .function = try self.consumeFunction(input) },
+            else => .{ .preserved_token = results.preservedToken(input.consumeToken().token) },
+        },
+    };
+}
+
+// https://drafts.csswg.org/css-syntax/#consume-simple-block
+fn consumeSimpleBlock(
+    self: *Parser,
+    input: *TokenStream,
+) ParserError!results.SimpleBlock {
     _ = self;
     _ = input;
-    @panic("TODO CSS Syntax §5.5.8");
+    @panic("TODO CSS Syntax §5.5.9");
+}
+
+// https://drafts.csswg.org/css-syntax/#consume-function
+fn consumeFunction(
+    self: *Parser,
+    input: *TokenStream,
+) ParserError!results.Function {
+    _ = self;
+    _ = input;
+    @panic("TODO CSS Syntax §5.5.10");
 }
 
 // https://drafts.csswg.org/css-syntax/#consume-unicode-range-value

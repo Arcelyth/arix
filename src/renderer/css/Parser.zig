@@ -335,7 +335,7 @@ fn startsCustomPropertyDeclaration(prelude: []const results.ComponentValue) bool
         .ident => |value| value,
         else => return false,
     };
-    if (name.len < 2 or name[0] != '-' or name[1] != '-') return false;
+    if (!name.startsWith("--")) return false;
     return (second orelse return false) == .colon;
 }
 
@@ -524,14 +524,14 @@ fn consumeDeclaration(
     while (index > 0 and isWhitespaceComponentValue(value[index - 1])) index -= 1;
     if (index != value.len) value = try self.allocator.realloc(value, index);
 
-    const custom_property = ascii.isCustomPropertyName(u21, name);
+    const custom_property = name.startsWith("--");
     const original_text = input.originalText(value_start, value_end);
     if (!custom_property and containsInvalidTopLevelBrace(value)) {
         self.allocator.free(value);
         return null;
     }
 
-    if (!custom_property and ascii.asciiCaseInsensitiveEq(name, "unicode-range")) {
+    if (!custom_property and name.eqlAscii("unicode-range")) {
         if (original_text) |text| {
             const unicode_ranges = try self.consumeUnicodeRangeValue(text);
             self.allocator.free(value);
@@ -589,7 +589,7 @@ inline fn isBang(value: results.ComponentValue) bool {
 inline fn isImportant(value: results.ComponentValue) bool {
     return switch (value) {
         .preserved_token => |tk| switch (tk) {
-            .ident => |name| ascii.asciiCaseInsensitiveEq(name, "important"),
+            .ident => |name| name.eqlAscii("important"),
             else => false,
         },
         else => false,
@@ -714,9 +714,112 @@ fn consumeUnicodeRangeValue(
     self: *Parser,
     input: []const u8,
 ) ParserError![]results.ComponentValue {
-    _ = self;
-    _ = input;
-    @panic("TODO CSS Syntax §5.5.11");
+    var tokenizer = Tokenizer.init(self.allocator, input);
+    defer tokenizer.deinit();
+    return self.consumeTokenizerValues(&tokenizer, null);
+}
+
+const TokenTag = std.meta.Tag(Token);
+
+fn consumeTokenizerValues(
+    self: *Parser,
+    tokenizer: *Tokenizer,
+    ending: ?TokenTag,
+) ParserError![]results.ComponentValue {
+    var values: std.ArrayList(results.ComponentValue) = .empty;
+    errdefer {
+        for (values.items) |value| self.freeOwnedComponentValue(value);
+        values.deinit(self.allocator);
+    }
+
+    while (true) {
+        const tk = tokenizer.consume(true);
+        const tag = std.meta.activeTag(tk);
+        if (tag == .eof or (if (ending) |end| tag == end else false))
+            return values.toOwnedSlice(self.allocator);
+
+        const value = try self.consumeTokenizerComponentValue(tokenizer, tk);
+        values.append(self.allocator, value) catch |err| {
+            self.freeOwnedComponentValue(value);
+            return err;
+        };
+    }
+}
+
+fn consumeTokenizerComponentValue(
+    self: *Parser,
+    tokenizer: *Tokenizer,
+    tk: Token,
+) ParserError!results.ComponentValue {
+    return switch (tk) {
+        .left_brace => .{ .simple_block = .{
+            .associated_token = .left_brace,
+            .value = try self.consumeTokenizerValues(tokenizer, .right_brace),
+        } },
+        .left_bracket => .{ .simple_block = .{
+            .associated_token = .left_bracket,
+            .value = try self.consumeTokenizerValues(tokenizer, .right_bracket),
+        } },
+        .left_paren => .{ .simple_block = .{
+            .associated_token = .left_paren,
+            .value = try self.consumeTokenizerValues(tokenizer, .right_paren),
+        } },
+        .function => |name| blk: {
+            const owned_name = try name.cloneDecoded(self.allocator);
+            errdefer owned_name.freeDecoded(self.allocator);
+            break :blk .{ .function = .{
+                .name = owned_name,
+                .value = try self.consumeTokenizerValues(tokenizer, .right_paren),
+            } };
+        },
+        .eof => unreachable,
+        else => .{ .preserved_token = results.preservedToken(try self.cloneToken(tk)) },
+    };
+}
+
+fn cloneToken(self: *Parser, tk: Token) std.mem.Allocator.Error!Token {
+    return switch (tk) {
+        .ident => |value| .{ .ident = try value.cloneDecoded(self.allocator) },
+        .function => |value| .{ .function = try value.cloneDecoded(self.allocator) },
+        .at_keyword => |value| .{ .at_keyword = try value.cloneDecoded(self.allocator) },
+        .hash => |value| .{ .hash = .{
+            .value = try value.value.cloneDecoded(self.allocator),
+            .type_flag = value.type_flag,
+        } },
+        .string => |value| .{ .string = try value.cloneDecoded(self.allocator) },
+        .url => |value| .{ .url = try value.cloneDecoded(self.allocator) },
+        .dimension => |value| .{ .dimension = .{
+            .value = value.value,
+            .sign = value.sign,
+            .type_flag = value.type_flag,
+            .unit = try value.unit.cloneDecoded(self.allocator),
+        } },
+        inline else => |value, tag| @unionInit(Token, @tagName(tag), value),
+    };
+}
+
+fn freeOwnedComponentValue(self: *Parser, value: results.ComponentValue) void {
+    switch (value) {
+        .preserved_token => |tk| switch (tk) {
+            .ident,
+            .at_keyword,
+            .string,
+            .url,
+            => |text| text.freeDecoded(self.allocator),
+            .hash => |hash| hash.value.freeDecoded(self.allocator),
+            .dimension => |dimension| dimension.unit.freeDecoded(self.allocator),
+            else => {},
+        },
+        .function => |function| {
+            function.name.freeDecoded(self.allocator);
+            for (function.value) |child| self.freeOwnedComponentValue(child);
+            self.allocator.free(function.value);
+        },
+        .simple_block => |block| {
+            for (block.value) |child| self.freeOwnedComponentValue(child);
+            self.allocator.free(block.value);
+        },
+    }
 }
 
 fn parseError(self: *Parser) void {

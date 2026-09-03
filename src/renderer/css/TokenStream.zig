@@ -5,6 +5,7 @@ const std = @import("std");
 const parsing_results = @import("parsing_results.zig");
 const ComponentValue = parsing_results.ComponentValue;
 const Token = @import("token.zig").Token;
+const String = @import("String.zig");
 
 pub const Item = union(enum) {
     token: Token,
@@ -140,7 +141,7 @@ const testing = std.testing;
 test "CSS Token Stream: consumes discards and reaches conceptual EOF" {
     const items = [_]Item{
         .{ .token = .whitespace },
-        .{ .token = .{ .ident = &.{'a'} } },
+        .{ .token = .{ .ident = String.fromSource("a") } },
     };
     var stream = TokenStream.init(testing.allocator, &items);
     defer stream.deinit();
@@ -148,7 +149,7 @@ test "CSS Token Stream: consumes discards and reaches conceptual EOF" {
     stream.discardWhitespace();
     try testing.expectEqual(1, stream.index);
     const ident = stream.consumeToken().token.ident;
-    try testing.expectEqualSlices(u21, &.{'a'}, ident);
+    try testing.expect(ident.eqlAscii("a"));
     try testing.expect(stream.empty());
     stream.discardToken();
     try testing.expectEqual(2, stream.index);
@@ -179,9 +180,9 @@ test "CSS Token Stream: restores and discards nested marks" {
 test "CSS Token Stream: reproduces original text" {
     const source = "color /* retained */ : red";
     const items = [_]Item{
-        .{ .token = .{ .ident = &.{ 'c', 'o', 'l', 'o', 'r' } } },
+        .{ .token = .{ .ident = String.fromSource("color") } },
         .{ .token = .colon },
-        .{ .token = .{ .ident = &.{ 'r', 'e', 'd' } } },
+        .{ .token = .{ .ident = String.fromSource("red") } },
     };
     const spans = [_]Span{
         .{ .start = 0, .end = 5 },

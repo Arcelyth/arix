@@ -259,12 +259,12 @@ pub fn consumeIdentLike(self: *Tokenizer) Token {
     if (ascii.asciiCaseInsensitiveEq(name, "url") and self.peek(0) == '(') {
         _ = self.next();
 
-        while (ascii.isCssWhitespace(self.peek(0)) and ascii.isCssWhitespace(self.peek(1)))
+        while (ascii.isCssWhitespace_O(self.peek(0)) and ascii.isCssWhitespace_O(self.peek(1)))
             _ = self.next();
 
         const first = self.peek(0);
         if (first == '"' or first == '\'' or
-            (ascii.isCssWhitespace(first) and (self.peek(1) == '"' or self.peek(1) == '\'')))
+            (ascii.isCssWhitespace_O(first) and (self.peek(1) == '"' or self.peek(1) == '\'')))
         {
             return .{ .function = name };
         }
@@ -318,7 +318,7 @@ pub fn consumeString(self: *Tokenizer, ending: u21) Token {
 pub fn consumeUrl(self: *Tokenizer) Token {
     self.resetScratch();
 
-    while (ascii.isCssWhitespace(self.peek(0))) _ = self.next();
+    while (ascii.isCssWhitespace_O(self.peek(0))) _ = self.next();
 
     while (true) {
         const cp = self.next() orelse {
@@ -329,7 +329,7 @@ pub fn consumeUrl(self: *Tokenizer) Token {
         switch (cp) {
             ')' => return .{ .url = self.scratch.items },
             ' ', '\t', '\n' => {
-                while (ascii.isCssWhitespace(self.peek(0))) _ = self.next();
+                while (ascii.isCssWhitespace_O(self.peek(0))) _ = self.next();
 
                 if (self.peek(0) == ')') {
                     _ = self.next();
@@ -380,18 +380,18 @@ pub fn consumeEscapedCodePoint(self: *Tokenizer) u21 {
 
     if (!ascii.isAsciiHexDigit(first)) return first;
 
-    var value: u32 = ascii.toHexDigit(first);
+    var value: u32 = ascii.toHexDigit(u21, first);
     var count: u3 = 0;
     while (count < 5) : (count += 1) {
         const cp = self.peek(0) orelse break;
         if (!ascii.isAsciiHexDigit(cp)) break;
         _ = self.next();
-        value = value * 16 + ascii.toHexDigit(cp);
+        value = value * 16 + ascii.toHexDigit(u21, cp);
     }
 
-    if (ascii.isCssWhitespace(self.peek(0))) _ = self.next();
+    if (ascii.isCssWhitespace_O(self.peek(0))) _ = self.next();
 
-    if (value == 0 or value > ascii.maximum_code_point or ascii.isSurrogate(u21, value))
+    if (value == 0 or value > ascii.maximum_code_point or ascii.isSurrogate(u32, value))
         return 0xFFFD;
 
     return @intCast(value);

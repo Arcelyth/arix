@@ -2,7 +2,7 @@
 const token = @import("token.zig");
 
 // FIXME: Use Strale will be better?
-pub const String = []const u21;
+pub const String = @import("String.zig");
 
 pub const Stylesheet = struct {
     rules: []Rule = &.{},

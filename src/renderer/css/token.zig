@@ -1,4 +1,5 @@
 const std = @import("std");
+const String = @import("String.zig");
 
 pub const HashType = enum {
     id,
@@ -16,16 +17,16 @@ pub const Sign = enum {
 };
 
 pub const Token = union(enum) {
-    ident: []const u21,
-    function: []const u21,
-    at_keyword: []const u21,
+    ident: String,
+    function: String,
+    at_keyword: String,
     hash: struct {
-        value: []const u21,
+        value: String,
         type_flag: HashType = .unrestricted,
     },
-    string: []const u21,
+    string: String,
     bad_string,
-    url: []const u21,
+    url: String,
     bad_url,
 
     delim: u21,
@@ -43,12 +44,12 @@ pub const Token = union(enum) {
         value: f64,
         sign: ?Sign = null,
         type_flag: NumberType = .integer,
-        unit: []const u21,
+        unit: String,
     },
 
     unicode_range: struct {
-        start: u21,
-        end: u21,
+        start: u32,
+        end: u32,
 
         pub inline fn isEmpty(self: @This()) bool {
             return self.end < self.start;

@@ -658,9 +658,30 @@ fn consumeSimpleBlock(
     self: *Parser,
     input: *TokenStream,
 ) ParserError!results.SimpleBlock {
-    _ = self;
-    _ = input;
-    @panic("TODO CSS Syntax §5.5.9");
+    const opening = input.nextToken().token;
+    const associated_tk: results.BlockToken, const ending: Token = switch (opening) {
+        .left_brace => .{ .left_brace, .right_brace },
+        .left_bracket => .{ .left_bracket, .right_bracket },
+        .left_paren => .{ .left_paren, .right_paren },
+        else => unreachable,
+    };
+    input.discardToken();
+
+    var value: std.ArrayList(results.ComponentValue) = .empty;
+    errdefer value.deinit(self.allocator);
+    while (true) switch (input.nextToken().*) {
+        .token => |tk| if (tk == .eof or std.meta.activeTag(tk) == std.meta.activeTag(ending)) {
+            input.discardToken();
+            return .{
+                .associated_token = associated_tk,
+                .value = try value.toOwnedSlice(self.allocator),
+            };
+        } else try value.append(self.allocator, try self.consumeComponentValue(input)),
+        .component_value => try value.append(
+            self.allocator,
+            try self.consumeComponentValue(input),
+        ),
+    };
 }
 
 // https://drafts.csswg.org/css-syntax/#consume-function

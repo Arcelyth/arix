@@ -106,9 +106,32 @@ pub const PreservedToken = union(enum) {
 pub fn preservedToken(tk: token.Token) PreservedToken {
     return switch (tk) {
         .function, .left_bracket, .left_paren, .left_brace, .eof => unreachable,
-        inline else => |value| @unionInit(
+        .hash => |value| .{ .hash = .{
+            .value = value.value,
+            .type_flag = value.type_flag,
+        } },
+        .number => |value| .{ .number = .{
+            .value = value.value,
+            .sign = value.sign,
+            .type_flag = value.type_flag,
+        } },
+        .percentage => |value| .{ .percentage = .{
+            .value = value.value,
+            .sign = value.sign,
+        } },
+        .dimension => |value| .{ .dimension = .{
+            .value = value.value,
+            .sign = value.sign,
+            .type_flag = value.type_flag,
+            .unit = value.unit,
+        } },
+        .unicode_range => |value| .{ .unicode_range = .{
+            .start = value.start,
+            .end = value.end,
+        } },
+        inline else => |value, tag| @unionInit(
             PreservedToken,
-            @tagName(tk),
+            @tagName(tag),
             value,
         ),
     };

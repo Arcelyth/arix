@@ -7,6 +7,7 @@ const Item = TokenStream.Item;
 const Token = @import("token.zig").Token;
 const token = @import("token.zig");
 const results = @import("parsing_results.zig");
+const ascii = @import("../utils/ascii.zig");
 
 pub const ParserError =
     std.mem.Allocator.Error ||
@@ -463,22 +464,148 @@ fn consumeDeclaration(
     input: *TokenStream,
     nested: bool,
 ) ParserError!?results.Declaration {
-    _ = self;
-    _ = input;
-    _ = nested;
-    @panic("TODO CSS Syntax §5.5.6");
+    const name = switch (input.nextToken().*) {
+        .token => |tk| switch (tk) {
+            .ident => |value| value,
+            else => {
+                try self.consumeBadDeclarationRemnants(input, nested);
+                return null;
+            },
+        },
+        .component_value => {
+            try self.consumeBadDeclarationRemnants(input, nested);
+            return null;
+        },
+    };
+    input.discardToken();
+
+    input.discardWhitespace();
+    switch (input.nextToken().*) {
+        .token => |tk| if (tk == .colon) input.discardToken() else {
+            try self.consumeBadDeclarationRemnants(input, nested);
+            return null;
+        },
+        .component_value => {
+            try self.consumeBadDeclarationRemnants(input, nested);
+            return null;
+        },
+    }
+
+    input.discardWhitespace();
+    const value_start = input.index;
+    var value = try self.consumeListOfComponentValues(input, .semicolon, nested);
+    errdefer self.allocator.free(value);
+    const value_end = input.index;
+
+    var important = false;
+    var last_non_ws: ?usize = null;
+    var snd_last_non_ws: ?usize = null;
+    var index = value.len;
+    while (index > 0 and snd_last_non_ws == null) {
+        index -= 1;
+        if (isWhitespaceComponentValue(value[index])) continue;
+        if (last_non_ws == null)
+            last_non_ws = index
+        else
+            snd_last_non_ws = index;
+    }
+
+    if (last_non_ws) |last| if (snd_last_non_ws) |second_last| {
+        if (isImportant(value[last]) and isBang(value[second_last])) {
+            important = true;
+            index = second_last;
+        } else {
+            index = value.len;
+        }
+    } else {
+        index = value.len;
+    };
+
+    while (index > 0 and isWhitespaceComponentValue(value[index - 1])) index -= 1;
+    if (index != value.len) value = try self.allocator.realloc(value, index);
+
+    const custom_property = ascii.isCustomPropertyName(u21, name);
+    const original_text = input.originalText(value_start, value_end);
+    if (!custom_property and containsInvalidTopLevelBrace(value)) {
+        self.allocator.free(value);
+        return null;
+    }
+
+    if (!custom_property and ascii.asciiCaseInsensitiveEq(name, "unicode-range")) {
+        if (original_text) |text| {
+            const unicode_ranges = try self.consumeUnicodeRangeValue(text);
+            self.allocator.free(value);
+            value = unicode_ranges;
+        }
+    }
+
+    return .{
+        .name = name,
+        .value = value,
+        .important = important,
+        .original_text = if (custom_property) original_text else null,
+    };
 }
 
-// https://drafts.csswg.org/css-syntax/#consume-the-remnants-of-a-bad-declaration 
+// https://drafts.csswg.org/css-syntax/#consume-the-remnants-of-a-bad-declaration
 fn consumeBadDeclarationRemnants(
     self: *Parser,
     input: *TokenStream,
     nested: bool,
 ) ParserError!void {
-    _ = self;
-    _ = input;
-    _ = nested;
-    @panic("TODO CSS Syntax ");
+    while (true) switch (input.nextToken().*) {
+        .token => |tk| switch (tk) {
+            .eof, .semicolon => {
+                input.discardToken();
+                return;
+            },
+            .right_brace => {
+                if (nested) return;
+                input.discardToken();
+            },
+            else => _ = try self.consumeComponentValue(input),
+        },
+        .component_value => _ = try self.consumeComponentValue(input),
+    };
+}
+
+inline fn isWhitespaceComponentValue(value: results.ComponentValue) bool {
+    return switch (value) {
+        .preserved_token => |tk| tk == .whitespace,
+        else => false,
+    };
+}
+
+inline fn isBang(value: results.ComponentValue) bool {
+    return switch (value) {
+        .preserved_token => |tk| switch (tk) {
+            .delim => |cp| cp == '!',
+            else => false,
+        },
+        else => false,
+    };
+}
+
+inline fn isImportant(value: results.ComponentValue) bool {
+    return switch (value) {
+        .preserved_token => |tk| switch (tk) {
+            .ident => |name| ascii.asciiCaseInsensitiveEq(name, "important"),
+            else => false,
+        },
+        else => false,
+    };
+}
+
+fn containsInvalidTopLevelBrace(value: []const results.ComponentValue) bool {
+    var non_whitespace: usize = 0;
+    var has_brace = false;
+    for (value) |item| {
+        if (isWhitespaceComponentValue(item)) continue;
+        non_whitespace += 1;
+        if (item == .simple_block and item.simple_block.associated_token == .left_brace)
+            has_brace = true;
+    }
+    return has_brace and non_whitespace > 1;
 }
 
 // https://drafts.csswg.org/css-syntax/#consume-list-of-components
@@ -503,6 +630,16 @@ fn consumeComponentValue(
     _ = self;
     _ = input;
     @panic("TODO CSS Syntax §5.5.8");
+}
+
+// https://drafts.csswg.org/css-syntax/#consume-unicode-range-value
+fn consumeUnicodeRangeValue(
+    self: *Parser,
+    input: []const u8,
+) ParserError![]results.ComponentValue {
+    _ = self;
+    _ = input;
+    @panic("TODO CSS Syntax §5.5.11");
 }
 
 fn parseError(self: *Parser) void {

@@ -134,6 +134,11 @@ pub inline fn asciiCaseInsensitiveEq(value: []const u21, expected: []const u8) b
     return true;
 }
 
+// https://drafts.css-houdini.org/css-typed-om-1/#custom-property-name-string
+pub inline fn isCustomPropertyName(comptime T: type, str: []const T) bool {
+    return str.len >= 2 and str[0] == '-' and str[1] == '-';
+}
+
 pub inline fn toHexDigit(comptime T: type, cp: T) u4 {
     return switch (cp) {
         '0'...'9' => @intCast(cp - '0'),

@@ -50,6 +50,12 @@ pub const BlockToken = enum {
     left_paren,
 };
 
+// For 5.5.5.
+pub const BlockItem = union(enum) {
+    rule: Rule,
+    declaration: []Declaration,
+};
+
 pub const SimpleBlock = struct {
     associated_token: BlockToken,
     value: []ComponentValue = &.{},

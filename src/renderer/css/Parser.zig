@@ -63,6 +63,30 @@ pub fn parseStylesheetContents(self: *Parser) ParserError![]results.Rule {
     return self.consumeStylesheetContents(self.input);
 }
 
+// https://drafts.csswg.org/css-syntax/#parse-block-contents
+pub fn parseBlockContents(self: *Parser) ParserError![]results.BlockItem {
+    return self.consumeBlockContents(self.input);
+}
+
+// https://drafts.csswg.org/css-syntax/#parse-rule
+pub fn parseRule(self: *Parser) ParserError!results.Rule {
+    self.input.discardWhitespace();
+    if (self.input.empty()) return error.Syntax;
+
+    const rule = switch (self.input.nextToken().*) {
+        .token => |tk| if (tk == .at_keyword)
+            (try self.consumeAtRule(self.input, false)) orelse return error.Syntax
+        else
+            (try self.consumeQualifiedRule(self.input, false)) orelse return error.Syntax,
+        .component_value => (try self.consumeQualifiedRule(self.input, false)) orelse
+            return error.Syntax,
+    };
+
+    self.input.discardWhitespace();
+    if (!self.input.empty()) return error.Syntax;
+    return rule;
+}
+
 // https://drafts.csswg.org/css-syntax/#parse-list-of-component-values
 pub fn parseListOfComponentValues(self: *Parser) ParserError![]results.ComponentValue {
     return self.consumeListOfComponentValues(self.input);
@@ -93,6 +117,40 @@ fn consumeStylesheetContents(
     _ = self;
     _ = input;
     @panic("TODO CSS Syntax §5.5.1");
+}
+
+// https://drafts.csswg.org/css-syntax/#consume-at-rule
+fn consumeAtRule(
+    self: *Parser,
+    input: *TokenStream,
+    nested: bool,
+) ParserError!?results.Rule {
+    _ = self;
+    _ = input;
+    _ = nested;
+    @panic("TODO CSS Syntax §5.5.2");
+}
+
+// https://drafts.csswg.org/css-syntax/#consume-qualified-rule
+fn consumeQualifiedRule(
+    self: *Parser,
+    input: *TokenStream,
+    nested: bool,
+) ParserError!?results.Rule {
+    _ = self;
+    _ = input;
+    _ = nested;
+    @panic("TODO CSS Syntax §5.5.3");
+}
+
+// https://drafts.csswg.org/css-syntax/#consume-block-contents
+fn consumeBlockContents(
+    self: *Parser,
+    input: *TokenStream,
+) ParserError![]results.BlockItem {
+    _ = self;
+    _ = input;
+    @panic("TODO CSS Syntax §5.5.5");
 }
 
 // https://drafts.csswg.org/css-syntax/#consume-list-of-components

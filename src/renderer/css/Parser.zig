@@ -7,122 +7,104 @@ const Item = TokenStream.Item;
 const Token = @import("token.zig").Token;
 const token = @import("token.zig");
 const results = @import("parsing_results.zig");
-const ComponentValue = results.ComponentValue;
 
 pub const ParserError =
     std.mem.Allocator.Error ||
     TokenStream.SourceMapError ||
     error{ Syntax, InputTooLarge };
 
-pub const Input = union(enum) {
-    token_stream: *TokenStream,
-    items: []const Item,
-    string: []const u8,
-};
-
 allocator: std.mem.Allocator,
+input: *TokenStream,
 
-pub fn init(alloc: std.mem.Allocator) Parser {
-    return .{ .allocator = alloc };
+pub fn init(alloc: std.mem.Allocator, input: *TokenStream) Parser {
+    return .{
+        .allocator = alloc,
+        .input = input,
+    };
 }
 
 // https://drafts.csswg.org/css-syntax/#parse-grammar
-pub fn parseAccordingToGrammar(
+pub fn parseSomething(
     self: *Parser,
-    input: Input,
     comptime T: type,
-    comptime match: fn ([]const ComponentValue) ?T,
+    comptime parse: fn ([]const results.ComponentValue) ?T,
 ) ParserError!?T {
-    const values = try self.parseListOfComponentValues(input);
-    return match(values);
+    return parse(try self.parseListOfComponentValues());
+}
+
+// https://drafts.csswg.org/css-syntax/#parse-comma-list
+pub fn parseCommaSeparatedList(
+    self: *Parser,
+    comptime T: type,
+    comptime parse: fn ([]const results.ComponentValue) ?T,
+) ParserError![]?T {
+    const start = self.input.index;
+    self.input.discardWhitespace();
+    if (self.input.empty()) {
+        return self.allocator.alloc(?T, 0);
+    }
+    self.input.index = start;
+
+    const groups = try self.parseCommaSeparatedListOfComponentValues();
+    defer self.allocator.free(groups);
+
+    const list = try self.allocator.alloc(?T, groups.len);
+    for (groups, list) |group, *result| result.* = parse(group);
+    return list;
+}
+
+// https://drafts.csswg.org/css-syntax/#parse-stylesheet
+pub fn parseStylesheet(self: *Parser) ParserError!results.Stylesheet {
+    return .{ .rules = try self.consumeStylesheetContents(self.input) };
+}
+
+// https://drafts.csswg.org/css-syntax/#parse-stylesheet-contents
+pub fn parseStylesheetContents(self: *Parser) ParserError![]results.Rule {
+    return self.consumeStylesheetContents(self.input);
 }
 
 // https://drafts.csswg.org/css-syntax/#parse-list-of-component-values
-pub fn parseListOfComponentValues(self: *Parser, input: Input) ParserError![]ComponentValue {
-    var normalized = try self.normalize(input);
-    defer normalized.deinit();
-    return self.consumeListOfComponentValues(normalized.stream());
+pub fn parseListOfComponentValues(self: *Parser) ParserError![]results.ComponentValue {
+    return self.consumeListOfComponentValues(self.input);
 }
 
-/// `borrowed` refers to an existing stream and does not own it.
-/// `owned` contains a stream created during normalization and owns it.
-const Normalized = union(enum) {
-    borrowed: *TokenStream,
-    owned: TokenStream,
+// https://drafts.csswg.org/css-syntax/#parse-comma-separated-list-of-component-values
+pub fn parseCommaSeparatedListOfComponentValues(self: *Parser) ParserError![][]results.ComponentValue {
+    var groups: std.ArrayList([]results.ComponentValue) = .empty;
+    errdefer groups.deinit(self.allocator);
 
-    fn stream(self: *Normalized) *TokenStream {
-        return switch (self.*) {
-            .borrowed => |value| value,
-            .owned => |*value| value,
-        };
+    while (!self.input.empty()) {
+        try groups.append(
+            self.allocator,
+            try self.consumeListOfComponentValues(self.input, .comma, false),
+        );
+        self.input.discardToken();
     }
-
-    fn deinit(self: *Normalized) void {
-        switch (self.*) {
-            .borrowed => {},
-            .owned => |*value| value.deinit(),
-        }
-    }
-};
-
-fn normalize(self: *Parser, input: Input) ParserError!Normalized {
-    return switch (input) {
-        .token_stream => |stream| .{ .borrowed = stream },
-        .items => |items| .{ .owned = TokenStream.init(self.allocator, items) },
-        .string => |string| .{ .owned = try self.tokenize(string) },
-    };
+    return groups.toOwnedSlice(self.allocator);
 }
 
-fn tokenize(self: *Parser, source: []const u8) ParserError!TokenStream {
-    if (source.len > std.math.maxInt(u32)) return error.InputTooLarge;
-    var tokenizer = Tokenizer.init(self.allocator, source);
-    defer tokenizer.deinit();
-    var items: std.ArrayList(Item) = .empty;
-    var spans: std.ArrayList(TokenStream.Span) = .empty;
+const StopToken = enum { comma, semicolon };
 
-    while (true) {
-        const start = tokenizer.position();
-        const value = tokenizer.consume(false);
-        const end = tokenizer.position();
-        if (value == .eof) break;
-        try items.append(self.allocator, .{ .token = try self.cloneToken(value) });
-        try spans.append(self.allocator, .{ .start = @intCast(start), .end = @intCast(end) });
-    }
-    return try TokenStream.initWithSource(
-        self.allocator,
-        try items.toOwnedSlice(self.allocator),
-        source,
-        try spans.toOwnedSlice(self.allocator),
-    );
-}
-
-inline fn cloneText(self: *Parser, value: []const u21) ParserError![]const u21 {
-    return self.allocator.dupe(u21, value);
-}
-
-inline fn cloneToken(self: *Parser, value: Token) ParserError!Token {
-    return switch (value) {
-        .ident => |v| .{ .ident = try self.cloneText(v) },
-        .function => |v| .{ .function = try self.cloneText(v) },
-        .at_keyword => |v| .{ .at_keyword = try self.cloneText(v) },
-        .hash => |v| .{ .hash = .{ .value = try self.cloneText(v.value), .type_flag = v.type_flag } },
-        .string => |v| .{ .string = try self.cloneText(v) },
-        .url => |v| .{ .url = try self.cloneText(v) },
-        .dimension => |v| .{ .dimension = .{
-            .value = v.value,
-            .sign = v.sign,
-            .type_flag = v.type_flag,
-            .unit = try self.cloneText(v.unit),
-        } },
-        else => value,
-    };
+// https://drafts.csswg.org/css-syntax/#consume-stylesheet-contents
+fn consumeStylesheetContents(
+    self: *Parser,
+    input: *TokenStream,
+) ParserError![]results.Rule {
+    _ = self;
+    _ = input;
+    @panic("TODO CSS Syntax §5.5.1");
 }
 
 // https://drafts.csswg.org/css-syntax/#consume-list-of-components
 fn consumeListOfComponentValues(
     self: *Parser,
     stream: *TokenStream,
+    stop: ?Token,
+    nested: bool,
 ) ParserError![]results.ComponentValue {
     _ = self;
     _ = stream;
+    _ = stop;
+    _ = nested;
+    @panic("TODO CSS Syntax §5.5.7");
 }

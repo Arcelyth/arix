@@ -67,7 +67,7 @@ pub fn deinit(self: *TokenStream) void {
 }
 
 /// Return a reference to the item at the current index or the conceptual EOF
-/// token. 
+/// token.
 /// "process" operation is intentionally expressed at each call site so there
 /// is no callback or dynamic dispatch in the parser hot path.
 pub inline fn nextToken(self: *const TokenStream) *const Item {
@@ -134,7 +134,6 @@ inline fn isWhitespace(item: *const Item) bool {
         },
     };
 }
-
 
 const testing = std.testing;
 

@@ -18,6 +18,7 @@ pub const decode = @import("renderer/css/decode.zig");
 pub const InputStream = @import("renderer/css/InputStream.zig");
 pub const CSSTokenizer = @import("renderer/css/Tokenizer.zig");
 pub const TokenStream = @import("renderer/css/TokenStream.zig");
+pub const Parser = @import("renderer/css/Parser.zig");
 
 test {
     @import("std").testing.refAllDecls(@This());

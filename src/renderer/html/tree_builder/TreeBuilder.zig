@@ -1795,8 +1795,25 @@ pub fn step_E(self: *TreeBuilder, tk: PendingToken, mode: ?InsertionMode) !Proce
                                     self.frameset_ok = false;
                                     return .PR_Done;
                                 }
-                            } else if (tag_tk.name.oneOf(&.{ .option, .optgroup })) {
-                                if (self.currentNode().local_name.is(.option)) _ = self.open_elements.pop();
+                            } else if (tag_tk.name.is(.option)) {
+                                if (self.hasElementInScope(.select)) {
+                                    self.generateImpliedEndTags(.optgroup);
+                                    if (self.hasElementInScope(.option))
+                                        self.parseError(.unexpected_node);
+                                } else if (self.currentNode().local_name.is(.option)) {
+                                    _ = self.open_elements.pop();
+                                }
+                                self.reconstructActiveFormattingElements();
+                                _ = try self.insertHtmlElement_E(tag_tk);
+                                return .PR_Done;
+                            } else if (tag_tk.name.is(.optgroup)) {
+                                if (self.hasElementInScope(.select)) {
+                                    self.generateImpliedEndTags(null);
+                                    if (self.hasElementInScope(.option) or self.hasElementInScope(.optgroup))
+                                        self.parseError(.unexpected_node);
+                                } else if (self.currentNode().local_name.is(.option)) {
+                                    _ = self.open_elements.pop();
+                                }
                                 self.reconstructActiveFormattingElements();
                                 _ = try self.insertHtmlElement_E(tag_tk);
                                 return .PR_Done;

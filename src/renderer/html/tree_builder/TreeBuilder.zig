@@ -2653,8 +2653,8 @@ pub fn step_E(self: *TreeBuilder, tk: PendingToken, mode: ?InsertionMode) !Proce
                         },
                         .EndTag => {
                             if (tag_tk.name.is(.html)) {
-                                if (self.frameset_ok) {
-                                    self.parseError(.end_html_with_frameset_ok);
+                                if (self.fragment_case) {
+                                    self.unexpect(tk, .AfterBodyMode);
                                     return .PR_Done;
                                 }
                                 self.insert_mode = .AfterAfterBodyMode;

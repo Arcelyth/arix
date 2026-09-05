@@ -70,11 +70,18 @@ form_el_ptr: ?*Element,
 active_fmt_els: ActiveFormatElementList,
 allow_decl_shadow_roots: bool,
 pending_table_char_tks: std.ArrayList(PendingToken),
+root_insertion_target: ?*DocumentFragment,
+// Fake start tag to make the tree construction algorithm treat the fragment context as a normal HTML start tag.
+context_start_tag: ?Token,
 // Set after inserting pre, listing, or textarea. The tree builder ignores a
 // single leading LF in the next character token.
 ignore_next_lf: bool,
 
-pub const TreeBuilderOpts = struct { fragment_case: bool = false };
+pub const TreeBuilderOpts = struct {
+    fragment_case: bool = false,
+    allow_decl_shadow_roots: bool = false,
+    scripting_mode: ScriptingMode = .Normal,
+};
 
 pub fn init(alloc: std.mem.Allocator, tree_adapter: TreeAdapter, opts: TreeBuilderOpts) TreeBuilder {
     return TreeBuilder{
@@ -85,7 +92,7 @@ pub fn init(alloc: std.mem.Allocator, tree_adapter: TreeAdapter, opts: TreeBuild
         .orig_insert_mode = .InitialMode,
         .temp_insert_modes = .empty,
         .fragment_case = opts.fragment_case,
-        .scripting_mode = .Normal,
+        .scripting_mode = opts.scripting_mode,
         .foster_parenting = false,
         .frameset_ok = true,
         .document = Document.init(alloc),
@@ -93,8 +100,10 @@ pub fn init(alloc: std.mem.Allocator, tree_adapter: TreeAdapter, opts: TreeBuild
         .head_el_ptr = null,
         .form_el_ptr = null,
         .active_fmt_els = ActiveFormatElementList.init(alloc),
-        .allow_decl_shadow_roots = false,
+        .allow_decl_shadow_roots = opts.allow_decl_shadow_roots,
         .pending_table_char_tks = .empty,
+        .root_insertion_target = null,
+        .context_start_tag = null,
         .ignore_next_lf = false,
     };
 }
@@ -105,6 +114,7 @@ pub fn deinit(self: *TreeBuilder) void {
     self.active_fmt_els.deinit();
     for (self.pending_table_char_tks.items) |*tk| tk.deinit(self.allocator);
     self.pending_table_char_tks.deinit(self.allocator);
+    if (self.context_start_tag) |*context_start_tag| context_start_tag.deinit(self.allocator);
     self.document.destroy(self.allocator);
 }
 
@@ -363,9 +373,10 @@ pub inline fn isAdjustedCurrentNodeTopmost(self: *TreeBuilder) bool {
 }
 
 // https://html.spec.whatwg.org/#appropriate-place-for-inserting-a-node
-pub fn appropriatePlaceForInsertion(self: *TreeBuilder, override_target: ?*Element) InsertionLocation {
-    const target = override_target orelse self.currentNode();
-    if (self.foster_parenting and target.in(&.{ .table, .tbody, .tfoot, .thead, .tr })) {
+pub fn appropriatePlaceForInsertion(self: *TreeBuilder, override_target: ?*Node) InsertionLocation {
+    const target = override_target orelse self.currentNode().asNode();
+    const target_element = if (target.type_id == .DOM_Element) target.downcast(Element) else null;
+    if (self.foster_parenting and target_element != null and target_element.?.in(&.{ .table, .tbody, .tfoot, .thead, .tr })) {
         const open_elements = self.open_elements;
         var last_table: ?*Element = null;
         var last_table_pos: usize = 0;
@@ -397,13 +408,15 @@ pub fn appropriatePlaceForInsertion(self: *TreeBuilder, override_target: ?*Eleme
                 return .{ .last_child = self.open_elements.at(last_table_pos - 1).asNode() }
             else
                 @panic("This should never happen: last_table_pos <= 0");
-        } else return .{ .last_child = (self.htmlElement() orelse target).asNode() };
+        } else return .{ .last_child = if (self.htmlElement()) |html| html.asNode() else target };
     }
     // FIXME: Move to other suitable place.
-    if (target.ns == .NS_Html and target.local_name.is(.template)) {
-        if (target.temp_contents) |contents| return .{ .last_child = &contents.node };
+    if (target_element) |element| {
+        if (element.ns == .NS_Html and element.local_name.is(.template)) {
+            if (element.temp_contents) |contents| return .{ .last_child = &contents.node };
+        }
     }
-    return .{ .last_child = target.asNode() };
+    return .{ .last_child = target };
 }
 
 // https://html.spec.whatwg.org/#create-an-element-for-the-token
@@ -455,14 +468,13 @@ pub fn createElementForToken_E(self: *TreeBuilder, tag: token_.Tag, namespace: ?
 
 // https://html.spec.whatwg.org/multipage/parsing.html#insert-an-element-at-the-adjusted-insertion-location
 pub fn adjustedInsertionLocation(self: *TreeBuilder, pos: ?*const InsertionLocation) InsertionLocation {
-    if (pos) |p| if (p.getParent().type_id != .DOM_Element) return p.*;
-    const override_target = if (pos) |p| p.getParent().downcast(Element) else null;
-    const adjusted_loc = self.appropriatePlaceForInsertion(override_target);
+    const override_target = if (pos) |p| p.getParent() else null;
+    var adjusted_loc = self.appropriatePlaceForInsertion(override_target);
 
-    // Step 3.
-    // The spec associates newly inserted elements with the creating parser here.
-    // This implementation does not expose a parser pointer on DOM nodes yet; that
-    // bookkeeping is not required to construct the tree.
+    if (self.root_insertion_target) |root_target| {
+        if (adjusted_loc.getParent() == self.open_elements.at(0).asNode())
+            adjusted_loc = .{ .last_child = &root_target.node };
+    }
 
     return adjusted_loc;
 }
@@ -709,7 +721,8 @@ pub fn resetInsertionModeAppropriately(self: *TreeBuilder) void {
     while (i > 0) {
         i -= 1;
 
-        const node = if (self.fragment_case and i == 0)
+        const last = self.fragment_case and i == 0;
+        const node = if (last)
             self.context orelse self.open_elements.at(i)
         else
             self.open_elements.at(i);
@@ -719,6 +732,7 @@ pub fn resetInsertionModeAppropriately(self: *TreeBuilder) void {
         const tag = node.local_name.toTag() orelse continue;
         switch (tag) {
             .td, .th => {
+                if (last) continue;
                 self.insert_mode = .InCellMode;
                 return;
             },
@@ -754,6 +768,7 @@ pub fn resetInsertionModeAppropriately(self: *TreeBuilder) void {
             },
 
             .head => {
+                if (last) continue;
                 self.insert_mode = .InHeadMode;
                 return;
             },
@@ -1109,7 +1124,8 @@ pub fn adoptionAgencyAlgorithm(self: *TreeBuilder, tk: token_.Tag) void {
             last_node = node;
         }
 
-        const insertion_location = self.appropriatePlaceForInsertion(common_ancestor);
+        const common_ancestor_location: InsertionLocation = .{ .last_child = common_ancestor.asNode() };
+        const insertion_location = self.adjustedInsertionLocation(&common_ancestor_location);
         last_node.asNode().remove();
         self.insertNodeAt(last_node.asNode(), insertion_location);
 
@@ -1347,7 +1363,7 @@ pub fn step_E(self: *TreeBuilder, tk: PendingToken, mode: ?InsertionMode) !Proce
                                 self.insert_mode = .InHeadNoscriptMode;
                                 return .PR_Done;
                             } else if (tag_tk.name.is(.script)) {
-                                const adjust_loc = self.appropriatePlaceForInsertion(null);
+                                const adjust_loc = self.adjustedInsertionLocation(null);
                                 const parent = adjust_loc.getParent();
                                 const document = parent.node_doc;
                                 const el = try self.createElementForToken_E(tag_tk, .NS_Html, document.asNode());
@@ -1366,7 +1382,7 @@ pub fn step_E(self: *TreeBuilder, tk: PendingToken, mode: ?InsertionMode) !Proce
                                 self.frameset_ok = false;
                                 self.insert_mode = .InTemplateMode;
                                 try self.temp_insert_modes.append(self.allocator, .InTemplateMode);
-                                const adjust_loc = self.appropriatePlaceForInsertion(null);
+                                const adjust_loc = self.adjustedInsertionLocation(null);
                                 const intended_parent = adjust_loc.getParent();
                                 self.document = intended_parent.node_doc;
                                 if (tmp_tag.shadowRootMode() != .SRM_None) {

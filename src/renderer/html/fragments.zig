@@ -1,8 +1,6 @@
 const std = @import("std");
-const Vtable = @import("tree_builder/TreeAdapter.zig").VTable;
-const e = @import("tree_builder/error.zig");
-const TreeBuilderError = e.TreeBuilderError;
-const testing = std.testing;
+const strale = @import("strale");
+const BufferDeque = strale.BufferDeque;
 const DocumentFragment = @import("../dom/DocumentFragment.zig");
 const Element = @import("../dom/Element.zig");
 const Node = @import("../dom/Node.zig");
@@ -11,10 +9,8 @@ const LocalName = @import("local_name").LocalName;
 const Tokenizer = @import("tokenizer/Tokenizer.zig");
 const TokenizerOpts = Tokenizer.TokenizerOpts;
 const token = @import("tokenizer/token.zig");
-const TokenizerState = @import("tokenizer/state.zig").TokenizerState;
 const Parser = @import("Parser.zig");
 const ParserOpts = Parser.ParserOpts;
-const TreeAdapter = @import("tree_builder/TreeAdapter.zig");
 const TreeBuilder = @import("tree_builder/TreeBuilder.zig");
 const TreeBuilderOpts = TreeBuilder.TreeBuilderOpts;
 
@@ -62,8 +58,13 @@ pub fn parseFragment(
     std.debug.assert(opts.scripting_mode == .Inert or opts.scripting_mode == .Fragment);
     const context = try target.context();
 
+    const context_document = context.asNode().node_doc;
+    const scripting_mode: ScriptingMode = if (context_document.scripting_enabled)
+        opts.scripting_mode
+    else
+        .Disabled;
     const tk_opts: TokenizerOpts = .{};
-    const tree_opts: TreeBuilderOpts = .{};
+    const tree_opts: TreeBuilderOpts = .{ .fragment_case = true, .allow_decl_shadow_roots = opts.allow_declarative_shadow_roots, .scripting_mode = scripting_mode };
     const parser_opts = ParserOpts{
         .tokenizer = tk_opts,
         .tree_builder = tree_opts,
@@ -72,8 +73,65 @@ pub fn parseFragment(
     defer parser.destroy();
 
     parser.tree_builder.setDocumentType(.DT_Html);
-    const context_document = context.asNode().node_doc;
-    _ = context_document;
-    _ = input;
-    @panic("TODO");
+    parser.tree_builder.document.mode = context_document.mode;
+    parser.tree_builder.context = context;
+    parser.tokenizer.state = parser.tree_builder.tokenizerStateForContextElement(scripting_mode);
+
+    const root = Element.create(
+        parser.tree_builder.document,
+        LocalName.fromTag(.html),
+        .NS_Html,
+        null,
+        null,
+        false,
+        target.customElementRegistry(),
+    );
+    parser.tree_builder.document.asNode().appendChild(root.asNode());
+    try parser.tree_builder.open_elements.append(root);
+
+    const fragment = try context_document.allocator.create(DocumentFragment);
+    errdefer context_document.allocator.destroy(fragment);
+    fragment.* = DocumentFragment.init(context_document);
+    errdefer fragment.node.destroy(context_document.allocator);
+    parser.tree_builder.root_insertion_target = fragment;
+
+    if (context.ns == .NS_Html and context.local_name.is(.template))
+        try parser.tree_builder.temp_insert_modes.append(alloc, .InTemplateMode);
+
+    var attrs: std.ArrayList(token.Attribute) = .empty;
+    errdefer {
+        for (attrs.items) |*attr| attr.deinit();
+        attrs.deinit(alloc);
+    }
+    try attrs.ensureTotalCapacity(alloc, context.attrs.data.items.len);
+    for (context.attrs.data.items) |attr| attrs.appendAssumeCapacity(.{
+        .name = attr.local_name.clone(),
+        .value = attr.value.clone(),
+        .namespace = attr.ns,
+        .prefix = if (attr.prefix) |prefix| prefix.clone() else null,
+    });
+    parser.tree_builder.context_start_tag = .{ .TagToken = .{
+        .kind = .StartTag,
+        .name = context.local_name.clone(),
+        .self_closing = false,
+        .attrs = attrs,
+    } };
+
+    parser.tree_builder.resetInsertionModeAppropriately();
+
+    var ancestor: ?*Node = context.asNode();
+    while (ancestor) |node| : (ancestor = node.parent) {
+        if (node.type_id != .DOM_Element) continue;
+        const element = node.downcast(Element);
+        if (element.ns == .NS_Html and element.local_name.is(.form)) {
+            parser.tree_builder.form_el_ptr = element;
+            break;
+        }
+    }
+
+    var stream = try BufferDeque(.utf8, .not_atomic, true).init(alloc);
+    defer stream.deinit();
+    try stream.pushBackSlice(input);
+    try parser.tokenizer.step_E(&stream);
+    return fragment;
 }

@@ -38,6 +38,7 @@ custom_element_registry: ?*CustomElementRegistry,
 todmi_counter: usize,
 // FIXME: This field might need to store in parser.
 parser_cannot_change_the_mode: bool,
+scripting_enabled: bool,
 
 pub const dom_type = .DOM_Document;
 
@@ -55,6 +56,7 @@ pub fn init(alloc: std.mem.Allocator) *Document {
         .custom_element_registry = null,
         .todmi_counter = 0,
         .parser_cannot_change_the_mode = false,
+        .scripting_enabled = true,
     };
 
     document.node = Node.init(.DOM_Document, document);

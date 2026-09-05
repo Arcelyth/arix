@@ -251,6 +251,7 @@ pub fn attachShadowRoot(self: *Element, mode: ShadowRoot.ShadowRootMode, clonabl
     const shadow = try self.node.node_doc.allocator.create(ShadowRoot);
     shadow.* = ShadowRoot.init(self.node.node_doc);
     shadow.mode = mode;
+    shadow.doc_frag.host = self;
     shadow.clonable = clonable;
     shadow.serialize = serializable;
     shadow.delegates_focus = delegates_focus;

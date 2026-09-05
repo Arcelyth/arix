@@ -1015,14 +1015,11 @@ fn anyOtherEndTag(self: *TreeBuilder, subject: LocalName) void {
     while (index > 0) {
         index -= 1;
         const node = self.open_elements.at(index);
-        const tag = subject.toTag();
-        if (tag) |t| {
-            if (node.ns == .NS_Html and node.local_name.is(t)) {
-                self.generateImpliedEndTags(t);
-                if (self.currentNode() != node) self.parseError(.unexpected_node);
-                while (self.open_elements.len() > index) _ = self.open_elements.pop();
-                return;
-            }
+        if (node.local_name.eql(subject)) {
+            self.generateImpliedEndTags(subject.toTag());
+            if (self.currentNode() != node) self.parseError(.unexpected_node);
+            while (self.open_elements.len() > index) _ = self.open_elements.pop();
+            return;
         }
         if (node.isSpecial()) {
             self.parseError(.unexpected_node);

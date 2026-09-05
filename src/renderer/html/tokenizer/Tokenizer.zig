@@ -2066,6 +2066,11 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
 
             // https://html.spec.whatwg.org/multipage/parsing.html#cdata-section-bracket-state
             .CDATASectionBracket => {
+                if (is_eof) {
+                    self.emitChar(']');
+                    self.state = .CDATASection;
+                    continue;
+                }
                 switch (ch) {
                     ']' => self.setStateAndAdvance(.CDATASectionEnd, input),
                     else => {
@@ -2077,6 +2082,12 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
 
             // https://html.spec.whatwg.org/multipage/parsing.html#cdata-section-end-state
             .CDATASectionEnd => {
+                if (is_eof) {
+                    self.emitChar(']');
+                    self.emitChar(']');
+                    self.state = .CDATASection;
+                    continue;
+                }
                 switch (ch) {
                     ']' => self.emitCharAndAdvance(']', input),
                     '>' => self.setStateAndAdvance(.Data, input),

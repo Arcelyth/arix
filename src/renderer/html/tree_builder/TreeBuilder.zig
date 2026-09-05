@@ -1525,7 +1525,7 @@ pub fn step_E(self: *TreeBuilder, tk: PendingToken, mode: ?InsertionMode) !Proce
             self.unexpect(tk, .InHeadNoscriptMode);
             _ = self.open_elements.pop();
             self.insert_mode = .InHeadMode;
-            _ = try self.step_E(tk, null);
+            return try self.step_E(tk, null);
         },
 
         // https://html.spec.whatwg.org/multipage/parsing.html#the-after-head-insertion-mode

@@ -794,6 +794,10 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
 
             // https://html.spec.whatwg.org/multipage/parsing.html#script-data-escape-start-state
             .ScriptDataEscapeStart => {
+                if (is_eof) {
+                    self.state = .ScriptData;
+                    continue;
+                }
                 switch (ch) {
                     '-' => {
                         self.setStateAndAdvance(.ScriptDataEscapeStartDash, input);
@@ -805,6 +809,10 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
 
             // https://html.spec.whatwg.org/multipage/parsing.html#script-data-escape-start-dash-state
             .ScriptDataEscapeStartDash => {
+                if (is_eof) {
+                    self.state = .ScriptData;
+                    continue;
+                }
                 switch (ch) {
                     '-' => {
                         self.setStateAndAdvance(.ScriptDataEscapedDashDash, input);
@@ -1088,6 +1096,10 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
 
             // https://html.spec.whatwg.org/multipage/parsing.html#script-data-double-escape-end-state
             .ScriptDataDoubleEscapeEnd => {
+                if (is_eof) {
+                    self.state = .ScriptDataDoubleEscaped;
+                    continue;
+                }
                 switch (ch) {
                     '\t', '\n', '\x0C', ' ', '/', '>' => {
                         if (std.mem.eql(u8, self.temporary_buffer.slice(), "script")) self.setStateAndAdvance(.ScriptDataEscaped, input) else self.setStateAndAdvance(.ScriptDataDoubleEscaped, input);

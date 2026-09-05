@@ -210,6 +210,17 @@ pub fn adapter(self: *TreeBuilder) TokenAdapter {
 }
 // --- ---
 
+pub fn tokenizerStateForContextElement(self: *const TreeBuilder, scripting_mode: ScriptingMode) TokenizerState {
+    const context = self.context orelse @panic("Miss context element.");
+    if (context.ns != .NS_Html) return .Data;
+    if (context.local_name.oneOf(&.{ .title, .textarea })) return .RCDATA;
+    if (context.local_name.oneOf(&.{ .style, .xmp, .iframe, .noembed, .noframes }) or
+        (scripting_mode != .Disabled and context.local_name.is(.noscript))) return .RAWTEXT;
+    if (context.local_name.is(.script)) return .ScriptData;
+    if (context.local_name.is(.plaintext)) return .PLAINTEXT;
+    return .Data;
+}
+
 // https://html.spec.whatwg.org/#tree-construction-dispatcher
 pub fn isForeign(self: *TreeBuilder, tk: PendingToken) bool {
     if (self.open_elements.len() == 0 or std.meta.activeTag(tk) == .EofToken) return false;

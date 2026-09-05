@@ -5,7 +5,6 @@ const TreeBuilder = @import("../../html/tree_builder/TreeBuilder.zig");
 const TokenAdapter = @import("../../html/tokenizer/TokenAdapter.zig");
 const TestTokenAdapter = @import("../../html/tokenizer/TestAdapter.zig");
 const TreeAdapter = @import("../../html/tree_builder/TreeAdapter.zig");
-const TestTreeAdapter = @import("../../html/tree_builder/TestAdapter.zig");
 const strale = @import("strale");
 const StraleUtf8Global = strale.StraleUtf8Global;
 const BufferDeque = strale.BufferDeque;
@@ -18,6 +17,7 @@ const Comment = @import("../../dom/Comment.zig");
 const DocumentType = @import("../../dom/DocumentType.zig");
 const Attr = @import("../../dom/Attr.zig");
 const Namespace = @import("../../dom/namespace.zig").Namespace;
+const Parser = @import("../../html/Parser.zig");
 
 const testing = std.testing;
 
@@ -168,10 +168,10 @@ fn runHtml5LibTestFile(
     for (cases.items) |case| {
         strale.setGlobalAlloc(allocator);
         // Initialize tree builder and adapters.
-        var test_tr_adapter = TestTreeAdapter.init(allocator);
-        defer test_tr_adapter.deinit();
+        var parser = Parser.init(allocator);
+        defer parser.deinit();
 
-        const tree_adapter = test_tr_adapter.adapter();
+        const tree_adapter = parser.adapter();
         var tree_builder = TreeBuilder.init(allocator, tree_adapter, case.fragment != null);
         defer tree_builder.deinit();
         if (case.scripting) |enabled|
@@ -417,11 +417,11 @@ test "html5lib tree_construction tests3" {
     try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html/html5lib-tests/tree-construction/tests3.dat", testing.io);
 }
 
-//test "html5lib tree_construction tests4" {
-//    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-//    defer arena.deinit();
-//    try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html/html5lib-tests/tree-construction/tests4.dat", testing.io);
-//}
+// test "html5lib tree_construction tests4" {
+//     var arena = std.heap.ArenaAllocator.init(testing.allocator);
+//     defer arena.deinit();
+//     try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html/html5lib-tests/tree-construction/tests4.dat", testing.io);
+// }
 
 //test "html5lib tree_construction tests5" {
 //    var arena = std.heap.ArenaAllocator.init(testing.allocator);

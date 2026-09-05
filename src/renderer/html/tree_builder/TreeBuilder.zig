@@ -2720,7 +2720,7 @@ pub fn step_E(self: *TreeBuilder, tk: PendingToken, mode: ?InsertionMode) !Proce
                                     return .PR_Done;
                                 }
                                 _ = self.open_elements.pop();
-                                if (!self.frameset_ok and !self.currentNode().local_name.is(.frameset)) {
+                                if (!self.fragment_case and !self.currentNode().local_name.is(.frameset)) {
                                     self.insert_mode = .AfterFramesetMode;
                                 }
                                 return .PR_Done;

@@ -74,7 +74,9 @@ pending_table_char_tks: std.ArrayList(PendingToken),
 // single leading LF in the next character token.
 ignore_next_lf: bool,
 
-pub fn init(alloc: std.mem.Allocator, tree_adapter: TreeAdapter, fragment_case: bool) TreeBuilder {
+pub const TreeBuilderOpts = struct { fragment_case: bool = false };
+
+pub fn init(alloc: std.mem.Allocator, tree_adapter: TreeAdapter, opts: TreeBuilderOpts) TreeBuilder {
     return TreeBuilder{
         .allocator = alloc,
         .tree_adapter = tree_adapter,
@@ -82,7 +84,7 @@ pub fn init(alloc: std.mem.Allocator, tree_adapter: TreeAdapter, fragment_case: 
         .insert_mode = .InitialMode,
         .orig_insert_mode = .InitialMode,
         .temp_insert_modes = .empty,
-        .fragment_case = fragment_case,
+        .fragment_case = opts.fragment_case,
         .scripting_mode = .Normal,
         .foster_parenting = false,
         .frameset_ok = true,
@@ -219,6 +221,10 @@ pub fn tokenizerStateForContextElement(self: *const TreeBuilder, scripting_mode:
     if (context.local_name.is(.script)) return .ScriptData;
     if (context.local_name.is(.plaintext)) return .PLAINTEXT;
     return .Data;
+}
+
+pub inline fn setDocumentType(self: *TreeBuilder, ty: Document.DocType) void {
+    self.document.ty = ty;
 }
 
 // https://html.spec.whatwg.org/#tree-construction-dispatcher

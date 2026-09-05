@@ -1,7 +1,9 @@
 const std = @import("std");
 const TestParser = @import("TestParser.zig");
 const Tokenizer = @import("../../html/tokenizer/Tokenizer.zig");
+const TokenizerOpts = Tokenizer.TokenizerOpts;
 const TreeBuilder = @import("../../html/tree_builder/TreeBuilder.zig");
+const TreeBuilderOpts = TreeBuilder.TreeBuilderOpts;
 const TokenAdapter = @import("../../html/tokenizer/TokenAdapter.zig");
 const TestTokenAdapter = @import("../../html/tokenizer/TestAdapter.zig");
 const TreeAdapter = @import("../../html/tree_builder/TreeAdapter.zig");
@@ -18,6 +20,7 @@ const DocumentType = @import("../../dom/DocumentType.zig");
 const Attr = @import("../../dom/Attr.zig");
 const Namespace = @import("../../dom/namespace.zig").Namespace;
 const Parser = @import("../../html/Parser.zig");
+const ParserOpts = Parser.ParserOpts;
 
 const testing = std.testing;
 
@@ -168,12 +171,18 @@ fn runHtml5LibTestFile(
     for (cases.items) |case| {
         strale.setGlobalAlloc(allocator);
         // Initialize tree builder and adapters.
-        var parser = Parser.init(allocator);
-        defer parser.deinit();
+        const tk_opts: TokenizerOpts = .{};
+        const tree_opts: TreeBuilderOpts = .{
+            .fragment_case = case.fragment != null,
+        };
+        const parser_opts: ParserOpts = .{
+            .tokenizer = tk_opts,
+            .tree_builder = tree_opts,
+        };
+        const parser = try Parser.create(allocator, parser_opts);
+        defer parser.destroy();
 
-        const tree_adapter = parser.adapter();
-        var tree_builder = TreeBuilder.init(allocator, tree_adapter, case.fragment != null);
-        defer tree_builder.deinit();
+        const tree_builder = &parser.tree_builder;
         if (case.scripting) |enabled|
             tree_builder.scripting_mode = if (enabled) .Normal else .Disabled;
 
@@ -212,10 +221,7 @@ fn runHtml5LibTestFile(
             tree_builder.insert_mode = .InBodyMode;
         }
 
-        const token_adapter = tree_builder.adapter();
-        var tokenizer = Tokenizer.init(allocator, token_adapter, .{});
-        defer tokenizer.deinit();
-
+        var tokenizer = parser.tokenizer;
         var buffer = try BufferDeque(.utf8, .not_atomic, true).init(allocator);
         defer buffer.deinit();
 

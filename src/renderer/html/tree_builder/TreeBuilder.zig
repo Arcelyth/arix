@@ -1237,6 +1237,7 @@ pub fn step_E(self: *TreeBuilder, tk: PendingToken, mode: ?InsertionMode) !Proce
                                 break :sw;
                             }
                             self.unexpect(tk, .BeforeHtmlMode);
+                            return .PR_Done;
                         },
                     }
                 },
@@ -1269,6 +1270,7 @@ pub fn step_E(self: *TreeBuilder, tk: PendingToken, mode: ?InsertionMode) !Proce
                 },
                 .DoctypeToken => {
                     self.unexpect(tk, .BeforeHeadMode);
+                    return .PR_Done;
                 },
                 .TagToken => |tag_tk| {
                     switch (tag_tk.kind) {
@@ -1288,6 +1290,7 @@ pub fn step_E(self: *TreeBuilder, tk: PendingToken, mode: ?InsertionMode) !Proce
                                 break :sw;
                             }
                             self.unexpect(tk, .BeforeHeadMode);
+                            return .PR_Done;
                         },
                     }
                 },
@@ -1584,6 +1587,7 @@ pub fn step_E(self: *TreeBuilder, tk: PendingToken, mode: ?InsertionMode) !Proce
                                 break :sw;
                             }
                             self.unexpect(tk, .AfterHeadMode);
+                            return .PR_Done;
                         },
                     }
                 },
@@ -1897,8 +1901,9 @@ pub fn step_E(self: *TreeBuilder, tk: PendingToken, mode: ?InsertionMode) !Proce
                                     self.unexpect(tk, .InBodyMode);
                                     return .PR_Done;
                                 }
-                                if (self.allElementsOneOf(&.{ .dd, .dt, .li, .optgroup, .option, .p, .rb, .rp, .rt, .rtc, .tbody, .td, .tfoot, .th, .thead, .tr, .body, .html }))
-                                    self.insert_mode = .AfterBodyMode;
+                                if (!self.allElementsOneOf(&.{ .dd, .dt, .li, .optgroup, .option, .p, .rb, .rp, .rt, .rtc, .tbody, .td, .tfoot, .th, .thead, .tr, .body, .html }))
+                                    self.unexpect(tk, .InBodyMode);
+                                self.insert_mode = .AfterBodyMode;
                                 return .PR_Done;
                             } else if (tag_tk.name.is(.html)) {
                                 if (!self.hasElementInScope(.body)) {
@@ -1975,7 +1980,7 @@ pub fn step_E(self: *TreeBuilder, tk: PendingToken, mode: ?InsertionMode) !Proce
                                 self.popUntilPopped(tag);
                                 return .PR_Done;
                             } else if (tag_tk.name.oneOf(&.{ .h1, .h2, .h3, .h4, .h5, .h6 })) {
-                                if (!self.allElementsOneOf(&.{ .h1, .h2, .h3, .h4, .h5, .h6 })) {
+                                if (!self.open_elements.hasAnyElementInScope(&.{ .h1, .h2, .h3, .h4, .h5, .h6 })) {
                                     self.unexpect(tk, .InBodyMode);
                                     return .PR_Done;
                                 }

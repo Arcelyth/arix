@@ -117,9 +117,8 @@ pub inline fn popUntil(self: *OpenElementStack, tag: LocalTag) void {
 
 pub inline fn popUntilOneOfPopped(self: *OpenElementStack, tags: []const LocalTag) void {
     while (self.len() > 0) {
-        const node = self.currentNode();
-        if (node.ns == .NS_Html and node.local_name.oneOf(tags)) break;
-        _ = self.els.pop();
+        const node = self.els.pop().?;
+        if (node.ns == .NS_Html and node.local_name.oneOf(tags)) return;
     }
 }
 
@@ -165,6 +164,29 @@ pub fn hasElementInTableScope(self: *const OpenElementStack, target_tag: LocalTa
         if (node.ns == .NS_Html and node.local_name.is(target_tag)) return true;
 
         if (node.ns == .NS_Html and node.local_name.oneOf(&.{ .html, .table, .template })) return false;
+    }
+    return false;
+}
+
+pub fn hasAnyElementInScope(self: *const OpenElementStack, targets: []const LocalTag) bool {
+    var i = self.len();
+    while (i > 0) {
+        i -= 1;
+        const node = self.els.items[i];
+        if (node.ns == .NS_Html and node.local_name.oneOf(targets)) return true;
+
+        if (node.ns == .NS_Html and node.local_name.oneOf(&.{
+            .applet,  .caption, .html,   .table,    .td, .th,
+            .marquee, .object,  .select, .template,
+        })) return false;
+
+        if (node.ns == .NS_Math and node.local_name.oneOf(&.{
+            .mi, .mo, .mn, .ms, .mtext, .@"annotation-xml",
+        })) return false;
+
+        if (node.ns == .NS_Svg and node.local_name.oneOf(&.{
+            .foreignObject, .desc, .title,
+        })) return false;
     }
     return false;
 }

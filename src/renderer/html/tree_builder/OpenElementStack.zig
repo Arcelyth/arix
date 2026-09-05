@@ -117,8 +117,9 @@ pub inline fn popUntil(self: *OpenElementStack, tag: LocalTag) void {
 
 pub inline fn popUntilOneOfPopped(self: *OpenElementStack, tags: []const LocalTag) void {
     while (self.len() > 0) {
-        const node = self.els.pop().?;
+        const node = self.currentNode();
         if (node.ns == .NS_Html and node.local_name.oneOf(tags)) return;
+        _ = self.els.pop();
     }
 }
 

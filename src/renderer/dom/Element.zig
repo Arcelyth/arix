@@ -10,7 +10,6 @@ const DocumentFragment = @import("DocumentFragment.zig");
 const NamedNodeMap = @import("NamedNodeMap.zig");
 const Attr = @import("Attr.zig");
 const Attribute = token.Attribute;
-const Token = token.Token;
 const Attrs = @import("Attrs.zig");
 const CustomElementRegistry = @import("CustomElementRegistry.zig");
 const CustomElementDefinition = @import("CustomElementDefinition.zig");
@@ -174,7 +173,7 @@ pub inline fn isMathMLTextIntegrationPoint(self: *const Element) bool {
         self.local_name.is(.mtext);
 }
 
-pub fn isHtmlIntegrationPoint(self: *const Element, tk: Token) bool {
+pub fn isHtmlIntegrationPoint(self: *const Element) bool {
     if (self.ns == .NS_Svg) {
         return self.local_name.is(.foreignObject) or
             self.local_name.is(.desc) or
@@ -182,14 +181,9 @@ pub fn isHtmlIntegrationPoint(self: *const Element, tk: Token) bool {
     }
 
     if (self.isMathMLAnnotationXml()) {
-        switch (tk) {
-            .TagToken => |tag| {
-                if (tag.kind == .StartTag)
-                    return tag.hasAttr("encoding", "text/html", false) or
-                        tag.hasAttr("encoding", "application/xhtml+xml", false);
-            },
-            else => {},
-        }
+        const encoding = self.attrs.getFromLocalName(.encoding) orelse return false;
+        return encoding.value.eqlIgnoreCase("text/html") or
+            encoding.value.eqlIgnoreCase("application/xhtml+xml");
     }
 
     return false;
@@ -240,8 +234,8 @@ pub fn isFormAssociatedElement(self: *const Element) bool {
     return false;
 }
 
-pub fn isForeignIntegrationBoundary(el: *Element, tk: Token) bool {
-    return el.ns == .NS_Html or el.isMathMLTextIntegrationPoint() or el.isHtmlIntegrationPoint(tk);
+pub fn isForeignIntegrationBoundary(el: *Element) bool {
+    return el.ns == .NS_Html or el.isMathMLTextIntegrationPoint() or el.isHtmlIntegrationPoint();
 }
 
 // FIXME: Preliminary implementation currently, see: https://dom.spec.whatwg.org/#concept-attach-a-shadow-root.

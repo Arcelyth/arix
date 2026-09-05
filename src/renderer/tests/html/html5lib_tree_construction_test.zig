@@ -489,12 +489,12 @@ test "html5lib tree_construction tests19" {
     try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html/html5lib-tests/tree-construction/tests19.dat", testing.io);
 }
 
-//test "html5lib tree_construction tests20" {
-//    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-//    defer arena.deinit();
-//    try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html/html5lib-tests/tree-construction/tests20.dat", testing.io);
-//}
-//
+test "html5lib tree_construction tests20" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html/html5lib-tests/tree-construction/tests20.dat", testing.io);
+}
+
 //test "html5lib tree_construction tests21" {
 //    var arena = std.heap.ArenaAllocator.init(testing.allocator);
 //    defer arena.deinit();

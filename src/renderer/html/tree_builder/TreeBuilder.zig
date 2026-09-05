@@ -263,7 +263,7 @@ pub fn isForeign(self: *TreeBuilder, tk: PendingToken) bool {
         }
     }
 
-    if (cur_el.isHtmlIntegrationPoint(tk.token())) {
+    if (cur_el.isHtmlIntegrationPoint()) {
         switch (tk) {
             .TagToken => |tag| {
                 if (tag.kind == .StartTag) return false;
@@ -314,7 +314,7 @@ pub fn processTokenForeign(self: *TreeBuilder, tk: PendingToken) ProcessResult {
         .TagToken => |tag_value| blk: {
             if (tag_value.isForeignContentBreakout()) {
                 self.unexpect(tk, self.insert_mode);
-                while (!self.currentNode().isForeignIntegrationBoundary(tk.token()))
+                while (!self.currentNode().isForeignIntegrationBoundary())
                     _ = self.open_elements.pop();
                 break :blk self.processToken(tk);
             }
@@ -1988,6 +1988,7 @@ pub fn step_E(self: *TreeBuilder, tk: PendingToken, mode: ?InsertionMode) !Proce
                                 if (!self.currentNode().local_name.is(tag_tk.name.toTag().?))
                                     self.unexpect(tk, .InBodyMode);
                                 self.popUntilOneOfPopped(&.{ .h1, .h2, .h3, .h4, .h5, .h6 });
+                                _ = self.open_elements.pop();
                                 return .PR_Done;
                             }
                             // else if (tag_tk.name.is(.sarcasm)) {

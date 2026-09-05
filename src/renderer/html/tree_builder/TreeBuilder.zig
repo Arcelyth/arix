@@ -1803,15 +1803,15 @@ pub fn step_E(self: *TreeBuilder, tk: PendingToken, mode: ?InsertionMode) !Proce
                                 if (self.hasElementInButtonScope(.p)) self.closePElement();
                                 self.reconstructActiveFormattingElements();
                                 self.frameset_ok = false;
-                                _ = try self.parseGenericTextElement_E(tag_tk, .TPT_Rawtext);
-                                return .PR_Done;
+                                const state = try self.parseGenericTextElement_E(tag_tk, .TPT_Rawtext);
+                                return .{ .PR_ChangeState = state };
                             } else if (tag_tk.name.is(.iframe)) {
                                 self.frameset_ok = false;
-                                _ = try self.parseGenericTextElement_E(tag_tk, .TPT_Rawtext);
-                                return .PR_Done;
+                                const state = try self.parseGenericTextElement_E(tag_tk, .TPT_Rawtext);
+                                return .{ .PR_ChangeState = state };
                             } else if (tag_tk.name.is(.noembed) or (tag_tk.name.is(.noscript) and self.scripting_mode != .Disabled)) {
-                                _ = try self.parseGenericTextElement_E(tag_tk, .TPT_Rawtext);
-                                return .PR_Done;
+                                const state = try self.parseGenericTextElement_E(tag_tk, .TPT_Rawtext);
+                                return .{ .PR_ChangeState = state };
                             } else if (tag_tk.name.is(.select)) {
                                 if (self.fragment_case) {
                                     // TODO;

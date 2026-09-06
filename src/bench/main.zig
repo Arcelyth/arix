@@ -34,7 +34,7 @@ pub fn main(init: std.process.Init) !void {
 
         var benches: std.ArrayList(Bench) = .empty;
         if (std.mem.endsWith(u8, path, ".html")) {
-            benches.append(arena, Bench.init("HTML tokenizer", &html_tokenizer, HtmlTokenizerBench.step));
+            try benches.append(arena, Bench.init("HTML tokenizer", &html_tokenizer, HtmlTokenizerBench.step));
         } else if (std.mem.endsWith(u8, path, ".css")) {
             @panic("TODO");
         } else {
@@ -42,7 +42,7 @@ pub fn main(init: std.process.Init) !void {
             continue;
         }
 
-        for (benches) |bench| {
+        for (benches.items) |bench| {
             const elapsed = try measure(bench, input, iters, init.io);
             const seconds = @as(f64, @floatFromInt(elapsed)) / 1_000_000_000.0;
             const bytes = @as(f64, @floatFromInt(input.len)) * @as(f64, @floatFromInt(iters));

@@ -34,5 +34,3 @@ pub fn run(self: Bench, input: []const u8, iterations: usize, io: std.Io) !u64 {
     }
     return @intCast(start.untilNow(io).raw.nanoseconds);
 }
-
-

@@ -2,12 +2,11 @@ const HtmlTokenizerBench = @This();
 
 const std = @import("std");
 const strale = @import("strale");
-const renderer = @import("renderer");
-const Tokenizer = renderer.Tokenizer;
-const Token = renderer.HTMLToken;
-const TokenAdapter = renderer.HTMLTokenAdapter;
-const TokenizerError = renderer.HTMLTokenizerError;
-const TokenizerState = renderer.HTMLTokenizerState;
+const Tokenizer = @import("../renderer/html/tokenizer/Tokenizer.zig");
+const Token = @import("../renderer/html/tokenizer/token.zig").Token;
+const TokenAdapter = @import("../renderer/html/tokenizer/TokenAdapter.zig");
+const TokenizerError = @import("../renderer/html/tokenizer/error.zig").TokenizerError;
+const TokenizerState = @import("../renderer/html/tokenizer/state.zig").TokenizerState;
 const BufferDeque = strale.BufferDeque;
 
 allocator: std.mem.Allocator,

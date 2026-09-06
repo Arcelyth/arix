@@ -11,6 +11,9 @@ const DocumentType = @import("DocumentType.zig");
 const ProcessingInstruction = @import("ProcessingInstruction.zig");
 const DocumentFragment = @import("DocumentFragment.zig");
 const CustomElementRegistry = @import("CustomElementRegistry.zig");
+const ln = @import("local_name");
+const LocalName = ln.LocalName;
+const LocalTag = ln.LocalTag;
 
 /// For interface.
 pub const NodeType = enum(u4) {
@@ -369,15 +372,27 @@ pub fn replaceAll(node: ?*Node, parent: *Node) void {
     }
 
     if (added_nodes.items.len != 0 or removed_nodes.items.len != 0)
-        queueTreeMutationRecord(parent, added_nodes.items, removed_nodes.items, null, null);
+        parent.queueTreeMutationRecord(added_nodes.items, removed_nodes.items, null, null);
 }
 
 // https://dom.spec.whatwg.org/#queue-a-tree-mutation-record
-fn queueTreeMutationRecord(parent: *Node, added_nodes: []const *Node, removed_nodes: []const *Node, previous_sibling: ?*Node, next_sibling: ?*Node) void {
-    _ = parent;
+fn queueTreeMutationRecord(self: *Node, added_nodes: []const *Node, removed_nodes: []const *Node, previous_sibling: ?*Node, next_sibling: ?*Node) void {
+    _ = self;
     _ = added_nodes;
     _ = removed_nodes;
     _ = previous_sibling;
     _ = next_sibling;
     @panic("TODO");
+}
+
+pub fn findDescendant(self: *Node, name: LocalTag) ?*Element {
+    var child = self.first_child;
+    while (child) |node| : (child = node.next_sibling) {
+        if (node.type_id == .DOM_Element) {
+            const element = node.downcast(Element);
+            if (element.ns == .NS_Html and element.local_name.is(name)) return element;
+            if (node.findDescendant(name)) |found| return found;
+        }
+    }
+    return null;
 }

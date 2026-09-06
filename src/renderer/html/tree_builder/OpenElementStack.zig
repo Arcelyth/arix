@@ -30,7 +30,11 @@ pub inline fn append(self: *OpenElementStack, el: *Element) !void {
 }
 
 pub inline fn pop(self: *OpenElementStack) ?*Element {
-    return self.els.pop();
+    const element = self.els.pop();
+    if (element) |el|
+        if (el.ns == .NS_Html and el.local_name.is(.option))
+            el.maybeCloneIntoSelectedContent();
+    return element;
 }
 
 pub inline fn at(self: *OpenElementStack, idx: usize) *Element {

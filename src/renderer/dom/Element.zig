@@ -16,7 +16,7 @@ const CustomElementDefinition = @import("CustomElementDefinition.zig");
 const LocalName = ln.LocalName;
 const LocalTag = ln.LocalTag;
 const ShadowRoot = @import("ShadowRoot.zig");
-const ElementInterface = @import("element_interface.zig");
+const ElementInterface = @import("element_interface.zig").ElementInterface;
 
 pub const CustomElementState = enum {
     CES_Undefined,
@@ -63,9 +63,9 @@ result: ?ScriptResult,
 temp_contents: ?*DocumentFragment,
 // FIXME: For template's ownership.
 temp_contents_owned: bool,
-// -- 
+// --
 // Include extra fields for specific element.
-interface: ?*ElementInterface,
+interface: ?ElementInterface,
 
 pub const dom_type = .DOM_Element;
 
@@ -102,7 +102,7 @@ pub fn create(document: *Document, local: LocalName, namespace: ?Namespace, pref
     const def = lookingUpCustomElementDefinition(registry, namespace, local, is);
     if (def) |d| {
         if (!d.*.name.eql(d.*.local_name)) {
-            const interface = getInterface(local, .NS_Html);
+            const interface = getInterface(local, namespace);
             var result = createInternal(document, interface, local, namespace, prefix, .CES_Undefined, is, registry);
             if (sce) {
                 result.upgrade(d) catch {
@@ -117,7 +117,7 @@ pub fn create(document: *Document, local: LocalName, namespace: ?Namespace, pref
             if (true) @panic("TODO");
         }
     } else {
-        const interface = getInterface(local, .NS_Html);
+        const interface = getInterface(local, namespace);
         var result = createInternal(document, interface, local, namespace, prefix, .CES_Undefined, is, registry);
         if (namespace == .NS_Html and (local.isValidCustomElementName() or is != null))
             result.custom_element_state = .CES_Undefined;
@@ -137,13 +137,13 @@ pub fn enqueueUpgradeReaction(self: *Element, def: *CustomElementDefinition) voi
 }
 
 // https://dom.spec.whatwg.org/#create-an-element-internal
-pub fn createInternal(document: *Document, interface: bool, local: LocalName, namespace: ?Namespace, prefix: ?LocalName, state: CustomElementState, is: ?[]const u8, registry: ?*CustomElementRegistry) *Element {
-    _ = interface;
+pub fn createInternal(document: *Document, interface: ?ElementInterface, local: LocalName, namespace: ?Namespace, prefix: ?LocalName, state: CustomElementState, is: ?[]const u8, registry: ?*CustomElementRegistry) *Element {
     const element = document.allocator.create(Element) catch @panic("out of memory");
     element.* = Element.init(document.allocator, namespace orelse .NS_Html, local, document);
     element.ns = namespace;
     element.prefix = prefix;
     element.local_name = local;
+    element.interface = interface;
     element.custom_element_registry = registry;
     element.custom_element_state = state;
     element.custom_element_definition = null;
@@ -312,11 +312,12 @@ pub fn isSpecial(self: *const Element) bool {
     };
 }
 
-// TODO:
-pub fn getInterface(local: LocalName, ns: Namespace) bool {
-    _ = local;
-    _ = ns;
-    return true;
+pub fn getInterface(local: LocalName, ns: ?Namespace) ?ElementInterface {
+    if (ns != .NS_Html) return null;
+    if (local.is(.option)) return .{ .option = .{} };
+    if (local.is(.select)) return .{ .select = .{} };
+    if (local.is(.selectedcontent)) return .{ .selectedcontent = .{} };
+    return null;
 }
 
 /// Cloning steps defined by HTML for element interfaces represented by Element.
@@ -328,7 +329,41 @@ pub fn runCloningSteps(self: *Element, copy: *Element, subtree: bool) void {
 
 // https://html.spec.whatwg.org/multipage/form-elements.html#maybe-clone-an-option-into-selectedcontent
 pub fn maybeCloneIntoSelectedContent(self: *Element) void {
-    _ = self;
+    const option = switch (self.interface orelse return) {
+        .option => |*value| value,
+        else => return,
+    };
+
+    const select = self.nearestAncestorSelect() orelse return;
+    if (!option.selectedness) return;
+    const selected_content = select.enabledSelectedContent() orelse return;
+    self.cloneIntoSelectedContent(selected_content);
+}
+
+pub fn insertedIntoParent(self: *Element) void {
+    const option = switch (self.interface orelse return) {
+        .option => |*value| value,
+        else => return,
+    };
+    if (option.selectedness) return;
+
+    const select = self.nearestAncestorSelect() orelse return;
+    option.selectedness = select.asNode().findDescendant(.option) == self;
+}
+
+// https://html.spec.whatwg.org/multipage/form-elements.html#select-enabled-selectedcontent
+pub fn enabledSelectedContent(self: *Element) ?*Element {
+    switch (self.interface orelse return null) {
+        .select => {},
+        else => return null,
+    }
+    if (self.attrs.getFromLocalName(.multiple) != null) return null;
+    const sc = self.asNode().findDescendant(.selectedcontent) orelse return null;
+    switch (sc.interface orelse return null) {
+        .selectedcontent => |s| if (s.disabled) return null,
+        else => {},
+    }
+    return sc;
 }
 
 // https://html.spec.whatwg.org/multipage/form-elements.html#option-element-nearest-ancestor-select

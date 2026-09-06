@@ -12,3 +12,6 @@ test_tree:
 
 test_css: 
 	zig build test --summary all -- CSS 
+
+bench_html_token:
+	zig build bench -- --iterations 100 res/html/bench.html

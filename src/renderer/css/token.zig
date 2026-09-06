@@ -70,3 +70,24 @@ pub const Token = union(enum) {
     right_brace, // }
     eof,
 };
+
+pub fn cloneToken(alloc: std.mem.Allocator, tk: Token) std.mem.Allocator.Error!Token {
+    return switch (tk) {
+        .ident => |value| .{ .ident = try value.cloneDecoded(alloc) },
+        .function => |value| .{ .function = try value.cloneDecoded(alloc) },
+        .at_keyword => |value| .{ .at_keyword = try value.cloneDecoded(alloc) },
+        .hash => |value| .{ .hash = .{
+            .value = try value.value.cloneDecoded(alloc),
+            .type_flag = value.type_flag,
+        } },
+        .string => |value| .{ .string = try value.cloneDecoded(alloc) },
+        .url => |value| .{ .url = try value.cloneDecoded(alloc) },
+        .dimension => |value| .{ .dimension = .{
+            .value = value.value,
+            .sign = value.sign,
+            .type_flag = value.type_flag,
+            .unit = try value.unit.cloneDecoded(alloc),
+        } },
+        inline else => |value, tag| @unionInit(Token, @tagName(tag), value),
+    };
+}

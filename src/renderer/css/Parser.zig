@@ -4,8 +4,9 @@ const std = @import("std");
 const Tokenizer = @import("Tokenizer.zig");
 const TokenStream = @import("TokenStream.zig");
 const Item = TokenStream.Item;
-const Token = @import("token.zig").Token;
 const token = @import("token.zig");
+const Token = token.Token;
+const cloneToken = token.cloneToken;
 const results = @import("parsing_results.zig");
 const ascii = @import("../utils/ascii.zig");
 
@@ -773,28 +774,7 @@ fn consumeTokenizerComponentValue(
             } };
         },
         .eof => unreachable,
-        else => .{ .preserved_token = results.preservedToken(try self.cloneToken(tk)) },
-    };
-}
-
-fn cloneToken(self: *Parser, tk: Token) std.mem.Allocator.Error!Token {
-    return switch (tk) {
-        .ident => |value| .{ .ident = try value.cloneDecoded(self.allocator) },
-        .function => |value| .{ .function = try value.cloneDecoded(self.allocator) },
-        .at_keyword => |value| .{ .at_keyword = try value.cloneDecoded(self.allocator) },
-        .hash => |value| .{ .hash = .{
-            .value = try value.value.cloneDecoded(self.allocator),
-            .type_flag = value.type_flag,
-        } },
-        .string => |value| .{ .string = try value.cloneDecoded(self.allocator) },
-        .url => |value| .{ .url = try value.cloneDecoded(self.allocator) },
-        .dimension => |value| .{ .dimension = .{
-            .value = value.value,
-            .sign = value.sign,
-            .type_flag = value.type_flag,
-            .unit = try value.unit.cloneDecoded(self.allocator),
-        } },
-        inline else => |value, tag| @unionInit(Token, @tagName(tag), value),
+        else => .{ .preserved_token = results.preservedToken(try cloneToken(self.allocator, tk)) },
     };
 }
 

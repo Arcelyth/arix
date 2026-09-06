@@ -12,6 +12,7 @@ pub const TreeBuilder = @import("renderer/html/tree_builder/TreeBuilder.zig");
 pub const html5lib_tokenizer_test = @import("renderer/tests/html/html5lib_tokenizer_test.zig");
 pub const html5lib_tree_builder_test = @import("renderer/tests/html/html5lib_tree_construction_test.zig");
 pub const TestParser = @import("renderer/tests/html/TestParser.zig");
+pub const css_parsing_tests = @import("renderer/tests/css/css_parsing_tests.zig");
 
 // CSS
 pub const decode = @import("renderer/css/decode.zig");

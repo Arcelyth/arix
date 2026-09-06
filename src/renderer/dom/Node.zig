@@ -331,3 +331,53 @@ fn cloneSingleNode(self: *Node, document: *Document, fallback_registry: ?*Custom
     };
     return copy;
 }
+
+// https://dom.spec.whatwg.org/#concept-node-replace-all
+pub fn replaceAll(node: ?*Node, parent: *Node) void {
+    var removed_nodes: std.ArrayList(*Node) = .empty;
+    defer removed_nodes.deinit(parent.node_doc.allocator);
+    var child = parent.first_child;
+    while (child) |item| : (child = item.next_sibling)
+        removed_nodes.append(parent.node_doc.allocator, item) catch @panic("OutOfMemory");
+
+    var added_nodes: std.ArrayList(*Node) = .empty;
+    defer added_nodes.deinit(parent.node_doc.allocator);
+    if (node) |replacement| {
+        if (replacement.type_id == .DOM_DocumentFragment) {
+            child = replacement.first_child;
+            while (child) |item| : (child = item.next_sibling)
+                added_nodes.append(parent.node_doc.allocator, item) catch @panic("OutOfMemory");
+        } else {
+            added_nodes.append(parent.node_doc.allocator, replacement) catch @panic("OutOfMemory");
+        }
+    }
+
+    while (parent.first_child) |item| {
+        parent.removeChild(item);
+    }
+
+    if (node) |replacement| {
+        if (replacement.type_id == .DOM_DocumentFragment) {
+            while (replacement.first_child) |item| {
+                replacement.removeChild(item);
+                parent.appendChild(item);
+            }
+        } else {
+            replacement.remove();
+            parent.appendChild(replacement);
+        }
+    }
+
+    if (added_nodes.items.len != 0 or removed_nodes.items.len != 0)
+        queueTreeMutationRecord(parent, added_nodes.items, removed_nodes.items, null, null);
+}
+
+// https://dom.spec.whatwg.org/#queue-a-tree-mutation-record
+fn queueTreeMutationRecord(parent: *Node, added_nodes: []const *Node, removed_nodes: []const *Node, previous_sibling: ?*Node, next_sibling: ?*Node) void {
+    _ = parent;
+    _ = added_nodes;
+    _ = removed_nodes;
+    _ = previous_sibling;
+    _ = next_sibling;
+    @panic("TODO");
+}

@@ -16,6 +16,7 @@ const CustomElementDefinition = @import("CustomElementDefinition.zig");
 const LocalName = ln.LocalName;
 const LocalTag = ln.LocalTag;
 const ShadowRoot = @import("ShadowRoot.zig");
+const ElementInterface = @import("element_interface.zig");
 
 pub const CustomElementState = enum {
     CES_Undefined,
@@ -62,6 +63,9 @@ result: ?ScriptResult,
 temp_contents: ?*DocumentFragment,
 // FIXME: For template's ownership.
 temp_contents_owned: bool,
+// -- 
+// Include extra fields for specific element.
+interface: ?*ElementInterface,
 
 pub const dom_type = .DOM_Element;
 
@@ -89,6 +93,7 @@ pub fn init(alloc: std.mem.Allocator, ns: Namespace, local: LocalName, document:
         .result = .SR_Uninitialized,
         .temp_contents = null,
         .temp_contents_owned = false,
+        .interface = null,
     };
 }
 
@@ -319,4 +324,43 @@ pub fn runCloningSteps(self: *Element, copy: *Element, subtree: bool) void {
     _ = self;
     _ = copy;
     _ = subtree;
+}
+
+// https://html.spec.whatwg.org/multipage/form-elements.html#maybe-clone-an-option-into-selectedcontent
+pub fn maybeCloneIntoSelectedContent(self: *Element) void {
+    _ = self;
+}
+
+// https://html.spec.whatwg.org/multipage/form-elements.html#option-element-nearest-ancestor-select
+pub fn nearestAncestorSelect(self: *Element) ?*Element {
+    var ancestor_optgroup: ?*Element = null;
+    var ancestor = self.node.parent;
+
+    while (ancestor) |node| : (ancestor = node.parent) {
+        if (node.type_id != .DOM_Element) continue;
+        const element = node.downcast(Element);
+        if (element.ns != .NS_Html) continue;
+
+        if (element.local_name.oneOf(&.{ .datalist, .hr, .option })) return null;
+        if (element.local_name.is(.optgroup)) {
+            if (ancestor_optgroup != null) return null;
+            ancestor_optgroup = element;
+        }
+        if (element.local_name.is(.select)) return element;
+    }
+    return null;
+}
+
+// https://html.spec.whatwg.org/multipage/form-elements.html#clone-an-option-into-a-selectedcontent
+pub fn cloneIntoSelectedContent(self: *Element, selected_content: *Element) void {
+    const document = self.node.node_doc;
+    const document_fragment = document.allocator.create(DocumentFragment) catch @panic("OutOfMemory");
+    document_fragment.* = DocumentFragment.init(document);
+
+    var child = self.node.first_child;
+    while (child) |node| : (child = node.next_sibling)
+        _ = node.clone(.{ .subtree = true, .parent = &document_fragment.node });
+
+    Node.replaceAll(&document_fragment.node, selected_content.asNode());
+    document.allocator.destroy(document_fragment);
 }

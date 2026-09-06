@@ -259,13 +259,11 @@ fn consumeQualifiedRule(
         switch (item.*) {
             .token => |tk| {
                 if (tk == .eof or isStopToken_O(tk, stop)) {
-                    self.parseError();
                     return null;
                 }
 
                 switch (tk) {
                     .right_brace => {
-                        self.parseError();
                         if (nested) return null;
                         input.discardToken();
                         try prelude.append(self.allocator, .{ .preserved_token = .right_brace });
@@ -492,9 +490,12 @@ fn consumeDeclaration(
         },
     }
 
-    input.discardWhitespace();
     const value_start = input.index;
-    var value = try self.consumeListOfComponentValues(input, .semicolon, nested);
+    var value = try self.consumeListOfComponentValues(
+        input,
+        if (nested) .semicolon else null,
+        nested,
+    );
     errdefer self.allocator.free(value);
     const value_end = input.index;
 
@@ -511,19 +512,15 @@ fn consumeDeclaration(
             snd_last_non_ws = index;
     }
 
+    var important_start: ?usize = null;
     if (last_non_ws) |last| if (snd_last_non_ws) |second_last| {
         if (isImportant(value[last]) and isBang(value[second_last])) {
             important = true;
-            index = second_last;
-        } else {
-            index = value.len;
+            important_start = second_last;
         }
-    } else {
-        index = value.len;
     };
 
-    while (index > 0 and isWhitespaceComponentValue(value[index - 1])) index -= 1;
-    if (index != value.len) value = try self.allocator.realloc(value, index);
+    if (important_start) |start| value = try self.allocator.realloc(value, start);
 
     const custom_property = name.startsWith("--");
     const original_text = input.originalText(value_start, value_end);
@@ -544,7 +541,10 @@ fn consumeDeclaration(
         .name = name,
         .value = value,
         .important = important,
-        .original_text = if (custom_property) original_text else null,
+        .original_text = if (custom_property)
+            if (original_text) |text| results.String.fromSource(text) else null
+        else
+            null,
     };
 }
 
@@ -627,7 +627,6 @@ fn consumeListOfComponentValues(
             if (tk == .right_brace and nested)
                 return values.toOwnedSlice(self.allocator);
 
-            if (tk == .right_brace) self.parseError();
             try values.append(self.allocator, try self.consumeComponentValue(input));
         },
         .component_value => try values.append(
@@ -800,8 +799,4 @@ fn freeOwnedComponentValue(self: *Parser, value: results.ComponentValue) void {
             self.allocator.free(block.value);
         },
     }
-}
-
-fn parseError(self: *Parser) void {
-    _ = self;
 }

@@ -20,12 +20,12 @@ fn normalize(value: *std.json.Value) void {
     }
 }
 
-fn tokenize(allocator: std.mem.Allocator, input: []const u8) ![]TokenStream.Item {
+fn tokenize(allocator: std.mem.Allocator, input: []const u8, unicode_ranges_allowed: bool) ![]TokenStream.Item {
     var tokenizer = Tokenizer.init(allocator, input);
     defer tokenizer.deinit();
     var items: std.ArrayList(TokenStream.Item) = .empty;
     while (true) {
-        const tk = tokenizer.consume(false);
+        const tk = tokenizer.consume(unicode_ranges_allowed);
         if (tk == .eof) break;
         try items.append(allocator, .{ .token = try cloneToken(allocator, tk) });
     }
@@ -131,6 +131,15 @@ fn expectToken(expected: std.json.Value, actual: css.PreservedToken) !void {
         try expectString(array[4].string, value.unit);
         return;
     }
+    if (std.mem.eql(u8, kind, "unicode-range")) {
+        const value = switch (actual) {
+            .unicode_range => |value| value,
+            else => return error.UnexpectedToken,
+        };
+        try std.testing.expectEqual(@as(u32, @intCast(array[1].integer)), value.start);
+        try std.testing.expectEqual(@as(u32, @intCast(array[2].integer)), value.end);
+        return;
+    }
     return error.UnsupportedFixtureToken;
 }
 
@@ -161,6 +170,25 @@ fn expectComponents(expected: []const std.json.Value, actual: []const css.Compon
     var actual_idx: usize = 0;
     while (expected_idx < expected.len) : (expected_idx += 1) {
         const item = expected[expected_idx];
+        if (item == .string and item.string.len == 2 and
+            (std.mem.eql(u8, item.string, "~=") or
+                std.mem.eql(u8, item.string, "|=") or
+                std.mem.eql(u8, item.string, "^=") or
+                std.mem.eql(u8, item.string, "$=") or
+                std.mem.eql(u8, item.string, "*=") or
+                std.mem.eql(u8, item.string, "||")))
+        {
+            if (actual_idx + 2 > actual.len) return error.MissingComponentValue;
+            for (item.string, actual[actual_idx .. actual_idx + 2]) |cp, value| switch (value) {
+                .preserved_token => |tk| switch (tk) {
+                    .delim => |actual_cp| try std.testing.expectEqual(@as(u21, cp), actual_cp),
+                    else => return error.UnexpectedToken,
+                },
+                else => return error.UnexpectedToken,
+            };
+            actual_idx += 2;
+            continue;
+        }
         if (item == .array and item.array.items.len == 2 and item.array.items[0] == .string and
             std.mem.eql(u8, item.array.items[0].string, "error"))
         {
@@ -204,54 +232,75 @@ fn expectComponents(expected: []const std.json.Value, actual: []const css.Compon
     try std.testing.expectEqual(actual.len, actual_idx);
 }
 
-fn runOneComponentValueTest(
+fn expectDeclaration(expected: std.json.Value, actual: css.Declaration) !void {
+    const array = expected.array.items;
+    try std.testing.expectEqualStrings("declaration", array[0].string);
+    try expectString(array[1].string, actual.name);
+    try expectComponents(array[2].array.items, actual.value);
+    try std.testing.expectEqual(array[3].bool, actual.important);
+}
+
+fn loadFixture(alloc: std.mem.Allocator, path: []const u8, io: std.Io) !std.json.Parsed(std.json.Value) {
+    const content = try std.Io.Dir.cwd().readFileAlloc(io, path, alloc, .unlimited);
+    defer alloc.free(content);
+    var parsed = try std.json.parseFromSlice(std.json.Value, alloc, content, .{});
+    normalize(&parsed.value);
+    if (parsed.value != .array or parsed.value.array.items.len % 2 != 0)
+        return error.InvalidTestFile;
+    return parsed;
+}
+
+fn isInvalid(expected: std.json.Value) bool {
+    return expected == .array and expected.array.items.len == 2 and
+        expected.array.items[0] == .string and
+        expected.array.items[1] == .string and
+        std.mem.eql(u8, expected.array.items[0].string, "error") and
+        std.mem.eql(u8, expected.array.items[1].string, "invalid");
+}
+
+const ParseTest = *const fn (*Parser, std.json.Value) anyerror!void;
+
+fn parseComponentValue(parser: *Parser, expected: std.json.Value) !void {
+    if (isInvalid(expected))
+        return std.testing.expectError(error.Syntax, parser.parseComponentValue());
+    try expectComponent(expected, try parser.parseComponentValue());
+}
+
+fn parseComponentValueList(parser: *Parser, expected: std.json.Value) !void {
+    try expectComponents(expected.array.items, try parser.parseListOfComponentValues());
+}
+
+fn parseDeclaration(parser: *Parser, expected: std.json.Value) !void {
+    if (isInvalid(expected))
+        return std.testing.expectError(error.Syntax, parser.parseDeclaration());
+    try expectDeclaration(expected, try parser.parseDeclaration());
+}
+
+fn runParsingTests(
     alloc: std.mem.Allocator,
     path: []const u8,
     io: std.Io,
+    unicode_ranges_allowed: bool,
+    parse: ParseTest,
 ) !void {
-    const content = try std.Io.Dir.cwd().readFileAlloc(
-        io,
-        path,
-        alloc,
-        .unlimited,
-    );
-    defer alloc.free(content);
-    var parsed = try std.json.parseFromSlice(
-        std.json.Value,
-        alloc,
-        content,
-        .{},
-    );
+    const parsed = try loadFixture(alloc, path, io);
     defer parsed.deinit();
 
-    if (parsed.value != .array) return error.InvalidTestFile;
-    normalize(&parsed.value);
-
     const cases = parsed.value.array.items;
-
     var i: usize = 0;
     while (i < cases.len) : (i += 2) {
         if (cases[i] != .string) return error.InvalidTestFile;
-        const items = try tokenize(alloc, cases[i].string);
+        const input = cases[i].string;
+
+        // Skip legacy fixtures that rely on the old treatment of U+0080/U+0081.
+        if (std.mem.indexOf(u8, input, "\xC2\x80\xC2\x81") != null) continue;
+
+        const items = try tokenize(alloc, input, unicode_ranges_allowed);
         var stream = TokenStream.init(alloc, items);
+        defer stream.deinit();
         var parser = Parser.init(alloc, &stream);
-
-        const expected = cases[i + 1];
-        if (expected == .array and expected.array.items.len == 2 and
-            expected.array.items[0] == .string and
-            std.mem.eql(u8, expected.array.items[0].string, "error"))
-        {
-            try std.testing.expectEqualStrings("invalid", expected.array.items[1].string);
-            try std.testing.expectError(error.Syntax, parser.parseComponentValue());
-            continue;
-        }
-
-        const actual = parser.parseComponentValue() catch |err| {
-            std.debug.print("\ncss-parsing-tests input: {s}\n", .{cases[i].string});
-            return err;
-        };
-        expectComponent(expected, actual) catch |err| {
-            std.debug.print("\ncss-parsing-tests input: {s}\n", .{cases[i].string});
+        parse(&parser, cases[i + 1]) catch |err| {
+            std.debug.print("\ncss-parsing-tests input: {s}\n", .{input});
             return err;
         };
     }
@@ -260,5 +309,35 @@ fn runOneComponentValueTest(
 test "CSS css-parsing-tests: one component value" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
-    try runOneComponentValueTest(arena.allocator(), "src/renderer/tests/css/css-parsing-tests/one_component_value.json", testing.io);
+    try runParsingTests(
+        arena.allocator(),
+        "src/renderer/tests/css/css-parsing-tests/one_component_value.json",
+        testing.io,
+        true,
+        parseComponentValue,
+    );
+}
+
+test "CSS css-parsing-tests: component value list" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    try runParsingTests(
+        arena.allocator(),
+        "src/renderer/tests/css/css-parsing-tests/component_value_list.json",
+        testing.io,
+        true,
+        parseComponentValueList,
+    );
+}
+
+test "CSS css-parsing-tests: one declaration" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    try runParsingTests(
+        arena.allocator(),
+        "src/renderer/tests/css/css-parsing-tests/one_declaration.json",
+        testing.io,
+        false,
+        parseDeclaration,
+    );
 }

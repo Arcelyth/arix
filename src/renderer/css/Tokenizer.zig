@@ -184,7 +184,6 @@ pub fn consume(self: *Tokenizer, unicode_ranges_allowed: bool) Token {
                 self.reconsume();
                 return self.consumeIdentLike();
             }
-            self.parseError();
             return .{ .delim = cp };
         },
         ']' => return .right_bracket,
@@ -220,7 +219,6 @@ pub fn consumeComments(self: *Tokenizer) void {
 
         while (true) {
             const cp = self.next() orelse {
-                self.parseError();
                 return;
             };
             if (cp == '*' and self.peek(0) == '/') {
@@ -293,14 +291,12 @@ pub fn consumeString(self: *Tokenizer, ending: u21) Token {
 
     while (true) {
         const cp = self.next() orelse {
-            self.parseError();
             return .{ .string = String.fromDecoded(self.scratch.items) };
         };
 
         if (cp == ending) return .{ .string = String.fromDecoded(self.scratch.items) };
 
         if (ascii.isCssNewline(cp)) {
-            self.parseError();
             self.reconsume();
             return .bad_string;
         }
@@ -329,7 +325,6 @@ pub fn consumeUrl(self: *Tokenizer) Token {
 
     while (true) {
         const cp = self.next() orelse {
-            self.parseError();
             return .{ .url = String.fromDecoded(self.scratch.items) };
         };
 
@@ -343,7 +338,6 @@ pub fn consumeUrl(self: *Tokenizer) Token {
                     return .{ .url = String.fromDecoded(self.scratch.items) };
                 }
                 if (self.peek(0) == null) {
-                    self.parseError();
                     return .{ .url = String.fromDecoded(self.scratch.items) };
                 }
 
@@ -351,7 +345,6 @@ pub fn consumeUrl(self: *Tokenizer) Token {
                 return .bad_url;
             },
             '"', '\'', '(' => {
-                self.parseError();
                 self.consumeBadUrlRemnants();
                 return .bad_url;
             },
@@ -362,13 +355,11 @@ pub fn consumeUrl(self: *Tokenizer) Token {
                     continue;
                 }
 
-                self.parseError();
                 self.consumeBadUrlRemnants();
                 return .bad_url;
             },
             else => {
                 if (ascii.isCssNonPrintable(cp)) {
-                    self.parseError();
                     self.consumeBadUrlRemnants();
                     return .bad_url;
                 }
@@ -381,7 +372,6 @@ pub fn consumeUrl(self: *Tokenizer) Token {
 // https://drafts.csswg.org/css-syntax/#consume-escaped-code-point
 pub fn consumeEscapedCodePoint(self: *Tokenizer) u21 {
     const first = self.next() orelse {
-        self.parseError();
         return 0xFFFD;
     };
 
@@ -407,8 +397,7 @@ pub fn consumeEscapedCodePoint(self: *Tokenizer) u21 {
 // https://drafts.csswg.org/css-syntax/#starts-with-a-valid-escape
 pub fn validEscape(first: ?u21, second: ?u21) bool {
     if (first != '\\') return false;
-    const following = second orelse return false;
-    return !ascii.isCssNewline(following);
+    return if (second) |following| !ascii.isCssNewline(following) else true;
 }
 
 // https://drafts.csswg.org/css-syntax/#would-start-an-identifier
@@ -622,10 +611,6 @@ pub fn consumeBadUrlRemnants(self: *Tokenizer) void {
         if (cp == ')') return;
         if (validEscape(cp, self.peek(0))) _ = self.consumeEscapedCodePoint();
     }
-}
-
-pub fn parseError(self: *Tokenizer) void {
-    _ = self;
 }
 
 inline fn appendScratch(self: *Tokenizer, cp: u21) void {

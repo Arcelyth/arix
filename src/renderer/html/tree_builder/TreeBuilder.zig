@@ -2013,6 +2013,7 @@ pub fn step_E(self: *TreeBuilder, tk: PendingToken, mode: ?InsertionMode) !Proce
                                 self.unexpect(tk, .InBodyMode);
                                 var mut_tk = tk;
                                 mut_tk.TagToken.kind = .StartTag;
+                                mut_tk.TagToken.attrs = .empty;
                                 return try self.step_E(mut_tk, null);
                             }
 

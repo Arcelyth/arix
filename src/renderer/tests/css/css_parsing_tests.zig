@@ -150,8 +150,34 @@ fn expectComponents(expected: []const std.json.Value, actual: []const css.Compon
     var actual_idx: usize = 0;
     while (expected_idx < expected.len) : (expected_idx += 1) {
         const item = expected[expected_idx];
-        if (item == .array and item.array.items.len > 0 and item.array.items[0] == .string and
-            std.mem.eql(u8, item.array.items[0].string, "error")) continue;
+        if (item == .array and item.array.items.len == 2 and item.array.items[0] == .string and
+            std.mem.eql(u8, item.array.items[0].string, "error"))
+        {
+            const detail = item.array.items[1].string;
+            const expected_token: ?std.meta.Tag(css.PreservedToken) = if (std.mem.eql(u8, detail, "}"))
+                .right_brace
+            else if (std.mem.eql(u8, detail, "]"))
+                .right_bracket
+            else if (std.mem.eql(u8, detail, ")"))
+                .right_paren
+            else if (std.mem.eql(u8, detail, "bad-string"))
+                .bad_string
+            else if (std.mem.eql(u8, detail, "bad-url"))
+                .bad_url
+            else
+                null;
+
+            if (expected_token) |tag| {
+                if (actual_idx >= actual.len) return error.MissingComponentValue;
+                const actual_tag = switch (actual[actual_idx]) {
+                    .preserved_token => |tk| std.meta.activeTag(tk),
+                    else => return error.UnexpectedToken,
+                };
+                try std.testing.expectEqual(tag, actual_tag);
+                actual_idx += 1;
+            }
+            continue;
+        }
         if (actual_idx >= actual.len) return error.MissingComponentValue;
         expectComponent(item, actual[actual_idx]) catch |err| {
             const expected_kind = if (item == .array) item.array.items[0].string else item.string;
@@ -219,8 +245,8 @@ fn runOneComponentValueTest(
     }
 }
 
-//test "CSS css-parsing-tests: one component value" {
-//    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-//    defer arena.deinit();
-//    try runOneComponentValueTest(arena.allocator(), "src/renderer/tests/css/css-parsing-tests/one_component_value.json", testing.io);
-//}
+test "CSS css-parsing-tests: one component value" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    try runOneComponentValueTest(arena.allocator(), "src/renderer/tests/css/css-parsing-tests/one_component_value.json", testing.io);
+}

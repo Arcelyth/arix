@@ -313,3 +313,10 @@ pub fn getInterface(local: LocalName, ns: Namespace) bool {
     _ = ns;
     return true;
 }
+
+/// Cloning steps defined by HTML for element interfaces represented by Element.
+pub fn runCloningSteps(self: *Element, copy: *Element, subtree: bool) void {
+    _ = self;
+    _ = copy;
+    _ = subtree;
+}

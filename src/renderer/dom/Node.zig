@@ -9,6 +9,8 @@ const Text = @import("Text.zig");
 const Comment = @import("Comment.zig");
 const DocumentType = @import("DocumentType.zig");
 const ProcessingInstruction = @import("ProcessingInstruction.zig");
+const DocumentFragment = @import("DocumentFragment.zig");
+const CustomElementRegistry = @import("CustomElementRegistry.zig");
 
 /// For interface.
 pub const NodeType = enum(u4) {
@@ -205,4 +207,127 @@ pub fn hasChild(self: *const Node, type_id: DomTypeId) bool {
         if (node.type_id == type_id) return true;
 
     return false;
+}
+
+pub const CloneOptions = struct {
+    document: ?*Document = null,
+    subtree: bool = false,
+    parent: ?*Node = null,
+    fallback_registry: ?*CustomElementRegistry = null,
+};
+
+// https://dom.spec.whatwg.org/#concept-node-clone
+pub fn clone(self: *Node, options: CloneOptions) *Node {
+    const document = options.document orelse self.node_doc;
+    std.debug.assert(self.type_id != .DOM_Document or self.node_doc == document);
+    const copy = self.cloneSingleNode(document, options.fallback_registry);
+
+    // Run any cloning steps defined for node in other applicable specifications.
+    // FIXME: This need to be extend for more dom types.
+    if (self.type_id == .DOM_Element)
+        self.downcast(Element).runCloningSteps(copy.downcast(Element), options.subtree);
+
+    if (options.parent) |parent| parent.appendChild(copy);
+
+    if (options.subtree) {
+        var child = self.first_child;
+        while (child) |node| : (child = node.next_sibling) {
+            _ = node.clone(.{
+                .document = document,
+                .subtree = true,
+                .parent = copy,
+                .fallback_registry = options.fallback_registry,
+            });
+        }
+    }
+
+    if (self.type_id == .DOM_Element) {
+        const source = self.downcast(Element);
+        if (source.shadow_root) |sd| {
+            if (sd.clonable) {
+                const target = copy.downcast(Element);
+                target.attachShadowRoot(
+                    sd.mode,
+                    true,
+                    sd.serialize,
+                    sd.delegates_focus,
+                    sd.slot_assignment,
+                    sd.custom_element_registry,
+                ) catch @panic("OutOfMemory");
+                const target_shadow = target.shadow_root.?;
+                target_shadow.declarative = sd.declarative;
+                target_shadow.keep_cer_null = sd.keep_cer_null;
+
+                var child = sd.doc_frag.node.first_child;
+                while (child) |node| : (child = node.next_sibling)
+                    _ = node.clone(.{ .document = document, .subtree = true, .parent = &target_shadow.doc_frag.node });
+            }
+        }
+    }
+    return copy;
+}
+
+// https://dom.spec.whatwg.org/#clone-a-single-node
+fn cloneSingleNode(self: *Node, document: *Document, fallback_registry: ?*CustomElementRegistry) *Node {
+    const copy = switch (self.type_id) {
+        .DOM_Element => blk: {
+            const source = self.downcast(Element);
+            const registry = source.custom_element_registry orelse fallback_registry;
+            const element = Element.create(
+                document,
+                source.local_name.clone(),
+                source.ns,
+                if (source.prefix) |prefix| prefix.clone() else null,
+                source.is,
+                false,
+                registry,
+            );
+            for (source.attrs.data.items) |attr| {
+                element.attrs.append(.{
+                    .ns = attr.ns,
+                    .prefix = if (attr.prefix) |prefix| prefix.clone() else null,
+                    .local_name = attr.local_name.clone(),
+                    .value = attr.value.clone(),
+                    .element = null,
+                }) catch @panic("OutOfMemory");
+            }
+            break :blk element.asNode();
+        },
+        .DOM_Text => Text.create(document, self.downcast(Text).data.clone()).asNode(),
+        .DOM_Comment => Comment.create(document, self.downcast(Comment).data.clone()).asNode(),
+        .DOM_DocumentType => blk: {
+            const source = self.downcast(DocumentType);
+            break :blk DocumentType.create(
+                document,
+                source.name.clone(),
+                source.public_id.clone(),
+                source.system_id.clone(),
+            ).asNode();
+        },
+        .DOM_ProcessingInstruction => blk: {
+            const source = self.downcast(ProcessingInstruction);
+            break :blk ProcessingInstruction.create(
+                document,
+                source.target.clone(),
+                source.data.clone(),
+            ).asNode();
+        },
+        .DOM_Document => blk: {
+            const source = self.downcast(Document);
+            const result = Document.init(document.allocator);
+            result.encoding = source.encoding;
+            result.content_type = source.content_type;
+            result.ty = source.ty;
+            result.mode = source.mode;
+            result.allow_decl_shadow_roots = source.allow_decl_shadow_roots;
+            break :blk result.asNode();
+        },
+        .DOM_DocumentFragment => blk: {
+            const fragment = document.allocator.create(DocumentFragment) catch @panic("OutOfMemory");
+            fragment.* = DocumentFragment.init(document);
+            break :blk &fragment.node;
+        },
+        else => unreachable,
+    };
+    return copy;
 }

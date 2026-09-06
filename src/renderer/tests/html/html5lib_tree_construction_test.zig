@@ -543,8 +543,8 @@ test "html5lib tree_construction webkit01" {
     try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html/html5lib-tests/tree-construction/webkit01.dat", testing.io);
 }
 
-//test "html5lib tree_construction webkit02" {
-//    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-//    defer arena.deinit();
-//    try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html/html5lib-tests/tree-construction/webkit02.dat", testing.io);
-//}
+test "html5lib tree_construction webkit02" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html/html5lib-tests/tree-construction/webkit02.dat", testing.io);
+}

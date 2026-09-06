@@ -144,6 +144,7 @@ pub fn appendChild(self: *Node, child: *Node) void {
         self.first_child = child;
 
     self.last_child = child;
+    if (child.type_id == .DOM_Element) child.downcast(Element).insertedIntoParent();
 }
 
 /// Insert `child` immediately before `reference`.
@@ -165,6 +166,7 @@ pub fn insertBefore(
         self.first_child = child;
 
     reference.prev_sibling = child;
+    if (child.type_id == .DOM_Element) child.downcast(Element).insertedIntoParent();
 }
 
 /// Remove `child` from this node.
@@ -382,7 +384,6 @@ fn queueTreeMutationRecord(self: *Node, added_nodes: []const *Node, removed_node
     _ = removed_nodes;
     _ = previous_sibling;
     _ = next_sibling;
-    @panic("TODO");
 }
 
 pub fn findDescendant(self: *Node, name: LocalTag) ?*Element {

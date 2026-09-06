@@ -187,7 +187,13 @@ pub fn handlePendingToken(self: *TreeBuilder, token: PendingToken) ?TokenizerSta
                 if (remainder) |pending| pending_tokens.append(self.allocator, pending) catch @panic("OutOfMemory");
             },
             .PR_ChangeState => |state| return state,
-            .PR_Done, .PR_AckSelfClosing, .PR_StopParsing => {
+            .PR_StopParsing => {
+                while (self.open_elements.pop() != null) {}
+                if (pending_tokens.items.len == 0) return null;
+                tk.deinit(self.allocator);
+                tk = pending_tokens.orderedRemove(0);
+            },
+            .PR_Done, .PR_AckSelfClosing => {
                 if (pending_tokens.items.len == 0) return null;
                 tk.deinit(self.allocator);
                 tk = pending_tokens.orderedRemove(0);
@@ -1783,6 +1789,11 @@ pub fn step_E(self: *TreeBuilder, tk: PendingToken, mode: ?InsertionMode) !Proce
                                 return .PR_Done;
                             } else if (tag_tk.name.is(.hr)) {
                                 if (self.hasElementInButtonScope(.p)) self.closePElement();
+                                if (self.hasElementInScope(.select)) {
+                                    self.generateImpliedEndTags(null);
+                                    if (self.hasElementInScope(.option) or self.hasElementInScope(.optgroup))
+                                        self.parseError(.unexpected_node);
+                                }
                                 _ = try self.insertHtmlElement_E(tag_tk);
                                 _ = self.open_elements.pop();
                                 if (tag_tk.self_closing) return .PR_AckSelfClosing;

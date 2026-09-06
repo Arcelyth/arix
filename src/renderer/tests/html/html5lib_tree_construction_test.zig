@@ -530,3 +530,9 @@ test "html5lib tree_construction tests26" {
     defer arena.deinit();
     try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html/html5lib-tests/tree-construction/tests26.dat", testing.io);
 }
+
+test "html5lib tree_construction tricky01" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    try runHtml5LibTestFile(arena.allocator(), "src/renderer/tests/html/html5lib-tests/tree-construction/tricky01.dat", testing.io);
+}

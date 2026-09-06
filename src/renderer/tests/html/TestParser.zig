@@ -111,7 +111,7 @@ fn handleDoc(self: *TestParser, case: *TestCase) void {
     var doc_end = doc_start;
 
     while (self.peekLine()) |line| {
-        if (std.mem.eql(u8, line, "")) break;
+        if (std.mem.eql(u8, line, "#data")) break;
         _ = self.readLine();
         doc_end = self.offset;
     }

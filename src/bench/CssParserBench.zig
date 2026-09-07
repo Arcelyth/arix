@@ -1,3 +1,4 @@
+/// Benchmark for CSS parser, only use the parseStylesheet entry.
 const Self = @This();
 const std = @import("std");
 const Tokenizer = @import("../renderer/css/Tokenizer.zig");

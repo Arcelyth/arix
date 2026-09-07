@@ -1,3 +1,4 @@
+/// Benchmark for CSS tokenizer.
 const Self = @This();
 const std = @import("std");
 const Tokenizer = @import("../renderer/css/Tokenizer.zig");

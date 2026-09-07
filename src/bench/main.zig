@@ -89,11 +89,16 @@ pub fn main(init: std.process.Init) !void {
 }
 
 fn measure(bench: Bench, input: []const u8, iterations: usize, io: std.Io) !u64 {
+    // Warm up the benchmark to reduce startup effects.
     for (0..warmup_count) |_| {
         _ = try bench.run(input, 1, io);
     }
+
+    // Collect multiple samples for a more stable measurement.
     var samples: [sample_count]u64 = undefined;
     for (&samples) |*sample| sample.* = try bench.run(input, iterations, io);
+
+    // Use the median sample to reduce the impact of outliers.
     std.mem.sortUnstable(u64, &samples, {}, std.sort.asc(u64));
     return samples[sample_count / 2];
 }

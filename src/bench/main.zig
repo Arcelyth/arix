@@ -3,6 +3,7 @@ const Bench = @import("Bench.zig");
 const HtmlTokenizerBench = @import("HtmlTokenizerBench.zig");
 const HtmlParserBench = @import("HtmlParserBench.zig");
 const CssTokenizerBench = @import("CssTokenizerBench.zig");
+const CssParserBench = @import("CssParserBench.zig");
 
 const sample_count = 15;
 const warmup_count = 3;
@@ -35,6 +36,7 @@ pub fn main(init: std.process.Init) !void {
         var html_tokenizer = HtmlTokenizerBench.init(init.gpa);
         var html_parser = HtmlParserBench.init(init.gpa);
         var css_tokenizer = CssTokenizerBench.init(init.gpa);
+        var css_parser = CssParserBench.init(init.gpa);
 
         var benches: std.ArrayList(Bench) = .empty;
         if (std.mem.endsWith(u8, path, ".html")) {
@@ -59,6 +61,13 @@ pub fn main(init: std.process.Init) !void {
                 CssTokenizerBench.prepare,
                 CssTokenizerBench.step,
                 CssTokenizerBench.finish,
+            ));
+            try benches.append(arena, Bench.init(
+                "CSS parser",
+                &css_parser,
+                CssParserBench.prepare,
+                CssParserBench.step,
+                CssParserBench.finish,
             ));
         } else {
             std.debug.print("skip {s}: expected an .html or .css file\n", .{path});

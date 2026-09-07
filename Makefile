@@ -14,5 +14,9 @@ test_css:
 	zig build test --summary all -- CSS 
 
 bench_html:
-	zig build bench -- --iterations 100 res/html/bench.html
+	zig build bench -- --iterations 100 res/bench/html/bench.html
+
+bench_css:
+	zig build bench -- --iterations 100 res/bench/css/bench.css
+
 

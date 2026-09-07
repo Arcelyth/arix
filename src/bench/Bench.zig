@@ -5,32 +5,62 @@ const std = @import("std");
 
 name: []const u8,
 ptr: *anyopaque,
-stepFn: *const fn (*anyopaque, []const u8) anyerror!usize,
+vtable: *const VTable,
+
+pub const VTable = struct {
+    prepareFn: *const fn (*anyopaque, []const u8) anyerror!void,
+    stepFn: *const fn (*anyopaque) anyerror!usize,
+    finishFn: *const fn (*anyopaque) void,
+};
 
 pub fn init(
     name: []const u8,
     pointer: anytype,
-    comptime stepFn: fn (@TypeOf(pointer), []const u8) anyerror!usize,
+    comptime prepareFn: fn (@TypeOf(pointer), []const u8) anyerror!void,
+    comptime stepFn: fn (@TypeOf(pointer)) anyerror!usize,
+    comptime finishFn: fn (@TypeOf(pointer)) void,
 ) Bench {
-    const Ptr = @TypeOf(pointer);
-    const gen = struct {
-        fn step(ptr: *anyopaque, input: []const u8) anyerror!usize {
-            const self: Ptr = @ptrCast(@alignCast(ptr));
-            return stepFn(self, input);
+    const Pointer = @TypeOf(pointer);
+    const Wrapper = struct {
+        const vtable = VTable{
+            .prepareFn = prepare,
+            .stepFn = step,
+            .finishFn = finish,
+        };
+
+        fn prepare(ptr: *anyopaque, input: []const u8) anyerror!void {
+            return prepareFn(@as(Pointer, @ptrCast(@alignCast(ptr))), input);
+        }
+
+        fn step(ptr: *anyopaque) anyerror!usize {
+            return stepFn(@as(Pointer, @ptrCast(@alignCast(ptr))));
+        }
+
+        fn finish(ptr: *anyopaque) void {
+            finishFn(@as(Pointer, @ptrCast(@alignCast(ptr))));
         }
     };
-    return .{ .name = name, .ptr = pointer, .stepFn = gen.step };
+    return .{
+        .name = name,
+        .ptr = pointer,
+        .vtable = &Wrapper.vtable,
+    };
 }
 
-pub inline fn step(self: Bench, input: []const u8) !usize {
-    return self.stepFn(self.ptr, input);
-}
+pub fn run(self: Bench, input: []const u8, iters: usize, io: std.Io) !u64 {
+    var elapsed: u64 = 0;
+    for (0..iters) |_| {
+        try self.vtable.prepareFn(self.ptr, input);
 
-pub fn run(self: Bench, input: []const u8, iterations: usize, io: std.Io) !u64 {
-    const start = std.Io.Clock.Timestamp.now(io, .cpu_process);
-    for (0..iterations) |_| {
-        const result = try self.step(input);
+        const start = std.Io.Clock.Timestamp.now(io, .cpu_process);
+        const result = self.vtable.stepFn(self.ptr) catch |err| {
+            self.vtable.finishFn(self.ptr);
+            return err;
+        };
+        elapsed += @intCast(start.untilNow(io).raw.nanoseconds);
         std.mem.doNotOptimizeAway(result);
+
+        self.vtable.finishFn(self.ptr);
     }
-    return @intCast(start.untilNow(io).raw.nanoseconds);
+    return elapsed;
 }

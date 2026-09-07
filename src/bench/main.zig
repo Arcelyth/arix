@@ -1,6 +1,7 @@
 const std = @import("std");
 const Bench = @import("Bench.zig");
 const HtmlTokenizerBench = @import("HtmlTokenizerBench.zig");
+const HtmlParserBench = @import("HtmlParserBench.zig");
 
 const sample_count = 15;
 const warmup_count = 3;
@@ -31,10 +32,17 @@ pub fn main(init: std.process.Init) !void {
         defer init.gpa.free(input);
 
         var html_tokenizer = HtmlTokenizerBench.init(init.gpa);
+        //        var html_parser = HtmlParserBench.init(init.gpa);
 
         var benches: std.ArrayList(Bench) = .empty;
         if (std.mem.endsWith(u8, path, ".html")) {
-            try benches.append(arena, Bench.init("HTML tokenizer", &html_tokenizer, HtmlTokenizerBench.step));
+            try benches.append(arena, Bench.init(
+                "HTML tokenizer",
+                &html_tokenizer,
+                HtmlTokenizerBench.prepare,
+                HtmlTokenizerBench.step,
+                HtmlTokenizerBench.finish,
+            ));
         } else if (std.mem.endsWith(u8, path, ".css")) {
             @panic("TODO");
         } else {
@@ -56,13 +64,12 @@ pub fn main(init: std.process.Init) !void {
     }
 }
 
-fn measure(bench: Bench, input: []const u8, iters: usize, io: std.Io) !u64 {
+fn measure(bench: Bench, input: []const u8, iterations: usize, io: std.Io) !u64 {
     for (0..warmup_count) |_| {
-        const result = try bench.step(input);
-        std.mem.doNotOptimizeAway(result);
+        _ = try bench.run(input, 1, io);
     }
     var samples: [sample_count]u64 = undefined;
-    for (&samples) |*sample| sample.* = try bench.run(input, iters, io);
+    for (&samples) |*sample| sample.* = try bench.run(input, iterations, io);
     std.mem.sortUnstable(u64, &samples, {}, std.sort.asc(u64));
     return samples[sample_count / 2];
 }

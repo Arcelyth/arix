@@ -1,6 +1,5 @@
 const std = @import("std");
 const testing = std.testing;
-const u8_buffer = @import("../../utils/u8_buffer.zig");
 const strale = @import("strale");
 const LocalName = @import("local_name").LocalName;
 const LocalTag = @import("local_name").LocalTag;

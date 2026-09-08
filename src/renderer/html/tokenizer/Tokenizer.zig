@@ -8,7 +8,6 @@ const StraleUtf8Global = strale.StraleUtf8Global;
 const t_error = @import("error.zig");
 const TokenizerErrorProc = t_error.TokenizerErrorProc;
 const TokenizerError = t_error.TokenizerError;
-const u8_buffer = @import("../../utils/u8_buffer.zig");
 const ascii = @import("../../utils/ascii.zig");
 const token = @import("token.zig");
 const TokenAdapter = @import("TokenAdapter.zig");

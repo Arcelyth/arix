@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Arix HTML parser benchmark</title>
+  <link rel="stylesheet" href="/assets/site.css">
+  <style>
+    body { margin: 0; font-family: system-ui, sans-serif; color: #202124; }
+    main { max-width: 72rem; margin: auto; padding: 2rem; }
+    article { border-bottom: 1px solid #ddd; padding: 1.5rem 0; }
+  </style>
+</head>
+<body>
+  <header id="site-header" class="header elevated">
+    <nav aria-label="Primary navigation">
+      <a href="/" aria-current="page">Home</a>
+      <a href="/articles">Articles</a>
+      <a href="/projects">Projects</a>
+      <a href="/about">About</a>
+    </nav>
+  </header>
+
+  <main>
+    <section aria-labelledby="intro-title">
+      <h1 id="intro-title">A realistic HTML parsing workload</h1>
+      <p>
+        This document contains ordinary page markup, character references such
+        as &amp;, &lt;, &gt;, &quot;, and Unicode text: 中文、日本語、한국어.
+      </p>
+      <p>
+        It also contains <strong>formatting</strong>, <em>emphasis</em>,
+        <code>inline_code()</code>, <mark>highlighting</mark>, and
+        <a href="https://example.com/?a=1&amp;b=2">a link with attributes</a>.
+      </p>
+    </section>
+
+    <section aria-labelledby="articles-title">
+      <h2 id="articles-title">Recent articles</h2>
+
+      <article data-id="1001">
+        <header>
+          <h3>Building a streaming parser</h3>
+          <p><time datetime="2026-09-07">7 September 2026</time></p>
+        </header>
+        <p>
+          A streaming parser consumes input incrementally while preserving the
+          state required by tokenization and tree construction. It must handle
+          boundaries inside tags, comments, character references, and text.
+        </p>
+        <blockquote cite="https://example.com/specification">
+          <p>Correctness comes first; measurement shows where optimization matters.</p>
+        </blockquote>
+        <ul>
+          <li>Decode the input stream.</li>
+          <li>Emit tokens without unnecessary copies.</li>
+          <li>Construct nodes using the active insertion mode.</li>
+          <li>Preserve namespaces and source order.</li>
+        </ul>
+      </article>
+
+      <article data-id="1002">
+        <header>
+          <h3>DOM construction and ownership</h3>
+          <p><time datetime="2026-08-29">29 August 2026</time></p>
+        </header>
+        <p>
+          Nodes form a tree of documents, elements, text, comments, and document
+          fragments. Efficient ownership matters because a large document can
+          contain hundreds of thousands of nodes and attributes.
+        </p>
+        <dl>
+          <dt>Document</dt><dd>The root browsing-context document.</dd>
+          <dt>Element</dt><dd>A node with a namespace, local name, and attributes.</dd>
+          <dt>Text</dt><dd>A contiguous sequence of character data.</dd>
+          <dt>Comment</dt><dd>Markup retained outside the rendered text.</dd>
+        </dl>
+      </article>
+
+      <article data-id="1003">
+        <header>
+          <h3>Tables and formatting modes</h3>
+          <p><time datetime="2026-08-12">12 August 2026</time></p>
+        </header>
+        <table>
+          <caption>Parser benchmark stages</caption>
+          <thead>
+            <tr><th>Stage</th><th>Input</th><th>Output</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Preprocessing</td><td>UTF-8 bytes</td><td>Code points</td></tr>
+            <tr><td>Tokenization</td><td>Code points</td><td>Tokens</td></tr>
+            <tr><td>Tree building</td><td>Tokens</td><td>DOM nodes</td></tr>
+            <tr><td>Style parsing</td><td>CSS text</td><td>Rules</td></tr>
+          </tbody>
+          <tfoot>
+            <tr><td colspan="3">Measured using complete input documents</td></tr>
+          </tfoot>
+        </table>
+      </article>
+    </section>
+
+    <section aria-labelledby="form-title">
+      <h2 id="form-title">Example form</h2>
+      <form action="/search" method="get">
+        <fieldset>
+          <legend>Search settings</legend>
+          <label for="query">Query</label>
+          <input id="query" name="q" type="search" value="HTML parser">
+
+          <label for="category">Category</label>
+          <select id="category" name="category">
+            <optgroup label="Engine">
+              <option value="html" selected>HTML</option>
+              <option value="css">CSS</option>
+              <option value="dom">DOM</option>
+            </optgroup>
+            <optgroup label="Rendering">
+              <option value="layout">Layout</option>
+              <option value="paint">Painting</option>
+            </optgroup>
+          </select>
+
+          <label><input type="checkbox" name="exact" checked> Exact match</label>
+          <button type="submit">Search</button>
+        </fieldset>
+      </form>
+    </section>
+
+    <section aria-labelledby="foreign-title">
+      <h2 id="foreign-title">Foreign content</h2>
+      <svg viewBox="0 0 240 80" role="img" aria-labelledby="svg-title">
+        <title id="svg-title">Simple benchmark diagram</title>
+        <defs>
+          <linearGradient id="background" x1="0" x2="1">
+            <stop offset="0" stop-color="#4f46e5"></stop>
+            <stop offset="1" stop-color="#06b6d4"></stop>
+          </linearGradient>
+        </defs>
+        <rect width="240" height="80" rx="8" fill="url(#background)"></rect>
+        <text x="120" y="46" text-anchor="middle" fill="white">HTML → DOM</text>
+      </svg>
+      <math display="block">
+        <mrow>
+          <mi>throughput</mi><mo>=</mo><mfrac><mi>bytes</mi><mi>time</mi></mfrac>
+        </mrow>
+      </math>
+    </section>
+
+    <template id="article-template">
+      <article class="generated">
+        <h3>Generated article</h3>
+        <p>Template contents are parsed into a separate document fragment.</p>
+      </article>
+    </template>
+
+    <!-- Comments exercise the markup declaration states without dominating input. -->
+    <script type="application/json" id="page-data">
+      {"page":1,"items":[{"id":1001,"tags":["html","parser"]},{"id":1002,"tags":["dom"]}]}
+    </script>
+  </main>
+
+  <footer>
+    <p>&copy; 2026 Arix. Built with Zig.</p>
+  </footer>
+</body>
+</html>

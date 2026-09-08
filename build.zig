@@ -14,6 +14,7 @@ pub fn build(b: *std.Build) !void {
     var depends: std.ArrayList(DependItem) = .empty;
 
     const test_step = b.step("test", "Run all tests");
+    const bench_step = b.step("bench", "Run benchmarks");
 
     // config
     const debug = b.option(bool, "debug", "show debug information") orelse false;
@@ -54,10 +55,25 @@ pub fn build(b: *std.Build) !void {
         .target = target,
         .optimize = optimize,
     });
-
     moduleAddCommon(exe_module, anon_imports, depends, options);
 
     const exe = b.addExecutable(.{ .name = "main", .root_module = exe_module });
+
+    const bench_module = b.createModule(.{
+        .root_source_file = b.path("src/bench.zig"),
+        .target = target,
+        .optimize = .ReleaseFast,
+    });
+    moduleAddCommon(bench_module, anon_imports, depends, options);
+
+    const bench_exe = b.addExecutable(.{
+        .name = "bench",
+        .root_module = bench_module,
+    });
+
+    const run_bench = b.addRunArtifact(bench_exe);
+    if (b.args) |args| run_bench.addArgs(args);
+    bench_step.dependOn(&run_bench.step);
 
     // test
     for (test_targets) |t| {

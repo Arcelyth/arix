@@ -54,12 +54,22 @@ pub fn deinit(self: *TestAdapter) void {
 }
 
 // Implement TokenAdapter's method.
+/// html5lib's expected output represents adjacent character data as one token, 
+/// so this test adapter merges consecutive character tokens before comparison. 
 pub fn handleToken(ptr: *anyopaque, token: Token) ?TokenizerState {
     const self: *TestAdapter = @ptrCast(@alignCast(ptr));
-    self.tokens.append(self.allocator, token) catch unreachable;
+    var tk = token;
+    if (tk == .CharacterToken and self.tokens.items.len != 0) {
+        const previous = &self.tokens.items[self.tokens.items.len - 1];
+        if (previous.* == .CharacterToken) {
+            previous.CharacterToken.append(tk.CharacterToken.slice()) catch unreachable;
+            tk.deinit(self.allocator);
+            return null;
+        }
+    }
+    self.tokens.append(self.allocator, tk) catch unreachable;
     return null;
 }
-
 // Implement TokenAdapter's method.
 pub fn handleError(ptr: *anyopaque, err: TokenizerError, cur_line: usize) void {
     const self: *TestAdapter = @ptrCast(@alignCast(ptr));

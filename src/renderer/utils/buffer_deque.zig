@@ -333,6 +333,34 @@ pub fn BufferDeque(comptime format: strale.Format, comptime atomicity: strale.At
             return null;
         }
 
+        /// Consume the front character without decoding and returning it.
+        ///
+        /// Use this after `peekChar` when the caller already holds the decoded
+        /// character.
+        pub fn discardChar(self: *Self) bool {
+            while (self.buffer.frontPtr()) |front| {
+                const bytes = front.slice();
+                if (bytes.len == 0) {
+                    var empty = self.buffer.popFront().?;
+                    empty.deinit();
+                    continue;
+                }
+
+                const byte_len = if (CharType == u8)
+                    1
+                else
+                    @min(std.unicode.utf8ByteSequenceLength(bytes[0]) catch 1, bytes.len);
+                front.dropFrontBytes(byte_len);
+
+                if (front.isEmpty()) {
+                    var empty = self.buffer.popFront().?;
+                    empty.deinit();
+                }
+                return true;
+            }
+            return false;
+        }
+
         /// Match the given byte sequence against the front of the deque.
         ///
         /// If every byte matches, the matched characters are consumed from the deque
@@ -395,6 +423,7 @@ const Str = strale.Strale(.byte, .not_atomic, false);
 
 const BufferG = BufferDeque(.byte, .not_atomic, true);
 const StrG = strale.Strale(.byte, .not_atomic, true);
+const Utf8Buffer = BufferDeque(.utf8, .not_atomic, false);
 
 fn asciiEq(a: u8, b: u8) bool {
     return a == b;
@@ -533,4 +562,36 @@ test "utils BufferDeque: input-error scan stops at ASCII controls" {
     const run = deque.peekUntilWithInputErrors("&<").?;
     try testing.expectEqualStrings("abcdefghijklmnop", run.bytes);
     try testing.expectEqual(0x07, run.delimiter.?);
+}
+
+test "utils BufferDeque: discard peeked UTF-8 character" {
+    const alloc = std.heap.page_allocator;
+    var deque = try Utf8Buffer.init(alloc);
+    defer deque.deinit();
+
+    try deque.pushBackSlice("A\u{4E2D}\u{1F642}");
+
+    try testing.expectEqual('A', deque.peekChar().?);
+    try testing.expect(deque.discardChar());
+    try testing.expectEqual('\u{4E2D}', deque.peekChar().?);
+    try testing.expect(deque.discardChar());
+    try testing.expectEqual('\u{1F642}', deque.peekChar().?);
+    try testing.expect(deque.discardChar());
+    try testing.expect(!deque.discardChar());
+    try testing.expect(deque.isEmpty());
+}
+
+test "utils BufferDeque: discard character crosses buffer boundary" {
+    const alloc = std.heap.page_allocator;
+    var deque = try Utf8Buffer.init(alloc);
+    defer deque.deinit();
+
+    try deque.pushBackSlice("\u{4E2D}");
+    try deque.pushBackSlice("B");
+
+    try testing.expectEqual('\u{4E2D}', deque.peekChar().?);
+    try testing.expect(deque.discardChar());
+    try testing.expectEqual('B', deque.peekChar().?);
+    try testing.expect(deque.discardChar());
+    try testing.expect(deque.isEmpty());
 }

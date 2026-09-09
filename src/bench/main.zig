@@ -4,6 +4,7 @@ const HtmlTokenizerBench = @import("HtmlTokenizerBench.zig");
 const HtmlParserBench = @import("HtmlParserBench.zig");
 const CssTokenizerBench = @import("CssTokenizerBench.zig");
 const CssParserBench = @import("CssParserBench.zig");
+const html_input = @import("html_input.zig");
 
 const sample_count = 15;
 const warmup_count = 3;
@@ -77,7 +78,11 @@ pub fn main(init: std.process.Init) !void {
         for (benches.items) |bench| {
             const elapsed = try measure(bench, input, iters, init.io);
             const seconds = @as(f64, @floatFromInt(elapsed)) / 1_000_000_000.0;
-            const bytes = @as(f64, @floatFromInt(input.len)) * @as(f64, @floatFromInt(iters));
+            const input_bytes = if (std.mem.endsWith(u8, path, ".html"))
+                try html_input.byteLen(input)
+            else
+                input.len;
+            const bytes = @as(f64, @floatFromInt(input_bytes)) * @as(f64, @floatFromInt(iters));
             std.debug.print("{s:<18} {s:<24} {d:>12} {d:>12.2}\n", .{
                 bench.name,
                 std.fs.path.basename(path),

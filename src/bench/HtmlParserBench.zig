@@ -4,6 +4,7 @@ const std = @import("std");
 const strale = @import("strale");
 const Parser = @import("../renderer/html/Parser.zig");
 const BufferDeque = @import("../renderer/utils/buffer_deque.zig").BufferDeque;
+const html_input = @import("html_input.zig");
 const Buffer = BufferDeque(.utf8, .not_atomic, true);
 
 allocator: std.mem.Allocator,
@@ -19,7 +20,7 @@ pub fn prepare(self: *Self, input: []const u8) !void {
     const allocator = self.arena.?.allocator();
     strale.setGlobalAlloc(allocator);
     self.buffer = try Buffer.init(allocator);
-    try self.buffer.?.pushBackSlice(input);
+    _ = try html_input.fill(&self.buffer.?, allocator, input);
 }
 
 pub fn step(self: *Self) !usize {

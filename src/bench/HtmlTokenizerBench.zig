@@ -8,6 +8,7 @@ const TokenAdapter = @import("../renderer/html/tokenizer/TokenAdapter.zig");
 const TokenizerError = @import("../renderer/html/tokenizer/error.zig").TokenizerError;
 const TokenizerState = @import("../renderer/html/tokenizer/state.zig").TokenizerState;
 const BufferDeque = @import("../renderer/utils/buffer_deque.zig").BufferDeque;
+const html_input = @import("html_input.zig");
 const Buffer = BufferDeque(.utf8, .not_atomic, true);
 
 allocator: std.mem.Allocator,
@@ -61,7 +62,7 @@ pub fn prepare(self: *Self, input: []const u8) !void {
     strale.setGlobalAlloc(allocator);
     self.adapter = .{ .allocator = allocator };
     self.buffer = try Buffer.init(allocator);
-    try self.buffer.?.pushBackSlice(input);
+    _ = try html_input.fill(&self.buffer.?, allocator, input);
     strale.setGlobalAlloc(allocator);
 }
 

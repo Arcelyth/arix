@@ -147,6 +147,48 @@ pub fn BufferDeque(comptime format: strale.Format, comptime atomicity: strale.At
             return self.peekUntilImpl(set, true);
         }
 
+        /// Return the maximal ASCII run before a byte in `set`, an uppercase
+        /// ASCII letter, or a non-ASCII byte. This lets tokenizer name states
+        /// append ordinary bytes in one operation while retaining their scalar
+        /// handling for case folding and exceptional code points.
+        fn peekAsciiNameRunImpl(self: *Self, comptime set: []const u8, comptime input_errors: bool) ?FrontRun {
+            const table = comptime table: {
+                var value = std.StaticBitSet(256).initEmpty();
+                for (set) |char| value.set(char);
+                break :table value;
+            };
+
+            while (self.buffer.frontPtr()) |front| {
+                const bytes = front.slice();
+                if (bytes.len == 0) {
+                    var empty = self.buffer.popFront().?;
+                    empty.deinit();
+                    continue;
+                }
+
+                for (bytes, 0..) |byte, index| {
+                    if (byte >= 0x80 or std.ascii.isUpper(byte) or
+                        table.isSet(byte) or (input_errors and isInputErrorByte(byte)))
+                    {
+                        return .{
+                            .bytes = bytes[0..index],
+                            .delimiter = if (byte < 0x80) @intCast(byte) else null,
+                        };
+                    }
+                }
+                return .{ .bytes = bytes, .delimiter = null };
+            }
+            return null;
+        }
+
+        pub fn peekAsciiNameRun(self: *Self, comptime set: []const u8) ?FrontRun {
+            return self.peekAsciiNameRunImpl(set, false);
+        }
+
+        pub fn peekAsciiNameRunWithInputErrors(self: *Self, comptime set: []const u8) ?FrontRun {
+            return self.peekAsciiNameRunImpl(set, true);
+        }
+
         /// Consume bytes previously returned by `peekUntil`.
         pub fn consumeFrontBytes(self: *Self, count: usize) void {
             if (count == 0) return;
@@ -594,4 +636,29 @@ test "utils BufferDeque: discard character crosses buffer boundary" {
     try testing.expectEqual('B', deque.peekChar().?);
     try testing.expect(deque.discardChar());
     try testing.expect(deque.isEmpty());
+}
+
+test "utils BufferDeque: ASCII name run stops before exceptional bytes" {
+    const alloc = std.heap.page_allocator;
+    var deque = try Utf8Buffer.init(alloc);
+    defer deque.deinit();
+
+    try deque.pushBackSlice("custom-nameUpper");
+    const lower = deque.peekAsciiNameRun("\t\r\n\x0C /\x00>").?;
+    try testing.expectEqualStrings("custom-name", lower.bytes);
+    try testing.expectEqual('U', lower.delimiter.?);
+
+    deque.consumeFrontBytes(lower.bytes.len);
+    try testing.expectEqual('U', deque.peekChar().?);
+}
+
+test "utils BufferDeque: ASCII name run stops before non-ASCII" {
+    const alloc = std.heap.page_allocator;
+    var deque = try Utf8Buffer.init(alloc);
+    defer deque.deinit();
+
+    try deque.pushBackSlice("name\u{4E2D}");
+    const run = deque.peekAsciiNameRun("\t\r\n\x0C /\x00>").?;
+    try testing.expectEqualStrings("name", run.bytes);
+    try testing.expect(run.delimiter == null);
 }

@@ -50,7 +50,10 @@ pub fn BufferDeque(comptime format: strale.Format, comptime atomicity: strale.At
 
         pub const PopUntilResult = union(enum) {
             from_set: CharType,
-            not_from_set: T,
+            not_from_set: struct {
+                value: T,
+                delimiter: ?CharType,
+            },
         };
 
         /// Consume the maximal byte run before the next ASCII character in
@@ -68,12 +71,22 @@ pub fn BufferDeque(comptime format: strale.Format, comptime atomicity: strale.At
                 if (index == 0)
                     return .{ .from_set = @intCast(bytes[0]) };
 
-                if (index == bytes.len)
-                    return .{ .not_from_set = self.buffer.popFront().? };
+                if (index == bytes.len) {
+                    const value = self.buffer.popFront().?;
+                    const delimiter = if (self.peekChar()) |char|
+                        if (char <= std.math.maxInt(u8) and std.mem.indexOfScalar(u8, set, @intCast(char)) != null)
+                            char
+                        else
+                            null
+                    else
+                        null;
+                    return .{ .not_from_set = .{ .value = value, .delimiter = delimiter } };
+                }
 
+                const delimiter: CharType = @intCast(bytes[index]);
                 const run = front.substr(0, @intCast(index));
                 front.dropFrontBytes(index);
-                return .{ .not_from_set = run };
+                return .{ .not_from_set = .{ .value = run, .delimiter = delimiter } };
             }
             return null;
         }
@@ -361,7 +374,9 @@ test "utils BufferDeque: pop until" {
 
     try deque.pushBackSlice("hello&world");
 
-    var hello = (deque.popUntil(&.{ '\r', '&', '\n' }) orelse return error.TestUnexpectedResult).not_from_set;
+    const hello_run = (deque.popUntil(&.{ '\r', '&', '\n' }) orelse return error.TestUnexpectedResult).not_from_set;
+    try testing.expectEqual('&', hello_run.delimiter.?);
+    var hello = hello_run.value;
     defer hello.deinit();
     try testing.expectEqualStrings("hello", hello.slice());
 
@@ -369,7 +384,9 @@ test "utils BufferDeque: pop until" {
     try testing.expectEqual('&', ampersand);
     try testing.expectEqual('&', deque.nextChar().?);
 
-    var world = (deque.popUntil("\r\x00&<\n") orelse return error.TestUnexpectedResult).not_from_set;
+    const world_run = (deque.popUntil("\r\x00&<\n") orelse return error.TestUnexpectedResult).not_from_set;
+    try testing.expect(world_run.delimiter == null);
+    var world = world_run.value;
     defer world.deinit();
     try testing.expectEqualStrings("world", world.slice());
     try testing.expect(deque.popUntil("\r\x00&<\n") == null);

@@ -416,6 +416,18 @@ pub fn preprocessChar(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, 
     if (ascii.isSurrogate(u21, ch.*)) self.handleError(.SurrogateInInputStream) else if (ascii.isNoncharacter(u21, ch.*)) self.handleError(.NoncharacterInInputStream) else if (ascii.isControlCharacter(u21, ch.*)) self.handleError(.ControlCharacterInInputStream);
 }
 
+inline fn processDataCharacter(self: *Tokenizer, ch: u21, input: *BufferDeque(.utf8, .not_atomic, true)) void {
+    switch (ch) {
+        '&' => self.setCharacterReferenceStateAndAdvance(.Data, input),
+        '<' => self.setStateAndAdvance(.TagOpen, input),
+        0x0000 => {
+            self.handleError(.UnexpectedNullCharacter);
+            self.emitCharAndAdvance(ch, input);
+        },
+        else => self.emitCharAndAdvance(ch, input),
+    }
+}
+
 pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !void {
     self.peekChar(input);
     self.preprocessChar(input, &self.ch);
@@ -437,23 +449,22 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     return;
                 }
                 switch (input.popUntil("\r\x00&<\n").?) {
-                    .from_set => switch (ch) {
-                        '&' => self.setCharacterReferenceStateAndAdvance(.Data, input),
-                        '<' => self.setStateAndAdvance(.TagOpen, input),
-                        0x0000 => {
-                            self.handleError(.UnexpectedNullCharacter);
-                            self.emitCharAndAdvance(ch, input);
-                        },
-                        else => self.emitCharAndAdvance(ch, input),
-                    },
-                    .not_from_set => |value| {
-                        var chars = value;
+                    .from_set => self.processDataCharacter(ch, input),
+                    .not_from_set => |res| {
+                        var chars = res.value;
                         defer chars.deinit();
                         self.emitChars(chars.slice());
-                        self.peekChar(input);
-                        if (!self.is_eof) self.preprocessChar(input, &self.ch);
+                        if (res.delimiter) |delimiter| {
+                            self.ch = delimiter;
+                            self.preprocessChar(input, &self.ch);
+                            self.processDataCharacter(self.ch, input);
+                        } else {
+                            self.peekChar(input);
+                            if (!self.is_eof) self.preprocessChar(input, &self.ch);
+                        }
                     },
                 }
+
             },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#rcdata-state

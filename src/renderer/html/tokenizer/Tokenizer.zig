@@ -17,6 +17,7 @@ const LocalName = local_name.LocalName;
 const LocalNameMap = local_name.LocalNameMap;
 const config = @import("config");
 
+
 allocator: std.mem.Allocator,
 state: TokenizerState,
 ch: u21,

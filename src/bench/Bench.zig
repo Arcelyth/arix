@@ -52,7 +52,7 @@ pub fn run(self: Bench, input: []const u8, iters: usize, io: std.Io) !u64 {
     for (0..iters) |_| {
         try self.vtable.prepareFn(self.ptr, input);
 
-        const start = std.Io.Clock.Timestamp.now(io, .cpu_process);
+        const start = std.Io.Clock.Timestamp.now(io, .awake);
         const result = self.vtable.stepFn(self.ptr) catch |err| {
             self.vtable.finishFn(self.ptr);
             return err;

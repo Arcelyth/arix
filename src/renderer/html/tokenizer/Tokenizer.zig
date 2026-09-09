@@ -17,8 +17,8 @@ const LocalName = local_name.LocalName;
 const LocalNameMap = local_name.LocalNameMap;
 const config = @import("config");
 
-// ASCII control characters that must be processed individually so that 
-// preprocessChar() can report the corresponding parse errors instead of 
+// ASCII control characters that must be processed individually so that
+// preprocessChar() can report the corresponding parse errors instead of
 // allowing them to be emitted as part of a bulk character run.
 const input_error_bytes = "\x01\x02\x03\x04\x05\x06\x07\x08\x0B\x0E\x0F\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1A\x1B\x1C\x1D\x1E\x1F\x7F";
 
@@ -191,26 +191,30 @@ pub fn createAttr_E(self: *Tokenizer, ch: ?u21) !void {
 pub fn sealAttr(self: *Tokenizer) !void {
     if (self.current_attribute_name.isEmpty()) return;
     const name_slice = self.current_attribute_name.slice();
-    var lc_attr = try LocalName.fromSlice(name_slice);
-    defer lc_attr.deinit();
+    const static_name = LocalNameMap.get(name_slice);
+    var attr_name = if (static_name) |tag|
+        LocalName{ .static = tag }
+    else
+        LocalName{ .dynamic = self.current_attribute_name.take() };
+    if (static_name != null) self.current_attribute_name.clear();
+
     const dup = for (self.current_tag_attrs.items) |attr| {
-        if (attr.name.eql(lc_attr)) break true;
+        if (attr.name.eql(attr_name)) break true;
     } else false;
     if (dup) {
+        attr_name.deinit();
         self.handleError(.DuplicateAttribute);
         self.current_attr_dup = true;
-        self.current_attribute_name.clear();
         self.current_attribute_value.clear();
     } else {
-        const final_name = if (LocalNameMap.get(name_slice)) |tag|
-            LocalName{ .static = tag }
-        else
-            LocalName{ .dynamic = self.current_attribute_name.take() };
-
-        self.current_attribute_name.clear();
+        var attr_value = self.current_attribute_value.take();
+        errdefer {
+            attr_name.deinit();
+            attr_value.deinit();
+        }
         try self.current_tag_attrs.append(self.allocator, .{
-            .name = final_name,
-            .value = self.current_attribute_value.take(),
+            .name = attr_name,
+            .value = attr_value,
         });
     }
 }

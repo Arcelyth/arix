@@ -472,6 +472,38 @@ inline fn processPLAINTEXTCharacter(self: *Tokenizer, ch: u21, input: *BufferDeq
     }
 }
 
+inline fn processAttrDoubleQuotedCharacter_E(self: *Tokenizer, ch: u21, input: *BufferDeque(.utf8, .not_atomic, true)) !void {
+    switch (ch) {
+        '"' => self.setStateAndAdvance(.AfterAttributeValueQuoted, input),
+        '&' => self.setCharacterReferenceStateAndAdvance(.AttributeValueDoubleQuoted, input),
+        0x0000 => {
+            self.handleError(.UnexpectedNullCharacter);
+            try self.current_attribute_value.push('\u{FFFD}');
+            self.nextChar(input);
+        },
+        else => {
+            try self.current_attribute_value.push(ch);
+            self.nextChar(input);
+        },
+    }
+}
+
+inline fn processAttrSingleQuotedCharacter_E(self: *Tokenizer, ch: u21, input: *BufferDeque(.utf8, .not_atomic, true)) !void {
+    switch (ch) {
+        '\'' => self.setStateAndAdvance(.AfterAttributeValueQuoted, input),
+        '&' => self.setCharacterReferenceStateAndAdvance(.AttributeValueSingleQuoted, input),
+        0x0000 => {
+            self.handleError(.UnexpectedNullCharacter);
+            try self.current_attribute_value.push('\u{FFFD}');
+            self.nextChar(input);
+        },
+        else => {
+            try self.current_attribute_value.push(ch);
+            self.nextChar(input);
+        },
+    }
+}
+
 pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !void {
     self.peekChar(input);
     self.preprocessChar(input, &self.ch);
@@ -1321,17 +1353,20 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     self.emitEof();
                     return;
                 }
-                switch (ch) {
-                    '"' => self.setStateAndAdvance(.AfterAttributeValueQuoted, input),
-                    '&' => self.setCharacterReferenceStateAndAdvance(.AttributeValueDoubleQuoted, input),
-                    0x0000 => {
-                        self.handleError(.UnexpectedNullCharacter);
-                        try self.current_attribute_value.push('\u{FFFD}');
-                        self.nextChar(input);
-                    },
-                    else => {
-                        try self.current_attribute_value.push(ch);
-                        self.nextChar(input);
+                switch (input.popUntil("\r\x00\"&\n").?) {
+                    .from_set => try self.processAttrDoubleQuotedCharacter_E(ch, input),
+                    .not_from_set => |res| {
+                        var chars = res.value;
+                        defer chars.deinit();
+                        try self.current_attribute_value.append(chars.slice());
+                        if (res.delimiter) |delimiter| {
+                            self.ch = delimiter;
+                            self.preprocessChar(input, &self.ch);
+                            try self.processAttrDoubleQuotedCharacter_E(self.ch, input);
+                        } else {
+                            self.peekChar(input);
+                            if (!self.is_eof) self.preprocessChar(input, &self.ch);
+                        }
                     },
                 }
             },
@@ -1343,17 +1378,20 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     self.emitEof();
                     return;
                 }
-                switch (ch) {
-                    '\'' => self.setStateAndAdvance(.AfterAttributeValueQuoted, input),
-                    '&' => self.setCharacterReferenceStateAndAdvance(.AttributeValueSingleQuoted, input),
-                    0x0000 => {
-                        self.handleError(.UnexpectedNullCharacter);
-                        try self.current_attribute_value.push('\u{FFFD}');
-                        self.nextChar(input);
-                    },
-                    else => {
-                        try self.current_attribute_value.push(ch);
-                        self.nextChar(input);
+                switch (input.popUntil("\r\x00'&\n").?) {
+                    .from_set => try self.processAttrSingleQuotedCharacter_E(ch, input),
+                    .not_from_set => |res| {
+                        var chars = res.value;
+                        defer chars.deinit();
+                        try self.current_attribute_value.append(chars.slice());
+                        if (res.delimiter) |delimiter| {
+                            self.ch = delimiter;
+                            self.preprocessChar(input, &self.ch);
+                            try self.processAttrSingleQuotedCharacter_E(self.ch, input);
+                        } else {
+                            self.peekChar(input);
+                            if (!self.is_eof) self.preprocessChar(input, &self.ch);
+                        }
                     },
                 }
             },

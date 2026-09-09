@@ -566,10 +566,8 @@ pub fn isPossibleToInsert(self: *const TreeBuilder) bool {
 
 // https://html.spec.whatwg.org/multipage/parsing.html#insert-a-character
 pub fn insertCharacter_E(self: *TreeBuilder, chars: ?[]const u8, tk: PendingToken) !void {
-    const data = if (chars) |slice|
-        try StraleUtf8Global.initSlice(slice)
-    else switch (tk) {
-        .CharacterToken => |ct| ct.data.clone(),
+    const bytes = if (chars) |slice| slice else switch (tk) {
+        .CharacterToken => |ct| ct.slice(),
         else => return,
     };
 
@@ -580,13 +578,13 @@ pub fn insertCharacter_E(self: *TreeBuilder, chars: ?[]const u8, tk: PendingToke
     if (insert_loc.beforeNode()) |previous| {
         if (previous.isA(.DOM_Text)) {
             const text = previous.downcast(Text);
-
-            try text.data.append(data.slice());
+            try text.data.append(bytes);
             return;
         }
     }
 
     const document = parent.node_doc;
+    const data = try StraleUtf8Global.initSlice(bytes);
     var text = Text.create(document, data);
     self.insertNodeAt(text.asNode(), insert_loc);
 }

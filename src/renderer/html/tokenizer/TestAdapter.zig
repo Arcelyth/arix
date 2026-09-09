@@ -54,8 +54,8 @@ pub fn deinit(self: *TestAdapter) void {
 }
 
 // Implement TokenAdapter's method.
-/// html5lib's expected output represents adjacent character data as one token, 
-/// so this test adapter merges consecutive character tokens before comparison. 
+/// html5lib's expected output represents adjacent character data as one token,
+/// so this test adapter merges consecutive character tokens before comparison.
 pub fn handleToken(ptr: *anyopaque, token: Token) ?TokenizerState {
     const self: *TestAdapter = @ptrCast(@alignCast(ptr));
     var tk = token;

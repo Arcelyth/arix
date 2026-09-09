@@ -68,7 +68,10 @@ pub fn prepare(self: *Self, input: []const u8) !void {
 
 pub fn step(self: *Self) !usize {
     const allocator = self.arena.?.allocator();
-    var tokenizer = Tokenizer.init(allocator, self.adapter.adapter(), .{});
+    var tokenizer = Tokenizer.init(allocator, self.adapter.adapter(), .{
+        .exact_errors = false,
+        .track_lines = false,
+    });
     defer tokenizer.deinit();
     try tokenizer.step_E(&self.buffer.?);
     return self.adapter.token_count;

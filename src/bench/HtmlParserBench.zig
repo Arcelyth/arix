@@ -26,7 +26,10 @@ pub fn prepare(self: *Self, input: []const u8) !void {
 pub fn step(self: *Self) !usize {
     const allocator = self.arena.?.allocator();
     strale.setGlobalAlloc(allocator);
-    const parser = try Parser.create(allocator, .{ .tokenizer = .{}, .tree_builder = .{} });
+    const parser = try Parser.create(allocator, .{ .tokenizer = .{
+        .exact_errors = false,
+        .track_lines = false,
+    }, .tree_builder = .{} });
     defer parser.destroy();
     try parser.tokenizer.step_E(&self.buffer.?);
     std.mem.doNotOptimizeAway(parser.tree_builder.document);

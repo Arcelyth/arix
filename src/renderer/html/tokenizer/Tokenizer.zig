@@ -17,7 +17,6 @@ const LocalName = local_name.LocalName;
 const LocalNameMap = local_name.LocalNameMap;
 const config = @import("config");
 
-
 allocator: std.mem.Allocator,
 state: TokenizerState,
 ch: u21,
@@ -28,6 +27,7 @@ pause_flag: bool,
 char_ref_code: u64,
 ignore_lf: bool,
 
+// Handle all the errors describe in spec, set to false for faster scanning.
 exact_errors: bool,
 track_lines: bool,
 

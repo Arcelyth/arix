@@ -1,6 +1,6 @@
 const std = @import("std");
 const strale = @import("strale");
-const BufferDeque = strale.BufferDeque;
+const BufferDeque = @import("../utils/buffer_deque.zig").BufferDeque;
 const DocumentFragment = @import("../dom/DocumentFragment.zig");
 const Element = @import("../dom/Element.zig");
 const Node = @import("../dom/Node.zig");

@@ -11,7 +11,7 @@ const Attribute = token.Attribute;
 
 const strale = @import("strale");
 const StraleUtf8Global = strale.StraleUtf8Global;
-const BufferDeque = strale.BufferDeque;
+const BufferDeque = @import("../../utils/buffer_deque.zig").BufferDeque;
 const testing = std.testing;
 const config = @import("config");
 const LocalName = @import("local_name").LocalName;

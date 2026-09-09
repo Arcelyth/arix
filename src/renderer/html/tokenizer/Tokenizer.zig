@@ -3,12 +3,12 @@ const Tokenizer = @This();
 const std = @import("std");
 const TokenizerState = @import("state.zig").TokenizerState;
 const strale = @import("strale");
-const BufferDeque = strale.BufferDeque;
 const StraleUtf8Global = strale.StraleUtf8Global;
 const t_error = @import("error.zig");
 const TokenizerErrorProc = t_error.TokenizerErrorProc;
 const TokenizerError = t_error.TokenizerError;
 const ascii = @import("../../utils/ascii.zig");
+const BufferDeque = @import("../../utils/buffer_deque.zig").BufferDeque;
 const token = @import("token.zig");
 const TokenAdapter = @import("TokenAdapter.zig");
 const trie_nodes = @import("named_ref").trie_nodes;
@@ -56,7 +56,7 @@ pub const TokenizerOpts = struct {
 };
 
 pub fn init(alloc: std.mem.Allocator, adapter: TokenAdapter, opts: TokenizerOpts) Tokenizer {
-    //  TOOD: enable global allocator
+    // FIXME: enable global allocator
     //    strale.setGlobalAlloc(alloc);
     return Tokenizer{
         .allocator = alloc,
@@ -101,6 +101,10 @@ pub fn handleToken(self: *Tokenizer, t: token.Token) void {
 
 pub fn emitChar(self: *Tokenizer, ch: u21) void {
     self.current_character.push(ch) catch return;
+}
+
+pub fn emitChars(self: *Tokenizer, str: []const u8) void {
+    self.current_character.append(str) catch return;
 }
 
 pub fn flushCurrentChar(self: *Tokenizer) void {
@@ -152,7 +156,7 @@ pub fn emitCurrentDoctype(self: *Tokenizer) void {
     self.current_doctype = token.Doctype.init();
 }
 
-pub fn emitCharAndAdvance(self: *Tokenizer, ch: u21, input: *BufferDeque(.utf8, .not_atomic, true)) void {
+pub inline fn emitCharAndAdvance(self: *Tokenizer, ch: u21, input: *BufferDeque(.utf8, .not_atomic, true)) void {
     self.emitChar(ch);
     self.nextChar(input);
 }
@@ -247,7 +251,7 @@ pub inline fn createDoctype(self: *Tokenizer) void {
     self.current_doctype = token.Doctype.init();
 }
 
-pub fn isAppropriateEndTag(self: *const Tokenizer) bool {
+pub inline fn isAppropriateEndTag(self: *const Tokenizer) bool {
     return if (self.last_start_tag_name) |*name| blk: {
         break :blk self.current_tag_kind == .EndTag and self.current_tag_name.cmp(name);
     } else false;
@@ -416,11 +420,9 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
     self.peekChar(input);
     self.preprocessChar(input, &self.ch);
     while (true) {
-        //        self.peekChar(input);
         const ch = self.ch;
         const is_eof = self.is_eof;
 
-        // Jump to here if is_eof already been true.
         if (config.debug) {
             std.debug.print("\n[STATE]: {s}\n", .{@tagName(self.state)});
             self.debugDetail();
@@ -434,14 +436,23 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     self.emitEof();
                     return;
                 }
-                switch (ch) {
-                    '&' => self.setCharacterReferenceStateAndAdvance(.Data, input),
-                    '<' => self.setStateAndAdvance(.TagOpen, input),
-                    0x0000 => {
-                        self.handleError(.UnexpectedNullCharacter);
-                        self.emitCharAndAdvance(ch, input);
+                switch (input.popUntil("\r\x00&<\n").?) {
+                    .from_set => switch (ch) {
+                        '&' => self.setCharacterReferenceStateAndAdvance(.Data, input),
+                        '<' => self.setStateAndAdvance(.TagOpen, input),
+                        0x0000 => {
+                            self.handleError(.UnexpectedNullCharacter);
+                            self.emitCharAndAdvance(ch, input);
+                        },
+                        else => self.emitCharAndAdvance(ch, input),
                     },
-                    else => self.emitCharAndAdvance(ch, input),
+                    .not_from_set => |value| {
+                        var chars = value;
+                        defer chars.deinit();
+                        self.emitChars(chars.slice());
+                        self.peekChar(input);
+                        if (!self.is_eof) self.preprocessChar(input, &self.ch);
+                    },
                 }
             },
 

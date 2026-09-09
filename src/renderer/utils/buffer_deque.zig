@@ -53,8 +53,8 @@ pub fn BufferDeque(comptime format: strale.Format, comptime atomicity: strale.At
             not_from_set: T,
         };
 
-        /// Consume either one ASCII character in `set`, or the maximal byte
-        /// run before the next character in `set` from the front buffer.
+        /// Consume the maximal byte run before the next ASCII character in
+        /// `set`. A matching character is returned without being consumed.
         pub fn popUntil(self: *Self, comptime set: []const u8) ?PopUntilResult {
             while (self.buffer.frontPtr()) |front| {
                 const bytes = front.slice();
@@ -65,14 +65,8 @@ pub fn BufferDeque(comptime format: strale.Format, comptime atomicity: strale.At
                 }
 
                 const index = std.mem.indexOfAny(u8, bytes, set) orelse bytes.len;
-                if (index == 0) {
-                    const char = front.popFrontByte().?;
-                    if (front.isEmpty()) {
-                        var empty = self.buffer.popFront().?;
-                        empty.deinit();
-                    }
-                    return .{ .from_set = @intCast(char) };
-                }
+                if (index == 0)
+                    return .{ .from_set = @intCast(bytes[0]) };
 
                 if (index == bytes.len)
                     return .{ .not_from_set = self.buffer.popFront().? };
@@ -373,6 +367,7 @@ test "utils BufferDeque: pop until" {
 
     const ampersand = (deque.popUntil("\x00&\nab") orelse return error.TestUnexpectedResult).from_set;
     try testing.expectEqual('&', ampersand);
+    try testing.expectEqual('&', deque.nextChar().?);
 
     var world = (deque.popUntil("\r\x00&<\n") orelse return error.TestUnexpectedResult).not_from_set;
     defer world.deinit();

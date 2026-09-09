@@ -3,7 +3,8 @@ const Self = @This();
 const std = @import("std");
 const strale = @import("strale");
 const Parser = @import("../renderer/html/Parser.zig");
-const Buffer = strale.BufferDeque(.utf8, .not_atomic, true);
+const BufferDeque = @import("../renderer/utils/buffer_deque.zig").BufferDeque;
+const Buffer = BufferDeque(.utf8, .not_atomic, true);
 
 allocator: std.mem.Allocator,
 arena: ?std.heap.ArenaAllocator = null,

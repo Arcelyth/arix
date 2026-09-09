@@ -295,8 +295,9 @@ inline fn peekChar(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, tru
 }
 
 inline fn nextChar(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) void {
-    const raw = input.nextChar() orelse return;
-    if (self.track_lines and (raw == '\r' or raw == '\n')) self.current_line += 1;
+    const consumed = self.ch;
+    if (!input.discardChar()) return;
+    if (self.track_lines and (consumed == '\r' or consumed == '\n')) self.current_line += 1;
     self.peekChar(input);
     if (!self.is_eof) self.preprocessChar(input, &self.ch);
 }
@@ -414,7 +415,7 @@ pub fn preprocessChar(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, 
         self.ignore_lf = false;
 
         if (ch.* == '\n') {
-            _ = input.nextChar();
+            _ = input.discardChar();
 
             if (input.peekChar()) |next|
                 ch.* = next

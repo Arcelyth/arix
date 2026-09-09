@@ -752,6 +752,22 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     self.emitEof();
                     return;
                 }
+
+                // Append ordinary lowercase ASCII bytes in one run.
+                // Stop before delimiters, uppercase ASCII, NUL, non-ASCII input,
+                // or input errors so they can be handled individually below.
+                const run = if (self.exact_errors)
+                    input.peekAsciiNameRunWithInputErrors("\t\r\n\x0C /\x00>").?
+                else
+                    input.peekAsciiNameRun("\t\r\n\x0C /\x00>").?;
+                if (run.bytes.len != 0) {
+                    try self.current_tag_name.append(run.bytes);
+                    input.consumeFrontBytes(run.bytes.len);
+                    self.peekChar(input);
+                    if (!self.is_eof) self.preprocessChar(input, &self.ch);
+                    continue;
+                }
+
                 switch (ch) {
                     '\t', '\n', '\x0C', ' ' => self.setStateAndAdvance(.BeforeAttributeName, input),
                     '/' => self.setStateAndAdvance(.SelfClosingStartTag, input),
@@ -1324,7 +1340,21 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
             .AttributeName => {
                 if (is_eof) {
                     self.state = .AfterAttributeName;
+                    continue;
                 }
+
+                const run = if (self.exact_errors)
+                    input.peekAsciiNameRunWithInputErrors("\t\r\n\x0C /=>\x00\"'<").?
+                else
+                    input.peekAsciiNameRun("\t\r\n\x0C /=>\x00\"'<").?;
+                if (run.bytes.len != 0) {
+                    try self.current_attribute_name.append(run.bytes);
+                    input.consumeFrontBytes(run.bytes.len);
+                    self.peekChar(input);
+                    if (!self.is_eof) self.preprocessChar(input, &self.ch);
+                    continue;
+                }
+
                 switch (ch) {
                     '\t', '\n', '\x0C', ' ', '/', '>' => self.state = .AfterAttributeName,
                     '=' => self.setStateAndAdvance(.BeforeAttributeValue, input),

@@ -48,6 +48,42 @@ pub fn BufferDeque(comptime format: strale.Format, comptime atomicity: strale.At
             return self.buffer.popBack();
         }
 
+        pub const PopUntilResult = union(enum) {
+            from_set: CharType,
+            not_from_set: T,
+        };
+
+        /// Consume either one ASCII character in `set`, or the maximal byte
+        /// run before the next character in `set` from the front buffer.
+        pub fn popUntil(self: *Self, comptime set: []const u8) ?PopUntilResult {
+            while (self.buffer.frontPtr()) |front| {
+                const bytes = front.slice();
+                if (bytes.len == 0) {
+                    var empty = self.buffer.popFront().?;
+                    empty.deinit();
+                    continue;
+                }
+
+                const index = std.mem.indexOfAny(u8, bytes, set) orelse bytes.len;
+                if (index == 0) {
+                    const char = front.popFrontByte().?;
+                    if (front.isEmpty()) {
+                        var empty = self.buffer.popFront().?;
+                        empty.deinit();
+                    }
+                    return .{ .from_set = @intCast(char) };
+                }
+
+                if (index == bytes.len)
+                    return .{ .not_from_set = self.buffer.popFront().? };
+
+                const run = front.substr(0, @intCast(index));
+                front.dropFrontBytes(index);
+                return .{ .not_from_set = run };
+            }
+            return null;
+        }
+
         /// Insert a `Strale` string at the front of the queue.
         ///
         /// If the item's length is 0, it will be instantly destroyed to save space.
@@ -244,7 +280,7 @@ fn asciiEqIgnoreCase(a: u8, b: u8) bool {
     return std.ascii.toLower(a) == std.ascii.toLower(b);
 }
 
-test "pop" {
+test "utils BufferDeque: pop" {
     const alloc = std.heap.page_allocator;
     var s = try Str.initSlice(alloc, "hello");
     defer s.deinit();
@@ -268,7 +304,7 @@ test "pop" {
     try testing.expect(buf.isEmpty());
 }
 
-test "buffer peek next char" {
+test "utils BufferDeque: buffer peek next char" {
     const alloc = std.heap.page_allocator;
     var buf = try Buffer.init(alloc);
     defer buf.deinit();
@@ -287,7 +323,7 @@ test "buffer peek next char" {
     try testing.expectEqualStrings("ello", f.slice());
 }
 
-test "match exact" {
+test "utils BufferDeque: match exact" {
     const alloc = std.heap.page_allocator;
     var deque = try Buffer.init(alloc);
     defer deque.deinit();
@@ -299,7 +335,7 @@ test "match exact" {
     try testing.expect(deque.isEmpty());
 }
 
-test "global: pop" {
+test "utils BufferDeque: global pop" {
     const alloc = std.heap.page_allocator;
     strale.setGlobalAlloc(alloc);
     var s = try StrG.initSlice("hello");
@@ -322,4 +358,24 @@ test "global: pop" {
     try testing.expectEqualStrings("hello", result.slice());
     try testing.expectEqualStrings("world", result2.slice());
     try testing.expect(buf.isEmpty());
+}
+
+test "utils BufferDeque: pop until" {
+    const alloc = std.heap.page_allocator;
+    var deque = try Buffer.init(alloc);
+    defer deque.deinit();
+
+    try deque.pushBackSlice("hello&world");
+
+    var hello = (deque.popUntil(&.{ '\r', '&', '\n' }) orelse return error.TestUnexpectedResult).not_from_set;
+    defer hello.deinit();
+    try testing.expectEqualStrings("hello", hello.slice());
+
+    const ampersand = (deque.popUntil("\x00&\nab") orelse return error.TestUnexpectedResult).from_set;
+    try testing.expectEqual('&', ampersand);
+
+    var world = (deque.popUntil("\r\x00&<\n") orelse return error.TestUnexpectedResult).not_from_set;
+    defer world.deinit();
+    try testing.expectEqualStrings("world", world.slice());
+    try testing.expect(deque.popUntil("\r\x00&<\n") == null);
 }

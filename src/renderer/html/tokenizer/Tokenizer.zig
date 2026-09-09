@@ -428,6 +428,50 @@ inline fn processDataCharacter(self: *Tokenizer, ch: u21, input: *BufferDeque(.u
     }
 }
 
+inline fn processRCDATACharacter(self: *Tokenizer, ch: u21, input: *BufferDeque(.utf8, .not_atomic, true)) void {
+    switch (ch) {
+        '&' => self.setCharacterReferenceStateAndAdvance(.RCDATA, input),
+        '<' => self.setStateAndAdvance(.RCDATALessThanSign, input),
+        0x0000 => {
+            self.handleError(.UnexpectedNullCharacter);
+            self.emitCharAndAdvance('\u{FFFD}', input);
+        },
+        else => self.emitCharAndAdvance(ch, input),
+    }
+}
+
+inline fn processRAWTEXTCharacter(self: *Tokenizer, ch: u21, input: *BufferDeque(.utf8, .not_atomic, true)) void {
+    switch (ch) {
+        '<' => self.setStateAndAdvance(.RAWTEXTLessThanSign, input),
+        0x0000 => {
+            self.handleError(.UnexpectedNullCharacter);
+            self.emitCharAndAdvance('\u{FFFD}', input);
+        },
+        else => self.emitCharAndAdvance(ch, input),
+    }
+}
+
+inline fn processScriptDataCharacter(self: *Tokenizer, ch: u21, input: *BufferDeque(.utf8, .not_atomic, true)) void {
+    switch (ch) {
+        '<' => self.setStateAndAdvance(.ScriptDataLessThanSign, input),
+        0x0000 => {
+            self.handleError(.UnexpectedNullCharacter);
+            self.emitCharAndAdvance('\u{FFFD}', input);
+        },
+        else => self.emitCharAndAdvance(ch, input),
+    }
+}
+
+inline fn processPLAINTEXTCharacter(self: *Tokenizer, ch: u21, input: *BufferDeque(.utf8, .not_atomic, true)) void {
+    switch (ch) {
+        0x0000 => {
+            self.handleError(.UnexpectedNullCharacter);
+            self.emitCharAndAdvance('\u{FFFD}', input);
+        },
+        else => self.emitCharAndAdvance(ch, input),
+    }
+}
+
 pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !void {
     self.peekChar(input);
     self.preprocessChar(input, &self.ch);
@@ -464,7 +508,6 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                         }
                     },
                 }
-
             },
 
             // https://html.spec.whatwg.org/multipage/parsing.html#rcdata-state
@@ -474,14 +517,21 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     return;
                 }
 
-                switch (ch) {
-                    '&' => self.setCharacterReferenceStateAndAdvance(.RCDATA, input),
-                    '<' => self.setStateAndAdvance(.RCDATALessThanSign, input),
-                    0x0000 => {
-                        self.handleError(.UnexpectedNullCharacter);
-                        self.emitCharAndAdvance('\u{FFFD}', input);
+                switch (input.popUntil("\r\x00&<\n").?) {
+                    .from_set => self.processRCDATACharacter(ch, input),
+                    .not_from_set => |res| {
+                        var chars = res.value;
+                        defer chars.deinit();
+                        self.emitChars(chars.slice());
+                        if (res.delimiter) |delimiter| {
+                            self.ch = delimiter;
+                            self.preprocessChar(input, &self.ch);
+                            self.processRCDATACharacter(self.ch, input);
+                        } else {
+                            self.peekChar(input);
+                            if (!self.is_eof) self.preprocessChar(input, &self.ch);
+                        }
                     },
-                    else => self.emitCharAndAdvance(ch, input),
                 }
             },
 
@@ -491,14 +541,21 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     self.emitEof();
                     return;
                 }
-
-                switch (ch) {
-                    '<' => self.setStateAndAdvance(.RAWTEXTLessThanSign, input),
-                    0x0000 => {
-                        self.handleError(.UnexpectedNullCharacter);
-                        self.emitCharAndAdvance('\u{FFFD}', input);
+                switch (input.popUntil("\r\x00<\n").?) {
+                    .from_set => self.processRAWTEXTCharacter(ch, input),
+                    .not_from_set => |res| {
+                        var chars = res.value;
+                        defer chars.deinit();
+                        self.emitChars(chars.slice());
+                        if (res.delimiter) |delimiter| {
+                            self.ch = delimiter;
+                            self.preprocessChar(input, &self.ch);
+                            self.processRAWTEXTCharacter(self.ch, input);
+                        } else {
+                            self.peekChar(input);
+                            if (!self.is_eof) self.preprocessChar(input, &self.ch);
+                        }
                     },
-                    else => self.emitCharAndAdvance(ch, input),
                 }
             },
 
@@ -508,14 +565,21 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     self.emitEof();
                     return;
                 }
-
-                switch (ch) {
-                    '<' => self.setStateAndAdvance(.ScriptDataLessThanSign, input),
-                    0x0000 => {
-                        self.handleError(.UnexpectedNullCharacter);
-                        self.emitCharAndAdvance('\u{FFFD}', input);
+                switch (input.popUntil("\r\x00<\n").?) {
+                    .from_set => self.processScriptDataCharacter(ch, input),
+                    .not_from_set => |res| {
+                        var chars = res.value;
+                        defer chars.deinit();
+                        self.emitChars(chars.slice());
+                        if (res.delimiter) |delimiter| {
+                            self.ch = delimiter;
+                            self.preprocessChar(input, &self.ch);
+                            self.processScriptDataCharacter(self.ch, input);
+                        } else {
+                            self.peekChar(input);
+                            if (!self.is_eof) self.preprocessChar(input, &self.ch);
+                        }
                     },
-                    else => self.emitCharAndAdvance(ch, input),
                 }
             },
 
@@ -526,12 +590,21 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     return;
                 }
 
-                switch (ch) {
-                    0x0000 => {
-                        self.handleError(.UnexpectedNullCharacter);
-                        self.emitCharAndAdvance('\u{FFFD}', input);
+                switch (input.popUntil("\r\x00<\n").?) {
+                    .from_set => self.processPLAINTEXTCharacter(ch, input),
+                    .not_from_set => |res| {
+                        var chars = res.value;
+                        defer chars.deinit();
+                        self.emitChars(chars.slice());
+                        if (res.delimiter) |delimiter| {
+                            self.ch = delimiter;
+                            self.preprocessChar(input, &self.ch);
+                            self.processPLAINTEXTCharacter(self.ch, input);
+                        } else {
+                            self.peekChar(input);
+                            if (!self.is_eof) self.preprocessChar(input, &self.ch);
+                        }
                     },
-                    else => self.emitCharAndAdvance(ch, input),
                 }
             },
 

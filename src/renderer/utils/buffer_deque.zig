@@ -49,16 +49,79 @@ pub fn BufferDeque(comptime format: strale.Format, comptime atomicity: strale.At
         }
 
         pub const PopUntilResult = union(enum) {
+            /// The first byte is a delimiter and was not consumed.
             from_set: CharType,
+            /// A run of non-delimiter bytes was consumed.
+            /// `delimiter` is the first delimiter after the consumed run, if any.
             not_from_set: struct {
                 value: T,
                 delimiter: ?CharType,
             },
         };
 
-        /// Consume the maximal byte run before the next ASCII character in
-        /// `set`. A matching character is returned without being consumed.
-        pub fn popUntil(self: *Self, comptime set: []const u8) ?PopUntilResult {
+        pub const FrontRun = struct {
+            bytes: []const u8,
+            delimiter: ?CharType,
+        };
+
+        inline fn isInputErrorByte(byte: u8) bool {
+            return byte <= 0x08 or byte == 0x0B or
+                (byte >= 0x0E and byte <= 0x1F) or byte == 0x7F;
+        }
+
+        /// Find the first byte that belongs to `set` or, when enabled, is an /// input-error byte.
+        /// Using SIMD to scan multiple bytes at once.
+        inline fn indexOfAny(bytes: []const u8, comptime set: []const u8, comptime input_errors: bool) usize {
+            const table = comptime table: {
+                var value = std.StaticBitSet(256).initEmpty();
+                for (set) |char| value.set(char);
+                break :table value;
+            };
+            if (set.len <= 16) {
+                const Vector = @Vector(16, u8);
+                const BoolVector = @Vector(16, bool);
+                var offset: usize = 0;
+
+                while (offset + 16 <= bytes.len) : (offset += 16) {
+                    const block: Vector = bytes[offset..][0..16].*;
+                    var matches: BoolVector = @splat(false);
+                    inline for (set) |delimiter| {
+                        matches = matches | (block == @as(Vector, @splat(delimiter)));
+                    }
+                    if (input_errors) {
+                        matches = matches |
+                            (block <= @as(Vector, @splat(0x08))) |
+                            (block == @as(Vector, @splat(0x0B))) |
+                            ((block >= @as(Vector, @splat(0x0E))) &
+                                (block <= @as(Vector, @splat(0x1F)))) |
+                            (block == @as(Vector, @splat(0x7F)));
+                    }
+                    if (@reduce(.Or, matches)) {
+                        for (bytes[offset..][0..16], 0..) |byte, i| {
+                            if (table.isSet(byte) or (input_errors and isInputErrorByte(byte)))
+                                return offset + i;
+                        }
+                    }
+                }
+
+                for (bytes[offset..], offset..) |byte, i| {
+                    if (table.isSet(byte) or (input_errors and isInputErrorByte(byte))) return i;
+                }
+                return bytes.len;
+            }
+
+            // For larger delimiter sets, a bitset lookup is cheaper than performing
+            // one SIMD comparison for every delimiter.
+            for (bytes, 0..) |byte, i| {
+                if (table.isSet(byte) or (input_errors and isInputErrorByte(byte))) return i;
+            }
+            return bytes.len;
+        }
+
+        /// Return the maximal byte run in the front buffer before a character
+        /// in `set`. The returned bytes borrow from the deque and remain valid
+        /// until the front buffer is mutated.
+        fn peekUntilImpl(self: *Self, comptime set: []const u8, comptime input_errors: bool) ?FrontRun {
             while (self.buffer.frontPtr()) |front| {
                 const bytes = front.slice();
                 if (bytes.len == 0) {
@@ -67,18 +130,53 @@ pub fn BufferDeque(comptime format: strale.Format, comptime atomicity: strale.At
                     continue;
                 }
 
-                // Build compile-time lookup table.
+                const index = indexOfAny(bytes, set, input_errors);
+                return .{
+                    .bytes = bytes[0..index],
+                    .delimiter = if (index < bytes.len) @intCast(bytes[index]) else null,
+                };
+            }
+            return null;
+        }
+
+        pub fn peekUntil(self: *Self, comptime set: []const u8) ?FrontRun {
+            return self.peekUntilImpl(set, false);
+        }
+
+        pub fn peekUntilWithInputErrors(self: *Self, comptime set: []const u8) ?FrontRun {
+            return self.peekUntilImpl(set, true);
+        }
+
+        /// Consume bytes previously returned by `peekUntil`.
+        pub fn consumeFrontBytes(self: *Self, count: usize) void {
+            if (count == 0) return;
+            const front = self.buffer.frontPtr() orelse unreachable;
+            if (count == front.len()) {
+                var consumed = self.buffer.popFront().?;
+                consumed.deinit();
+                return;
+            }
+            std.debug.assert(count < front.len());
+            front.dropFrontBytes(count);
+        }
+
+        /// Consume the maximal byte run before the next ASCII character in
+        /// `set`. A matching character is returned without being consumed.
+        fn popUntilImpl(self: *Self, comptime set: []const u8, comptime input_errors: bool) ?PopUntilResult {
+            while (self.buffer.frontPtr()) |front| {
+                const bytes = front.slice();
+                if (bytes.len == 0) {
+                    var empty = self.buffer.popFront().?;
+                    empty.deinit();
+                    continue;
+                }
+
                 const table = comptime table: {
                     var value = std.StaticBitSet(256).initEmpty();
                     for (set) |char| value.set(char);
                     break :table value;
                 };
-                const index = index: {
-                    for (bytes, 0..) |char, i| {
-                        if (table.isSet(char)) break :index i;
-                    }
-                    break :index bytes.len;
-                };
+                const index = indexOfAny(bytes, set, input_errors);
                 if (index == 0)
                     return .{ .from_set = @intCast(bytes[0]) };
 
@@ -100,6 +198,14 @@ pub fn BufferDeque(comptime format: strale.Format, comptime atomicity: strale.At
                 return .{ .not_from_set = .{ .value = run, .delimiter = delimiter } };
             }
             return null;
+        }
+
+        pub fn popUntil(self: *Self, comptime set: []const u8) ?PopUntilResult {
+            return self.popUntilImpl(set, false);
+        }
+
+        pub fn popUntilWithInputErrors(self: *Self, comptime set: []const u8) ?PopUntilResult {
+            return self.popUntilImpl(set, true);
         }
 
         /// Insert a `Strale` string at the front of the queue.
@@ -401,4 +507,30 @@ test "utils BufferDeque: pop until" {
     defer world.deinit();
     try testing.expectEqualStrings("world", world.slice());
     try testing.expect(deque.popUntil("\r\x00&<\n") == null);
+}
+
+test "utils BufferDeque: peek until returns a borrowed run" {
+    const alloc = std.heap.page_allocator;
+    var deque = try Buffer.init(alloc);
+    defer deque.deinit();
+
+    try deque.pushBackSlice("hello&world");
+    const run = deque.peekUntil("&<").?;
+    try testing.expectEqualStrings("hello", run.bytes);
+    try testing.expectEqual('&', run.delimiter.?);
+    try testing.expectEqual('h', deque.peekChar().?);
+
+    deque.consumeFrontBytes(run.bytes.len);
+    try testing.expectEqual('&', deque.peekChar().?);
+}
+
+test "utils BufferDeque: input-error scan stops at ASCII controls" {
+    const alloc = std.heap.page_allocator;
+    var deque = try Buffer.init(alloc);
+    defer deque.deinit();
+
+    try deque.pushBackSlice("abcdefghijklmnop\x07tail");
+    const run = deque.peekUntilWithInputErrors("&<").?;
+    try testing.expectEqualStrings("abcdefghijklmnop", run.bytes);
+    try testing.expectEqual(0x07, run.delimiter.?);
 }

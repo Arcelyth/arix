@@ -67,14 +67,25 @@ pub fn BufferDeque(comptime format: strale.Format, comptime atomicity: strale.At
                     continue;
                 }
 
-                const index = std.mem.indexOfAny(u8, bytes, set) orelse bytes.len;
+                // Build compile-time lookup table.
+                const table = comptime table: {
+                    var value = std.StaticBitSet(256).initEmpty();
+                    for (set) |char| value.set(char);
+                    break :table value;
+                };
+                const index = index: {
+                    for (bytes, 0..) |char, i| {
+                        if (table.isSet(char)) break :index i;
+                    }
+                    break :index bytes.len;
+                };
                 if (index == 0)
                     return .{ .from_set = @intCast(bytes[0]) };
 
                 if (index == bytes.len) {
                     const value = self.buffer.popFront().?;
                     const delimiter = if (self.peekChar()) |char|
-                        if (char <= std.math.maxInt(u8) and std.mem.indexOfScalar(u8, set, @intCast(char)) != null)
+                        if (char <= std.math.maxInt(u8) and table.isSet(@intCast(char)))
                             char
                         else
                             null

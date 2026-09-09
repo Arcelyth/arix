@@ -19,4 +19,5 @@ bench_html:
 bench_css:
 	zig build bench -- --iterations 100 res/bench/css/bench.css
 
-
+bench_html_unquoted_attr:
+	zig build bench -- --iterations 100 res/bench/html/unquoted-attr-value.html

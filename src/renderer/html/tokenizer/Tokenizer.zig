@@ -17,6 +17,11 @@ const LocalName = local_name.LocalName;
 const LocalNameMap = local_name.LocalNameMap;
 const config = @import("config");
 
+// ASCII control characters that must be processed individually so that 
+// preprocessChar() can report the corresponding parse errors instead of 
+// allowing them to be emitted as part of a bulk character run.
+const input_error_bytes = "\x01\x02\x03\x04\x05\x06\x07\x08\x0B\x0E\x0F\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1A\x1B\x1C\x1D\x1E\x1F\x7F";
+
 allocator: std.mem.Allocator,
 state: TokenizerState,
 ch: u21,
@@ -504,6 +509,31 @@ inline fn processAttrSingleQuotedCharacter_E(self: *Tokenizer, ch: u21, input: *
     }
 }
 
+inline fn processAttrUnquotedCharacter_E(self: *Tokenizer, ch: u21, input: *BufferDeque(.utf8, .not_atomic, true)) !void {
+    switch (ch) {
+        '\t', '\n', '\x0C', ' ' => self.setStateAndAdvance(.BeforeAttributeName, input),
+        '&' => self.setCharacterReferenceStateAndAdvance(.AttributeValueUnquoted, input),
+        '>' => {
+            self.setStateAndAdvance(.Data, input);
+            self.emitCurrentTag();
+        },
+        0x0000 => {
+            self.handleError(.UnexpectedNullCharacter);
+            try self.current_attribute_value.push('\u{FFFD}');
+            self.nextChar(input);
+        },
+        '"', '\'', '<', '=', '`' => {
+            self.handleError(.UnexpectedCharacterInUnquotedAttributeValue);
+            try self.current_attribute_value.push(ch);
+            self.nextChar(input);
+        },
+        else => {
+            try self.current_attribute_value.push(ch);
+            self.nextChar(input);
+        },
+    }
+}
+
 pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !void {
     self.peekChar(input);
     self.preprocessChar(input, &self.ch);
@@ -524,7 +554,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     self.emitEof();
                     return;
                 }
-                switch (input.popUntil("\r\x00&<\n").?) {
+                switch (input.popUntil("\r\x00&<\n" ++ input_error_bytes).?) {
                     .from_set => self.processDataCharacter(ch, input),
                     .not_from_set => |res| {
                         var chars = res.value;
@@ -549,7 +579,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     return;
                 }
 
-                switch (input.popUntil("\r\x00&<\n").?) {
+                switch (input.popUntil("\r\x00&<\n" ++ input_error_bytes).?) {
                     .from_set => self.processRCDATACharacter(ch, input),
                     .not_from_set => |res| {
                         var chars = res.value;
@@ -573,7 +603,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     self.emitEof();
                     return;
                 }
-                switch (input.popUntil("\r\x00<\n").?) {
+                switch (input.popUntil("\r\x00<\n" ++ input_error_bytes).?) {
                     .from_set => self.processRAWTEXTCharacter(ch, input),
                     .not_from_set => |res| {
                         var chars = res.value;
@@ -597,7 +627,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     self.emitEof();
                     return;
                 }
-                switch (input.popUntil("\r\x00<\n").?) {
+                switch (input.popUntil("\r\x00<\n" ++ input_error_bytes).?) {
                     .from_set => self.processScriptDataCharacter(ch, input),
                     .not_from_set => |res| {
                         var chars = res.value;
@@ -622,7 +652,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     return;
                 }
 
-                switch (input.popUntil("\r\x00<\n").?) {
+                switch (input.popUntil("\r\x00<\n" ++ input_error_bytes).?) {
                     .from_set => self.processPLAINTEXTCharacter(ch, input),
                     .not_from_set => |res| {
                         var chars = res.value;
@@ -1353,7 +1383,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     self.emitEof();
                     return;
                 }
-                switch (input.popUntil("\r\x00\"&\n").?) {
+                switch (input.popUntil("\r\x00\"&\n" ++ input_error_bytes).?) {
                     .from_set => try self.processAttrDoubleQuotedCharacter_E(ch, input),
                     .not_from_set => |res| {
                         var chars = res.value;
@@ -1378,7 +1408,7 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     self.emitEof();
                     return;
                 }
-                switch (input.popUntil("\r\x00'&\n").?) {
+                switch (input.popUntil("\r\x00'&\n" ++ input_error_bytes).?) {
                     .from_set => try self.processAttrSingleQuotedCharacter_E(ch, input),
                     .not_from_set => |res| {
                         var chars = res.value;
@@ -1403,26 +1433,20 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     self.emitEof();
                     return;
                 }
-                switch (ch) {
-                    '\t', '\n', '\x0C', ' ' => self.setStateAndAdvance(.BeforeAttributeName, input),
-                    '&' => self.setCharacterReferenceStateAndAdvance(.AttributeValueUnquoted, input),
-                    '>' => {
-                        self.setStateAndAdvance(.Data, input);
-                        self.emitCurrentTag();
-                    },
-                    0x0000 => {
-                        self.handleError(.UnexpectedNullCharacter);
-                        try self.current_attribute_value.push('\u{FFFD}');
-                        self.nextChar(input);
-                    },
-                    '"', '\'', '<', '=', '`' => {
-                        self.handleError(.UnexpectedCharacterInUnquotedAttributeValue);
-                        try self.current_attribute_value.push(ch);
-                        self.nextChar(input);
-                    },
-                    else => {
-                        try self.current_attribute_value.push(ch);
-                        self.nextChar(input);
+                switch (input.popUntil("\r\t\n\x0C &>\x00\"'<={`" ++ input_error_bytes).?) {
+                    .from_set => try self.processAttrUnquotedCharacter_E(ch, input),
+                    .not_from_set => |res| {
+                        var chars = res.value;
+                        defer chars.deinit();
+                        try self.current_attribute_value.append(chars.slice());
+                        if (res.delimiter) |delimiter| {
+                            self.ch = delimiter;
+                            self.preprocessChar(input, &self.ch);
+                            try self.processAttrUnquotedCharacter_E(self.ch, input);
+                        } else {
+                            self.peekChar(input);
+                            if (!self.is_eof) self.preprocessChar(input, &self.ch);
+                        }
                     },
                 }
             },

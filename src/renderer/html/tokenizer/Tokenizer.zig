@@ -17,10 +17,6 @@ const LocalName = local_name.LocalName;
 const LocalNameMap = local_name.LocalNameMap;
 const config = @import("config");
 
-// ASCII control characters that must be processed individually so that
-// preprocessChar() can report the corresponding parse errors instead of
-// allowing them to be emitted as part of a bulk character run.
-const input_error_bytes = "\x01\x02\x03\x04\x05\x06\x07\x08\x0B\x0E\x0F\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1A\x1B\x1C\x1D\x1E\x1F\x7F";
 
 allocator: std.mem.Allocator,
 state: TokenizerState,
@@ -31,6 +27,9 @@ pause_flag: bool,
 // Character reference code.
 char_ref_code: u64,
 ignore_lf: bool,
+
+exact_errors: bool,
+track_lines: bool,
 
 current_tag_name: StraleUtf8Global,
 current_tag_kind: token.TagKind,
@@ -58,6 +57,8 @@ temporary_buffer: StraleUtf8Global,
 pub const TokenizerOpts = struct {
     initial_state: TokenizerState = .Data,
     last_state_tag_name: ?StraleUtf8Global = null,
+    exact_errors: bool = true,
+    track_lines: bool = true,
 };
 
 pub fn init(alloc: std.mem.Allocator, adapter: TokenAdapter, opts: TokenizerOpts) Tokenizer {
@@ -72,6 +73,8 @@ pub fn init(alloc: std.mem.Allocator, adapter: TokenAdapter, opts: TokenizerOpts
         .pause_flag = false,
         .char_ref_code = 0,
         .ignore_lf = false,
+        .exact_errors = opts.exact_errors,
+        .track_lines = opts.track_lines,
         .current_tag_name = StraleUtf8Global.initEmpty(),
         .current_tag_kind = .StartTag,
         .current_tag_self_closing = false,
@@ -115,6 +118,11 @@ pub fn emitChars(self: *Tokenizer, str: []const u8) void {
 pub fn flushCurrentChar(self: *Tokenizer) void {
     if (self.current_character.isEmpty()) return;
     self.handleToken(token.Token{ .CharacterToken = self.current_character.take() });
+}
+
+pub fn emitCharacterRun(self: *Tokenizer, chars: StraleUtf8Global) void {
+    self.flushCurrentChar();
+    self.handleToken(token.Token{ .CharacterToken = chars });
 }
 
 pub fn emitEof(self: *Tokenizer) void {
@@ -191,26 +199,30 @@ pub fn createAttr_E(self: *Tokenizer, ch: ?u21) !void {
 pub fn sealAttr(self: *Tokenizer) !void {
     if (self.current_attribute_name.isEmpty()) return;
     const name_slice = self.current_attribute_name.slice();
-    var lc_attr = try LocalName.fromSlice(name_slice);
-    defer lc_attr.deinit();
+    const static_name = LocalNameMap.get(name_slice);
+    var attr_name = if (static_name) |tag|
+        LocalName{ .static = tag }
+    else
+        LocalName{ .dynamic = self.current_attribute_name.take() };
+    if (static_name != null) self.current_attribute_name.clear();
+
     const dup = for (self.current_tag_attrs.items) |attr| {
-        if (attr.name.eql(lc_attr)) break true;
+        if (attr.name.eql(attr_name)) break true;
     } else false;
     if (dup) {
+        attr_name.deinit();
         self.handleError(.DuplicateAttribute);
         self.current_attr_dup = true;
-        self.current_attribute_name.clear();
         self.current_attribute_value.clear();
     } else {
-        const final_name = if (LocalNameMap.get(name_slice)) |tag|
-            LocalName{ .static = tag }
-        else
-            LocalName{ .dynamic = self.current_attribute_name.take() };
-
-        self.current_attribute_name.clear();
+        var attr_value = self.current_attribute_value.take();
+        errdefer {
+            attr_name.deinit();
+            attr_value.deinit();
+        }
         try self.current_tag_attrs.append(self.allocator, .{
-            .name = final_name,
-            .value = self.current_attribute_value.take(),
+            .name = attr_name,
+            .value = attr_value,
         });
     }
 }
@@ -284,7 +296,7 @@ inline fn peekChar(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, tru
 
 inline fn nextChar(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) void {
     const raw = input.nextChar() orelse return;
-    if (raw == '\r' or raw == '\n') self.current_line += 1;
+    if (self.track_lines and (raw == '\r' or raw == '\n')) self.current_line += 1;
     self.peekChar(input);
     if (!self.is_eof) self.preprocessChar(input, &self.ch);
 }
@@ -380,7 +392,7 @@ pub fn is_adjusted(self: *Tokenizer) bool {
 }
 
 pub inline fn handleError(self: *Tokenizer, err: TokenizerError) void {
-    self.adapter.handleError(err, self.current_line);
+    if (self.exact_errors) self.adapter.handleError(err, self.current_line);
 }
 
 pub fn debugDetail(self: *Tokenizer) void {
@@ -554,12 +566,13 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     self.emitEof();
                     return;
                 }
-                switch (input.popUntil("\r\x00&<\n" ++ input_error_bytes).?) {
+                switch ((if (self.exact_errors)
+                    input.popUntilWithInputErrors("\r\x00&<\n")
+                else
+                    input.popUntil("\r\x00&<\n")).?) {
                     .from_set => self.processDataCharacter(ch, input),
                     .not_from_set => |res| {
-                        var chars = res.value;
-                        defer chars.deinit();
-                        self.emitChars(chars.slice());
+                        self.emitCharacterRun(res.value);
                         if (res.delimiter) |delimiter| {
                             self.ch = delimiter;
                             self.preprocessChar(input, &self.ch);
@@ -579,12 +592,13 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     return;
                 }
 
-                switch (input.popUntil("\r\x00&<\n" ++ input_error_bytes).?) {
+                switch ((if (self.exact_errors)
+                    input.popUntilWithInputErrors("\r\x00&<\n")
+                else
+                    input.popUntil("\r\x00&<\n")).?) {
                     .from_set => self.processRCDATACharacter(ch, input),
                     .not_from_set => |res| {
-                        var chars = res.value;
-                        defer chars.deinit();
-                        self.emitChars(chars.slice());
+                        self.emitCharacterRun(res.value);
                         if (res.delimiter) |delimiter| {
                             self.ch = delimiter;
                             self.preprocessChar(input, &self.ch);
@@ -603,12 +617,13 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     self.emitEof();
                     return;
                 }
-                switch (input.popUntil("\r\x00<\n" ++ input_error_bytes).?) {
+                switch ((if (self.exact_errors)
+                    input.popUntilWithInputErrors("\r\x00<\n")
+                else
+                    input.popUntil("\r\x00<\n")).?) {
                     .from_set => self.processRAWTEXTCharacter(ch, input),
                     .not_from_set => |res| {
-                        var chars = res.value;
-                        defer chars.deinit();
-                        self.emitChars(chars.slice());
+                        self.emitCharacterRun(res.value);
                         if (res.delimiter) |delimiter| {
                             self.ch = delimiter;
                             self.preprocessChar(input, &self.ch);
@@ -627,12 +642,13 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     self.emitEof();
                     return;
                 }
-                switch (input.popUntil("\r\x00<\n" ++ input_error_bytes).?) {
+                switch ((if (self.exact_errors)
+                    input.popUntilWithInputErrors("\r\x00<\n")
+                else
+                    input.popUntil("\r\x00<\n")).?) {
                     .from_set => self.processScriptDataCharacter(ch, input),
                     .not_from_set => |res| {
-                        var chars = res.value;
-                        defer chars.deinit();
-                        self.emitChars(chars.slice());
+                        self.emitCharacterRun(res.value);
                         if (res.delimiter) |delimiter| {
                             self.ch = delimiter;
                             self.preprocessChar(input, &self.ch);
@@ -652,12 +668,13 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     return;
                 }
 
-                switch (input.popUntil("\r\x00<\n" ++ input_error_bytes).?) {
+                switch ((if (self.exact_errors)
+                    input.popUntilWithInputErrors("\r\x00<\n")
+                else
+                    input.popUntil("\r\x00<\n")).?) {
                     .from_set => self.processPLAINTEXTCharacter(ch, input),
                     .not_from_set => |res| {
-                        var chars = res.value;
-                        defer chars.deinit();
-                        self.emitChars(chars.slice());
+                        self.emitCharacterRun(res.value);
                         if (res.delimiter) |delimiter| {
                             self.ch = delimiter;
                             self.preprocessChar(input, &self.ch);
@@ -1383,21 +1400,23 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     self.emitEof();
                     return;
                 }
-                switch (input.popUntil("\r\x00\"&\n" ++ input_error_bytes).?) {
-                    .from_set => try self.processAttrDoubleQuotedCharacter_E(ch, input),
-                    .not_from_set => |res| {
-                        var chars = res.value;
-                        defer chars.deinit();
-                        try self.current_attribute_value.append(chars.slice());
-                        if (res.delimiter) |delimiter| {
-                            self.ch = delimiter;
-                            self.preprocessChar(input, &self.ch);
-                            try self.processAttrDoubleQuotedCharacter_E(self.ch, input);
-                        } else {
-                            self.peekChar(input);
-                            if (!self.is_eof) self.preprocessChar(input, &self.ch);
-                        }
-                    },
+                const run = (if (self.exact_errors)
+                    input.peekUntilWithInputErrors("\r\x00\"&\n")
+                else
+                    input.peekUntil("\r\x00\"&\n")).?;
+                if (run.bytes.len == 0) {
+                    try self.processAttrDoubleQuotedCharacter_E(ch, input);
+                } else {
+                    try self.current_attribute_value.append(run.bytes);
+                    input.consumeFrontBytes(run.bytes.len);
+                    if (run.delimiter) |delimiter| {
+                        self.ch = delimiter;
+                        self.preprocessChar(input, &self.ch);
+                        try self.processAttrDoubleQuotedCharacter_E(self.ch, input);
+                    } else {
+                        self.peekChar(input);
+                        if (!self.is_eof) self.preprocessChar(input, &self.ch);
+                    }
                 }
             },
 
@@ -1408,21 +1427,23 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     self.emitEof();
                     return;
                 }
-                switch (input.popUntil("\r\x00'&\n" ++ input_error_bytes).?) {
-                    .from_set => try self.processAttrSingleQuotedCharacter_E(ch, input),
-                    .not_from_set => |res| {
-                        var chars = res.value;
-                        defer chars.deinit();
-                        try self.current_attribute_value.append(chars.slice());
-                        if (res.delimiter) |delimiter| {
-                            self.ch = delimiter;
-                            self.preprocessChar(input, &self.ch);
-                            try self.processAttrSingleQuotedCharacter_E(self.ch, input);
-                        } else {
-                            self.peekChar(input);
-                            if (!self.is_eof) self.preprocessChar(input, &self.ch);
-                        }
-                    },
+                const run = (if (self.exact_errors)
+                    input.peekUntilWithInputErrors("\r\x00'&\n")
+                else
+                    input.peekUntil("\r\x00'&\n")).?;
+                if (run.bytes.len == 0) {
+                    try self.processAttrSingleQuotedCharacter_E(ch, input);
+                } else {
+                    try self.current_attribute_value.append(run.bytes);
+                    input.consumeFrontBytes(run.bytes.len);
+                    if (run.delimiter) |delimiter| {
+                        self.ch = delimiter;
+                        self.preprocessChar(input, &self.ch);
+                        try self.processAttrSingleQuotedCharacter_E(self.ch, input);
+                    } else {
+                        self.peekChar(input);
+                        if (!self.is_eof) self.preprocessChar(input, &self.ch);
+                    }
                 }
             },
 
@@ -1433,21 +1454,23 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     self.emitEof();
                     return;
                 }
-                switch (input.popUntil("\r\t\n\x0C &>\x00\"'<={`" ++ input_error_bytes).?) {
-                    .from_set => try self.processAttrUnquotedCharacter_E(ch, input),
-                    .not_from_set => |res| {
-                        var chars = res.value;
-                        defer chars.deinit();
-                        try self.current_attribute_value.append(chars.slice());
-                        if (res.delimiter) |delimiter| {
-                            self.ch = delimiter;
-                            self.preprocessChar(input, &self.ch);
-                            try self.processAttrUnquotedCharacter_E(self.ch, input);
-                        } else {
-                            self.peekChar(input);
-                            if (!self.is_eof) self.preprocessChar(input, &self.ch);
-                        }
-                    },
+                const run = (if (self.exact_errors)
+                    input.peekUntilWithInputErrors("\r\t\n\x0C &>\x00\"'<={`")
+                else
+                    input.peekUntil("\r\t\n\x0C &>\x00\"'<={`")).?;
+                if (run.bytes.len == 0) {
+                    try self.processAttrUnquotedCharacter_E(ch, input);
+                } else {
+                    try self.current_attribute_value.append(run.bytes);
+                    input.consumeFrontBytes(run.bytes.len);
+                    if (run.delimiter) |delimiter| {
+                        self.ch = delimiter;
+                        self.preprocessChar(input, &self.ch);
+                        try self.processAttrUnquotedCharacter_E(self.ch, input);
+                    } else {
+                        self.peekChar(input);
+                        if (!self.is_eof) self.preprocessChar(input, &self.ch);
+                    }
                 }
             },
 

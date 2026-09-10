@@ -26,8 +26,8 @@ pub fn main(init: std.process.Init) !void {
         return;
     }
 
-    std.debug.print("{s:<18} {s:<24} {s:>12} {s:>12}\n", .{
-        "benchmark", "input", "ns/iteration", "MiB/s",
+    std.debug.print("{s:<18} {s:<24} {s:>12}\n", .{
+        "benchmark", "input", "ns/iteration",
     });
 
     for (args[first_path..]) |path| {
@@ -77,17 +77,10 @@ pub fn main(init: std.process.Init) !void {
 
         for (benches.items) |bench| {
             const elapsed = try measure(bench, input, iters, init.io);
-            const seconds = @as(f64, @floatFromInt(elapsed)) / 1_000_000_000.0;
-            const input_bytes = if (std.mem.endsWith(u8, path, ".html"))
-                try html_input.byteLen(input)
-            else
-                input.len;
-            const bytes = @as(f64, @floatFromInt(input_bytes)) * @as(f64, @floatFromInt(iters));
-            std.debug.print("{s:<18} {s:<24} {d:>12} {d:>12.2}\n", .{
+            std.debug.print("{s:<18} {s:<24} {d:>12}\n", .{
                 bench.name,
                 std.fs.path.basename(path),
                 elapsed / iters,
-                bytes / seconds / (1024.0 * 1024.0),
             });
         }
     }

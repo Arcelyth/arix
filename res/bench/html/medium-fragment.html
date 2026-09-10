@@ -1,0 +1,33 @@
+<section id=results class="results grid" aria-labelledby=results-title data-page=1>
+  <header>
+    <h2 id=results-title>Parser benchmark results</h2>
+    <p>Representative markup combines text, formatting, references, attributes, lists, and tables.</p>
+  </header>
+  <article id=result-101 class="result selected" data-id=101 data-state=ready>
+    <h3><a href=/results/101?view=summary&amp;source=benchmark>Streaming tokenization</a></h3>
+    <p>The tokenizer consumes UTF-8 input, recognizes <strong>markup</strong>, and emits owned tokens without unnecessary copying.</p>
+    <dl><dt>Language</dt><dd>Zig</dd><dt>Status</dt><dd>Ready</dd><dt>Score</dt><dd>98</dd></dl>
+  </article>
+  <article id=result-102 class="result" data-id=102 data-state=running>
+    <h3><a href="/results/102?view=summary&amp;source=benchmark">Tree construction</a></h3>
+    <p>Insertion modes consume tokenizer output and build documents, elements, text nodes, comments, and fragments.</p>
+    <ul><li>Stack of open elements</li><li>Active formatting elements</li><li>Template insertion modes</li></ul>
+  </article>
+  <article id=result-103 class="result" data-id=103 data-state=waiting>
+    <h3>Multilingual content</h3>
+    <p>中文内容测试多字节字符，日本語の文章も含まれます。한국어 텍스트와 emoji 🙂🚀도 처리합니다.</p>
+    <blockquote cite=https://example.test/spec>Correctness establishes the baseline; profiling identifies useful optimizations.</blockquote>
+  </article>
+  <table class=metrics>
+    <caption>Measured stages</caption>
+    <thead><tr><th>Stage</th><th>Input</th><th>Output</th><th>Enabled</th></tr></thead>
+    <tbody>
+      <tr><td>Preprocessing</td><td>UTF-8 bytes</td><td>Code points</td><td>true</td></tr>
+      <tr><td>Tokenization</td><td>Code points</td><td>Tokens</td><td>true</td></tr>
+      <tr><td>Tree building</td><td>Tokens</td><td>DOM nodes</td><td>true</td></tr>
+      <tr><td>CSS parsing</td><td>CSS tokens</td><td>Rules</td><td>true</td></tr>
+    </tbody>
+  </table>
+  <!-- Medium fragments include a comment without allowing comments to dominate the workload. -->
+  <footer><a href=/previous rel=prev>Previous</a> <a href=/next rel=next>Next</a></footer>
+</section>

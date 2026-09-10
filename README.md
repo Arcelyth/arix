@@ -26,3 +26,14 @@ For example:
 ```sh
 zig build test --summary all -- tokenizer
 ```
+
+## Benchmarks
+
+Compiled in `ReleaseFast` mode and run benchmarks: 
+```sh
+zig build bench -- [--iterations N] FILE.html FILE.css ...
+```
+or you can directly use commands in Makefile: 
+```sh
+make bench_html/bench_css
+```

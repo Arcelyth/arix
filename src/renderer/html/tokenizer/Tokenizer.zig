@@ -567,10 +567,21 @@ pub fn step_E(self: *Tokenizer, input: *BufferDeque(.utf8, .not_atomic, true)) !
                     self.emitEof();
                     return;
                 }
-                switch ((if (self.exact_errors)
-                    input.popUntilWithInputErrors("\r\x00&<\n")
+
+                // Consume an ordinary Data-state run. LF is only a boundary when the
+                // caller records line positions; otherwise it can remain inside the
+                // emitted run because LF requires no HTML input preprocessing.
+                const result = if (self.exact_errors)
+                    if (self.track_lines)
+                        input.popUntilWithInputErrors("\r\x00&<\n")
+                    else
+                        input.popUntilWithInputErrors("\r\x00&<")
+                else if (self.track_lines)
+                    input.popUntil("\r\x00&<\n")
                 else
-                    input.popUntil("\r\x00&<\n")).?) {
+                    input.popUntil("\r\x00&<");
+
+                switch (result.?) {
                     .from_set => self.processDataCharacter(ch, input),
                     .not_from_set => |res| {
                         self.emitCharacterRun(res.value);

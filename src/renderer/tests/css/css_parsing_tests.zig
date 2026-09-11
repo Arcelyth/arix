@@ -330,6 +330,18 @@ fn parseStylesheet(parser: *Parser, expected: std.json.Value) !void {
     try expectRules(expected.array.items, (try parser.parseStylesheet()).rules);
 }
 
+fn parseAnPlusB(parser: *Parser, expected: std.json.Value) !void {
+    if (expected == .null)
+        return std.testing.expectError(error.Syntax, parser.parseNth());
+
+    const pair = expected.array.items;
+    if (pair.len != 2 or pair[0] != .integer or pair[1] != .integer)
+        return error.InvalidFixture;
+    const result = try parser.parseNth();
+    try std.testing.expectEqual(@as(i32, @intCast(pair[0].integer)), result.a);
+    try std.testing.expectEqual(@as(i32, @intCast(pair[1].integer)), result.b);
+}
+
 fn runParsingTests(
     alloc: std.mem.Allocator,
     path: []const u8,
@@ -405,5 +417,17 @@ test "CSS css-parsing-tests: stylesheet" {
         testing.io,
         false,
         parseStylesheet,
+    );
+}
+
+test "CSS css-parsing-tests: An+B" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    try runParsingTests(
+        arena.allocator(),
+        "src/renderer/tests/css/css-parsing-tests/An+B.json",
+        testing.io,
+        false,
+        parseAnPlusB,
     );
 }

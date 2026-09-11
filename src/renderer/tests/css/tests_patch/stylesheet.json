@@ -1,0 +1,41 @@
+[
+
+"", [],
+"foo", [["error", "invalid"]],
+"foo 4", [["error", "invalid"]],
+
+"@foo", [["at-rule", "foo", [], null, null]],
+
+"@foo bar; \t/* comment */", [["at-rule", "foo", [" ", ["ident", "bar"]], null, null]],
+
+" /**/ @foo bar{[(4", [["at-rule", "foo",
+    [" ", ["ident", "bar"]],
+    [],
+    []
+]],
+
+"@foo { bar", [["at-rule", "foo", [" "], [], []]],
+"@foo [ bar", [["at-rule", "foo", [" ", ["[]", " ", ["ident", "bar"]]], null, null]],
+
+" /**/ div > p { color: #aaa;  } /**/ ", [["qualified rule",
+    [["ident", "div"], " ", ">", " ", ["ident", "p"], " "],
+    [],
+    []
+]],
+
+" /**/ { color: #aaa  ", [["qualified rule", [], [], []]],
+
+" /* CDO/CDC are ignored between rules */ <!-- --> {", [["qualified rule", [], [], []]],
+" <!-- --> a<!---->{", [["qualified rule", [["ident", "a"], "<!--", "-->"], [], []]],
+
+"div { color: #aaa; } p{}", [
+    ["qualified rule", [["ident", "div"], " "], [], []],
+    ["qualified rule", [["ident", "p"]], [], []]
+],
+
+"div {} -->", [["qualified rule", [["ident", "div"], " "], [], []]],
+
+"{}a", [["qualified rule", [], [], []], ["error", "invalid"]],
+"{}@a", [["qualified rule", [], [], []], ["at-rule", "a", [], null, null]]
+
+]

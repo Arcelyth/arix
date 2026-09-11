@@ -923,6 +923,22 @@ fn parseNthOffset(self: *Parser, signless: bool) ParserError!i32 {
 }
 
 fn parseNDashDigits(value: CssString, leading_dash: bool) ?i32 {
-    _ = value;
-    _ = leading_dash;
+    const prefix_len: usize = if (leading_dash) 3 else 2;
+    if (value.len() <= prefix_len) return null;
+    if (leading_dash and value.codePoint(0) != '-') return null;
+
+    const n_index: usize = if (leading_dash) 1 else 0;
+    const n = value.codePoint(n_index) orelse return null;
+    if (n != 'n' and n != 'N') return null;
+    if (value.codePoint(n_index + 1) != '-') return null;
+
+    var result: i32 = 0;
+    var i = prefix_len;
+    while (i < value.len()) : (i += 1) {
+        const cp = value.codePoint(i) orelse return null;
+        if (cp < '0' or cp > '9') return null;
+        result = std.math.mul(i32, result, 10) catch return null;
+        result = std.math.add(i32, result, @intCast(cp - '0')) catch return null;
+    }
+    return std.math.negate(result) catch null;
 }

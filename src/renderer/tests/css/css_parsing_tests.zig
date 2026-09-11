@@ -276,6 +276,60 @@ fn parseDeclaration(parser: *Parser, expected: std.json.Value) !void {
     try expectDeclaration(expected, try parser.parseDeclaration());
 }
 
+fn expectRule(expected: std.json.Value, actual: css.Rule) !void {
+    const array = expected.array.items;
+    const kind = array[0].string;
+
+    if (std.mem.eql(u8, kind, "at-rule")) {
+        const rule = switch (actual) {
+            .at_rule => |rule| rule,
+            else => return error.UnexpectedRule,
+        };
+        try expectString(array[1].string, rule.name);
+        try expectComponents(array[2].array.items, rule.prelude);
+        if (array[3] == .null) {
+            try std.testing.expect(rule.declarations == null);
+            try std.testing.expect(rule.child_rules == null);
+            return;
+        }
+        if (array[3] != .array or array[3].array.items.len != 0)
+            return error.UnsupportedFixture;
+        try std.testing.expectEqual(0, (rule.declarations orelse return error.UnexpectedRule).len);
+        try std.testing.expectEqual(0, (rule.child_rules orelse return error.UnexpectedRule).len);
+        return;
+    }
+
+    if (std.mem.eql(u8, kind, "qualified rule")) {
+        const rule = switch (actual) {
+            .qualified_rule => |rule| rule,
+            else => return error.UnexpectedRule,
+        };
+        try expectComponents(array[1].array.items, rule.prelude);
+        if (array[2] != .array or array[2].array.items.len != 0)
+            return error.UnsupportedFixture;
+        try std.testing.expectEqual(0, rule.declarations.len);
+        try std.testing.expectEqual(0, rule.child_rules.len);
+        return;
+    }
+
+    return error.UnsupportedFixture;
+}
+
+fn expectRules(expected: []const std.json.Value, actual: []const css.Rule) !void {
+    var actual_index: usize = 0;
+    for (expected) |item| {
+        if (isInvalid(item)) continue;
+        if (actual_index == actual.len) return error.MissingRule;
+        expectRule(item, actual[actual_index]) catch |err| return err;
+        actual_index += 1;
+    }
+    try std.testing.expectEqual(actual.len, actual_index);
+}
+
+fn parseStylesheet(parser: *Parser, expected: std.json.Value) !void {
+    try expectRules(expected.array.items, (try parser.parseStylesheet()).rules);
+}
+
 fn runParsingTests(
     alloc: std.mem.Allocator,
     path: []const u8,
@@ -339,5 +393,17 @@ test "CSS css-parsing-tests: one declaration" {
         testing.io,
         false,
         parseDeclaration,
+    );
+}
+
+test "CSS css-parsing-tests: stylesheet" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    try runParsingTests(
+        arena.allocator(),
+        "src/renderer/tests/css/tests_patch/stylesheet.json",
+        testing.io,
+        false,
+        parseStylesheet,
     );
 }

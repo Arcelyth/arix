@@ -60,3 +60,17 @@ pub fn freeDecoded(self: String, allocator: std.mem.Allocator) void {
         .owned => |value| allocator.free(value),
     }
 }
+
+pub fn len(self: *const String) usize {
+    return switch (self.value) {
+        .borrowed => |bytes| bytes.len,
+        .owned => |code_points| code_points.len,
+    };
+}
+
+pub fn codePoint(self: *const String, index: usize) ?u21 {
+    return switch (self.value) {
+        .borrowed => |bytes| if (index < bytes.len and bytes[index] < 0x80) bytes[index] else null,
+        .owned => |code_points| if (index < code_points.len) code_points[index] else null,
+    };
+}

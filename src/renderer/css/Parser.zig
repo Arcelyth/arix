@@ -861,9 +861,17 @@ inline fn item2Token(item: *const Item) ?Token {
 }
 
 fn parseNthIdent(self: *Parser, name: CssString, after_plus: bool) ParserError!Nth {
-    _ = self;
-    _ = name;
-    _ = after_plus;
+    if (name.eqlAscii("n"))
+        return .{ .a = 1, .b = try self.parseNthOffset(false) };
+    if (!after_plus and name.eqlAscii("-n"))
+        return .{ .a = -1, .b = try self.parseNthOffset(false) };
+    if (name.eqlAscii("n-"))
+        return .{ .a = 1, .b = try self.parseNthOffset(true) };
+    if (!after_plus and name.eqlAscii("-n-"))
+        return .{ .a = -1, .b = try self.parseNthOffset(true) };
+    if (parseNDashDigits(name, false)) |b| return .{ .a = 1, .b = b };
+    if (!after_plus) if (parseNDashDigits(name, true)) |b| return .{ .a = -1, .b = b };
+    return error.Syntax;
 }
 
 fn parseNthDimension(
@@ -883,8 +891,35 @@ fn parseNthDimension(
 }
 
 fn parseNthOffset(self: *Parser, signless: bool) ParserError!i32 {
-    _ = self; 
-    _ = signless;
+    self.input.discardWhitespace();
+    const tk = item2Token(self.input.consumeToken()) orelse return if (signless) error.Syntax else 0;
+    if (tk == .eof) return if (signless) error.Syntax else 0;
+
+    if (tk == .number) {
+        const number = tk.number;
+        const value = integerValue(number.value, number.type_flag) orelse return error.Syntax;
+        if (signless) {
+            if (number.sign != null) return error.Syntax;
+            return std.math.negate(value) catch return error.Syntax;
+        }
+        if (number.sign == null) return error.Syntax;
+        return value;
+    }
+
+    if (!signless and tk == .delim and (tk.delim == '+' or tk.delim == '-')) {
+        const negative = tk.delim == '-';
+        self.input.discardWhitespace();
+        const number = switch (item2Token(self.input.consumeToken()) orelse return error.Syntax) {
+            .number => |number| number,
+            else => return error.Syntax,
+        };
+        if (number.sign != null) return error.Syntax;
+        const value = integerValue(number.value, number.type_flag) orelse return error.Syntax;
+        // Use negate to catch overflow error.
+        return if (negative) std.math.negate(value) catch return error.Syntax else value;
+    }
+
+    return error.Syntax;
 }
 
 fn parseNDashDigits(value: CssString, leading_dash: bool) ?i32 {

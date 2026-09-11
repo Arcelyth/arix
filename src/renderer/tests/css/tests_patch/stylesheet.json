@@ -19,17 +19,21 @@
 
 " /**/ div > p { color: #aaa;  } /**/ ", [["qualified rule",
     [["ident", "div"], " ", ">", " ", ["ident", "p"], " "],
-    [],
+    [["declaration", "color", [" ", ["hash", "aaa", "id"]], false]],
     []
 ]],
 
-" /**/ { color: #aaa  ", [["qualified rule", [], [], []]],
+" /**/ { color: #aaa  ", [["qualified rule", [], [
+    ["declaration", "color", [" ", ["hash", "aaa", "id"], " "], false]
+], []]],
 
 " /* CDO/CDC are ignored between rules */ <!-- --> {", [["qualified rule", [], [], []]],
 " <!-- --> a<!---->{", [["qualified rule", [["ident", "a"], "<!--", "-->"], [], []]],
 
 "div { color: #aaa; } p{}", [
-    ["qualified rule", [["ident", "div"], " "], [], []],
+    ["qualified rule", [["ident", "div"], " "], [
+        ["declaration", "color", [" ", ["hash", "aaa", "id"]], false]
+    ], []],
     ["qualified rule", [["ident", "p"]], [], []]
 ],
 

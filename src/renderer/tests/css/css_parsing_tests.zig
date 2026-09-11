@@ -240,6 +240,80 @@ fn expectDeclaration(expected: std.json.Value, actual: css.Declaration) !void {
     try std.testing.expectEqual(array[3].bool, actual.important);
 }
 
+fn expectRule(expected: std.json.Value, actual: css.Rule) anyerror!void {
+    const array = expected.array.items;
+    const kind = array[0].string;
+
+    if (std.mem.eql(u8, kind, "at-rule")) {
+        const rule = switch (actual) {
+            .at_rule => |rule| rule,
+            else => return error.UnexpectedRule,
+        };
+        try expectString(array[1].string, rule.name);
+        try expectComponents(array[2].array.items, rule.prelude);
+        if (array[3] == .null)
+            try std.testing.expect(rule.declarations == null)
+        else
+            try expectDeclarations(array[3].array.items, rule.declarations orelse return error.UnexpectedRule);
+        if (array[4] == .null)
+            try std.testing.expect(rule.child_rules == null)
+        else
+            try expectRules(array[4].array.items, rule.child_rules orelse return error.UnexpectedRule);
+        return;
+    }
+
+    if (std.mem.eql(u8, kind, "qualified rule")) {
+        const rule = switch (actual) {
+            .qualified_rule => |rule| rule,
+            else => return error.UnexpectedRule,
+        };
+        try expectComponents(array[1].array.items, rule.prelude);
+        try expectDeclarations(array[2].array.items, rule.declarations);
+        try expectRules(array[3].array.items, rule.child_rules);
+        return;
+    }
+
+    return error.InvalidFixture;
+}
+
+fn expectDeclarations(expected: []const std.json.Value, actual: []const css.Declaration) anyerror!void {
+    try std.testing.expectEqual(expected.len, actual.len);
+    for (expected, actual) |expected_declaration, declaration|
+        try expectDeclaration(expected_declaration, declaration);
+}
+
+fn expectRules(expected: []const std.json.Value, actual: []const css.Rule) anyerror!void {
+    var actual_index: usize = 0;
+    for (expected) |item| {
+        if (isInvalid(item)) continue;
+        if (actual_index == actual.len) return error.MissingRule;
+        expectRule(item, actual[actual_index]) catch |err| return err;
+        actual_index += 1;
+    }
+    try std.testing.expectEqual(actual.len, actual_index);
+}
+
+fn expectBlockItems(expected: []const std.json.Value, actual: []const css.BlockItem) anyerror!void {
+    try std.testing.expectEqual(expected.len, actual.len);
+    for (expected, actual) |expected_item, actual_item| {
+        const array = expected_item.array.items;
+        const kind = array[0].string;
+        if (std.mem.eql(u8, kind, "declarations")) {
+            const declarations = switch (actual_item) {
+                .declarations => |value| value,
+                else => return error.UnexpectedBlockItem,
+            };
+            try expectDeclarations(array[1].array.items, declarations);
+        } else {
+            const rule = switch (actual_item) {
+                .rule => |value| value,
+                else => return error.UnexpectedBlockItem,
+            };
+            try expectRule(expected_item, rule);
+        }
+    }
+}
+
 fn loadFixture(alloc: std.mem.Allocator, path: []const u8, io: std.Io) !std.json.Parsed(std.json.Value) {
     const content = try std.Io.Dir.cwd().readFileAlloc(io, path, alloc, .unlimited);
     defer alloc.free(content);
@@ -276,54 +350,14 @@ fn parseDeclaration(parser: *Parser, expected: std.json.Value) !void {
     try expectDeclaration(expected, try parser.parseDeclaration());
 }
 
-fn expectRule(expected: std.json.Value, actual: css.Rule) !void {
-    const array = expected.array.items;
-    const kind = array[0].string;
-
-    if (std.mem.eql(u8, kind, "at-rule")) {
-        const rule = switch (actual) {
-            .at_rule => |rule| rule,
-            else => return error.UnexpectedRule,
-        };
-        try expectString(array[1].string, rule.name);
-        try expectComponents(array[2].array.items, rule.prelude);
-        if (array[3] == .null) {
-            try std.testing.expect(rule.declarations == null);
-            try std.testing.expect(rule.child_rules == null);
-            return;
-        }
-        if (array[3] != .array or array[3].array.items.len != 0)
-            return error.UnsupportedFixture;
-        try std.testing.expectEqual(0, (rule.declarations orelse return error.UnexpectedRule).len);
-        try std.testing.expectEqual(0, (rule.child_rules orelse return error.UnexpectedRule).len);
-        return;
-    }
-
-    if (std.mem.eql(u8, kind, "qualified rule")) {
-        const rule = switch (actual) {
-            .qualified_rule => |rule| rule,
-            else => return error.UnexpectedRule,
-        };
-        try expectComponents(array[1].array.items, rule.prelude);
-        if (array[2] != .array or array[2].array.items.len != 0)
-            return error.UnsupportedFixture;
-        try std.testing.expectEqual(0, rule.declarations.len);
-        try std.testing.expectEqual(0, rule.child_rules.len);
-        return;
-    }
-
-    return error.UnsupportedFixture;
+fn parseRule(parser: *Parser, expected: std.json.Value) !void {
+    if (isInvalid(expected))
+        return std.testing.expectError(error.Syntax, parser.parseRule());
+    try expectRule(expected, try parser.parseRule());
 }
 
-fn expectRules(expected: []const std.json.Value, actual: []const css.Rule) !void {
-    var actual_index: usize = 0;
-    for (expected) |item| {
-        if (isInvalid(item)) continue;
-        if (actual_index == actual.len) return error.MissingRule;
-        expectRule(item, actual[actual_index]) catch |err| return err;
-        actual_index += 1;
-    }
-    try std.testing.expectEqual(actual.len, actual_index);
+fn parseBlockContents(parser: *Parser, expected: std.json.Value) !void {
+    try expectBlockItems(expected.array.items, try parser.parseBlockContents());
 }
 
 fn parseStylesheet(parser: *Parser, expected: std.json.Value) !void {
@@ -405,6 +439,18 @@ test "CSS css-parsing-tests: one declaration" {
         testing.io,
         false,
         parseDeclaration,
+    );
+}
+
+test "CSS css-parsing-tests: block contents" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    try runParsingTests(
+        arena.allocator(),
+        "src/renderer/tests/css/tests_patch/blocks_contents.json",
+        testing.io,
+        false,
+        parseBlockContents,
     );
 }
 

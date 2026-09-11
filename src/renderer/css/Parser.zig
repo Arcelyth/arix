@@ -401,7 +401,10 @@ fn consumeBlockContents(
     while (true) switch (input.nextToken().*) {
         .token => |tk| switch (tk) {
             .whitespace, .semicolon => input.discardToken(),
-            .eof, .right_brace => return rules.toOwnedSlice(self.allocator),
+            .eof, .right_brace => {
+                try self.flushDeclarations(&rules, &decls);
+                return rules.toOwnedSlice(self.allocator);
+            },
             .at_keyword => {
                 try self.flushDeclarations(&rules, &decls);
                 if (try self.consumeAtRule(input, true)) |rule|

@@ -9,6 +9,7 @@ const Token = token.Token;
 const cloneToken = token.cloneToken;
 const results = @import("parsing_results.zig");
 const ascii = @import("../utils/ascii.zig");
+const CssString = @import("String.zig");
 
 pub const ParserError =
     std.mem.Allocator.Error ||
@@ -799,4 +800,94 @@ fn freeOwnedComponentValue(self: *Parser, value: results.ComponentValue) void {
             self.allocator.free(block.value);
         },
     }
+}
+
+/// Represents the An+B type.
+pub const Nth = struct {
+    a: i32,
+    b: i32,
+};
+
+// https://drafts.csswg.org/css-syntax/#anb-production
+pub fn parseNth(self: *Parser) ParserError!Nth {
+    self.input.discardWhitespace();
+
+    const first = item2Token(self.input.consumeToken()) orelse return error.Syntax;
+    const result: Nth = switch (first) {
+        .ident => |name| blk: {
+            if (name.eqlAscii("odd")) break :blk .{ .a = 2, .b = 1 };
+            if (name.eqlAscii("even")) break :blk .{ .a = 2, .b = 0 };
+            break :blk try self.parseNthIdent(name, false);
+        },
+        .number => |num| .{
+            .a = 0,
+            .b = integerValue(num.value, num.type_flag) orelse return error.Syntax,
+        },
+        .dimension => |dim| try self.parseNthDimension(
+            dim.value,
+            dim.type_flag,
+            dim.unit,
+        ),
+        .delim => |delimiter| blk: {
+            if (delimiter != '+') return error.Syntax;
+
+            // The grammar permits no whitespace between this optional '+' and
+            // the following ident token.
+            const name = switch (item2Token(self.input.consumeToken()) orelse return error.Syntax) {
+                .ident => |name| name,
+                else => return error.Syntax,
+            };
+            break :blk try self.parseNthIdent(name, true);
+        },
+        else => return error.Syntax,
+    };
+
+    self.input.discardWhitespace();
+    if (!self.input.empty()) return error.Syntax;
+    return result;
+}
+
+fn integerValue(value: f64, type_flag: token.NumberType) ?i32 {
+    if (type_flag != .integer or !std.math.isFinite(value)) return null;
+    if (value < std.math.minInt(i32) or value > std.math.maxInt(i32)) return null;
+    return @intFromFloat(value);
+}
+
+inline fn item2Token(item: *const Item) ?Token {
+    return switch (item.*) {
+        .token => |tk| tk,
+        .component_value => null,
+    };
+}
+
+fn parseNthIdent(self: *Parser, name: CssString, after_plus: bool) ParserError!Nth {
+    _ = self;
+    _ = name;
+    _ = after_plus;
+}
+
+fn parseNthDimension(
+    self: *Parser,
+    value: f64,
+    type_flag: token.NumberType,
+    unit: CssString,
+) ParserError!Nth {
+    const a = integerValue(value, type_flag) orelse return error.Syntax;
+    if (unit.eqlAscii("n"))
+        return .{ .a = a, .b = try self.parseNthOffset(false) };
+    if (unit.eqlAscii("n-"))
+        return .{ .a = a, .b = try self.parseNthOffset(true) };
+    if (parseNDashDigits(unit, false)) |b|
+        return .{ .a = a, .b = b };
+    return error.Syntax;
+}
+
+fn parseNthOffset(self: *Parser, signless: bool) ParserError!i32 {
+    _ = self; 
+    _ = signless;
+}
+
+fn parseNDashDigits(value: CssString, leading_dash: bool) ?i32 {
+    _ = value;
+    _ = leading_dash;
 }

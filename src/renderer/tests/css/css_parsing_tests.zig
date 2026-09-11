@@ -477,3 +477,15 @@ test "CSS css-parsing-tests: An+B" {
         parseAnPlusB,
     );
 }
+
+test "CSS css-parsing-tests: one rule" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    try runParsingTests(
+        arena.allocator(),
+        "src/renderer/tests/css/tests_patch/one_rule.json",
+        testing.io,
+        false,
+        parseRule,
+    );
+}

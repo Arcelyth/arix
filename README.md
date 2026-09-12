@@ -37,3 +37,7 @@ or you can directly use commands in Makefile:
 ```sh
 make bench_html/bench_css
 ```
+
+## Contributing
+
+See [CONTRIBUTING](CONTRIBUTING.md)

@@ -406,39 +406,15 @@ fn runParsingTests(
     }
 }
 
-test "CSS css-parsing-tests: one component value" {
+test "CSS css-parsing-tests: An+B" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     try runParsingTests(
         arena.allocator(),
-        "src/renderer/tests/css/css-parsing-tests/one_component_value.json",
-        testing.io,
-        true,
-        parseComponentValue,
-    );
-}
-
-test "CSS css-parsing-tests: component value list" {
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    try runParsingTests(
-        arena.allocator(),
-        "src/renderer/tests/css/css-parsing-tests/component_value_list.json",
-        testing.io,
-        true,
-        parseComponentValueList,
-    );
-}
-
-test "CSS css-parsing-tests: one declaration" {
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    try runParsingTests(
-        arena.allocator(),
-        "src/renderer/tests/css/css-parsing-tests/one_declaration.json",
+        "src/renderer/tests/css/css-parsing-tests/An+B.json",
         testing.io,
         false,
-        parseDeclaration,
+        parseAnPlusB,
     );
 }
 
@@ -454,27 +430,39 @@ test "CSS css-parsing-tests: block contents" {
     );
 }
 
-test "CSS css-parsing-tests: stylesheet" {
+test "CSS css-parsing-tests: component value list" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     try runParsingTests(
         arena.allocator(),
-        "src/renderer/tests/css/tests_patch/stylesheet.json",
+        "src/renderer/tests/css/css-parsing-tests/component_value_list.json",
         testing.io,
-        false,
-        parseStylesheet,
+        true,
+        parseComponentValueList,
     );
 }
 
-test "CSS css-parsing-tests: An+B" {
+test "CSS css-parsing-tests: one component value" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     try runParsingTests(
         arena.allocator(),
-        "src/renderer/tests/css/css-parsing-tests/An+B.json",
+        "src/renderer/tests/css/css-parsing-tests/one_component_value.json",
+        testing.io,
+        true,
+        parseComponentValue,
+    );
+}
+
+test "CSS css-parsing-tests: one declaration" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    try runParsingTests(
+        arena.allocator(),
+        "src/renderer/tests/css/css-parsing-tests/one_declaration.json",
         testing.io,
         false,
-        parseAnPlusB,
+        parseDeclaration,
     );
 }
 
@@ -487,5 +475,17 @@ test "CSS css-parsing-tests: one rule" {
         testing.io,
         false,
         parseRule,
+    );
+}
+
+test "CSS css-parsing-tests: stylesheet" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    try runParsingTests(
+        arena.allocator(),
+        "src/renderer/tests/css/tests_patch/stylesheet.json",
+        testing.io,
+        false,
+        parseStylesheet,
     );
 }

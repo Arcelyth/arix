@@ -6,14 +6,10 @@ const parsing_results = @import("parsing_results.zig");
 const ComponentValue = parsing_results.ComponentValue;
 const Token = @import("token.zig").Token;
 const String = @import("String.zig");
+const types = @import("types.zig");
+const Span = types.Span;
 
 const eof_item: Token = .eof;
-
-/// Half-open byte offsets into the decoded UTF-8 source.
-pub const Span = struct {
-    start: u32,
-    end: u32,
-};
 
 pub const MarkError = error{NoMark};
 pub const SourceMapError = error{InvalidSourceMap};

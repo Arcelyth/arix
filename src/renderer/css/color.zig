@@ -220,9 +220,25 @@ fn parseHue(tk: Token) ?f64 {
     return @mod(degrees, 360);
 }
 
+// https://drafts.csswg.org/css-color-4/#the-hwb-notation
 fn parseHwb(args: *Stream) ?Absolute {
-    _ = args;
-    return null;
+    args.discardWhitespace();
+    const first = args.consume();
+    const hue: ?f64 = if (isNone(first)) null else parseHue(first) orelse return null;
+
+    args.discardWhitespace();
+    const second = args.consume();
+    const whiteness: ?f64 = if (isNone(second)) null else number(second, 1) orelse return null;
+
+    args.discardWhitespace();
+    const third = args.consume();
+    const blackness: ?f64 = if (isNone(third)) null else number(third, 1) orelse return null;
+
+    // Preserve W and B here; achromatic normalization belongs to conversion to sRGB.
+    return finish(args, .{
+        .space = .hwb,
+        .channels = .{ hue, whiteness, blackness },
+    }, false);
 }
 
 fn parseLab(args: *Stream, comptime space: Space) ?Absolute {

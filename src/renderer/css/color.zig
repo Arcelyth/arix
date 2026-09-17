@@ -48,12 +48,12 @@ pub fn parse(input: *Stream) error{NestingLimit}!?Color {
             if (name.eqlAscii("currentcolor"))
                 break :blk .current_color;
             if (name.eqlAscii("transparent"))
-                break :blk .{ .absolute = .{ .channels = .{ 0, 0, 0 }, .alpha = 0 } };
+                break :blk .{ .absolute = .{ .space = .srgb, .channels = .{ 0, 0, 0 }, .alpha = 0 } };
 
             var lower: [32]u8 = undefined;
             const key = name.toAsciiLower(&lower) orelse break :blk null;
 
-            if (names.colors.get(key)) |rgb| break :blk .{ .absolute = .{ .channels = .{
+            if (names.colors.get(key)) |rgb| break :blk .{ .absolute = .{ .space = .srgb, .channels = .{
                 @as(f64, @floatFromInt(rgb >> 16)) / 255,
                 @as(f64, @floatFromInt((rgb >> 8) & 255)) / 255,
                 @as(f64, @floatFromInt(rgb & 255)) / 255,
@@ -101,10 +101,11 @@ fn parseFunction(name: String, args: *Stream) ?Absolute {
 fn parseRgb(args: *Stream) ?Absolute {
     args.discardWhitespace();
     const first = args.consume();
-    const ws = args.whitespace();
+    const index = args.index;
+    args.discardWhitespace();
     return switch (args.peek()) {
         .comma => parseLegacyRgb(args, first),
-        else => if (ws) parseModernRgb(args, first) else null,
+        else => if (args.index != index) parseModernRgb(args, first) else null,
     };
 }
 
@@ -124,7 +125,7 @@ fn parseLegacyRgb(args: *Stream, first: Token) ?Absolute {
     if (std.meta.activeTag(third) != std.meta.activeTag(first)) return null;
     const blue = rgbChannel(third) orelse return null;
 
-    return finish(args, .{ .channels = .{ red, green, blue } }, true);
+    return finish(args, .{ .space = .srgb, .channels = .{ red, green, blue } }, true);
 }
 
 fn parseModernRgb(args: *Stream, first: Token) ?Absolute {
@@ -132,11 +133,13 @@ fn parseModernRgb(args: *Stream, first: Token) ?Absolute {
     const second = args.consume();
     const green: ?f64 = if (isNone(second)) null else rgbChannel(second) orelse return null;
 
-    if (!args.whitespace()) return null;
+    const index = args.index;
+    args.discardWhitespace();
+    if (args.index == index) return null;
     const third = args.consume();
     const blue: ?f64 = if (isNone(third)) null else rgbChannel(third) orelse return null;
 
-    return finish(args, .{ .channels = .{ red, green, blue } }, false);
+    return finish(args, .{ .space = .srgb, .channels = .{ red, green, blue } }, false);
 }
 
 // Shared numeric conversion and parse-time clamping for both RGB syntaxes.
@@ -145,26 +148,98 @@ fn rgbChannel(tk: Token) ?f64 {
     return std.math.clamp(value / @as(f64, if (tk == .percentage) 100 else 255), 0, 1);
 }
 
+// https://drafts.csswg.org/css-color-4/#the-hsl-notation
 fn parseHsl(args: *Stream) ?Absolute {
-    _ = args;
+    args.discardWhitespace();
+    const first = args.consume();
+    args.discardWhitespace();
+    return switch (args.peek()) {
+        .comma => parseLegacyHsl(args, first),
+        else => parseModernHsl(args, first),
+    };
+}
+
+// https://drafts.csswg.org/css-color-4/#legacy-hsl-syntax
+fn parseLegacyHsl(args: *Stream, first: Token) ?Absolute {
+    const hue = parseHue(first) orelse return null;
+
+    if (args.consume() != .comma) return null;
+    args.discardWhitespace();
+    const saturation = switch (args.consume()) {
+        .percentage => |p| p.value,
+        else => return null,
+    };
+
+    args.discardWhitespace();
+    if (args.consume() != .comma) return null;
+    args.discardWhitespace();
+    const lightness = switch (args.consume()) {
+        .percentage => |p| p.value,
+        else => return null,
+    };
+    if (!std.math.isFinite(saturation) or !std.math.isFinite(lightness)) return null;
+
+    return finish(args, .{
+        .space = .hsl,
+        .channels = .{ hue, @max(0, saturation), lightness },
+    }, true);
+}
+
+// https://drafts.csswg.org/css-color-4/#modern-hsl-syntax
+fn parseModernHsl(args: *Stream, first: Token) ?Absolute {
+    const hue: ?f64 = if (isNone(first)) null else parseHue(first) orelse return null;
+    const second = args.consume();
+    const saturation: ?f64 = if (isNone(second)) null else @max(0, number(second, 1) orelse return null);
+
+    args.discardWhitespace();
+    const third = args.consume();
+    const lightness: ?f64 = if (isNone(third)) null else number(third, 1) orelse return null;
+
+    return finish(args, .{
+        .space = .hsl,
+        .channels = .{ hue, saturation, lightness },
+    }, false);
+}
+
+// https://drafts.csswg.org/css-color-4/#typedef-hue
+fn parseHue(tk: Token) ?f64 {
+    const degrees = switch (tk) {
+        .number => |n| n.value,
+        // https://drafts.csswg.org/css-values-4/#angle-value
+        .dimension => |d| blk: {
+            if (!std.math.isFinite(d.value)) return null;
+            if (d.unit.eqlAscii("deg")) break :blk d.value;
+            if (d.unit.eqlAscii("grad")) break :blk @mod(d.value, 400) * 0.9;
+            if (d.unit.eqlAscii("rad")) break :blk @mod(d.value, 2 * std.math.pi) * (180.0 / std.math.pi);
+            if (d.unit.eqlAscii("turn")) break :blk @mod(d.value, 1) * 360;
+            return null;
+        },
+        else => return null,
+    };
+    if (!std.math.isFinite(degrees)) return null;
+    return @mod(degrees, 360);
 }
 
 fn parseHwb(args: *Stream) ?Absolute {
     _ = args;
+    return null;
 }
 
 fn parseLab(args: *Stream, comptime space: Space) ?Absolute {
     _ = args;
     _ = space;
+    return null;
 }
 
 fn parseLch(args: *Stream, comptime space: Space) ?Absolute {
     _ = args;
     _ = space;
+    return null;
 }
 
 fn parsePredefined(args: *Stream) ?Absolute {
     _ = args;
+    return null;
 }
 
 // Helper for literal coordinates: scale percentages, leave
@@ -190,7 +265,8 @@ fn finish(args: *Stream, value: Absolute, comma: bool) ?Absolute {
     if (comma and args.peek() == .comma) {
         _ = args.consume();
         result.alpha = parseAlpha(args) orelse return null;
-    } else if (!comma and args.delim('/')) {
+    } else if (!comma and args.peek() == .delim and args.peek().delim == '/') {
+        _ = args.consume();
         args.discardWhitespace();
         if (isNone(args.peek())) {
             _ = args.consume();

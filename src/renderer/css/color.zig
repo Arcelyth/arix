@@ -241,16 +241,52 @@ fn parseHwb(args: *Stream) ?Absolute {
     }, false);
 }
 
+// https://drafts.csswg.org/css-color-4/#funcdef-lab
+// https://drafts.csswg.org/css-color-4/#funcdef-oklab
 fn parseLab(args: *Stream, comptime space: Space) ?Absolute {
-    _ = args;
-    _ = space;
-    return null;
+    const max_lightness: f64 = if (space == .lab) 100 else 1;
+    const axis_scale: f64 = if (space == .lab) 1.25 else 0.004;
+
+    args.discardWhitespace();
+    const first = args.consume();
+    const lightness: ?f64 = if (isNone(first)) null else std.math.clamp(number(first, max_lightness / 100) orelse return null, 0, max_lightness);
+
+    args.discardWhitespace();
+    const second = args.consume();
+    const a: ?f64 = if (isNone(second)) null else number(second, axis_scale) orelse return null;
+
+    args.discardWhitespace();
+    const third = args.consume();
+    const b: ?f64 = if (isNone(third)) null else number(third, axis_scale) orelse return null;
+
+    return finish(args, .{
+        .space = space,
+        .channels = .{ lightness, a, b },
+    }, false);
 }
 
+// https://drafts.csswg.org/css-color-4/#funcdef-lch
+// https://drafts.csswg.org/css-color-4/#funcdef-oklch
 fn parseLch(args: *Stream, comptime space: Space) ?Absolute {
-    _ = args;
-    _ = space;
-    return null;
+    const max_lightness: f64 = if (space == .lch) 100 else 1;
+    const chroma_scale: f64 = if (space == .lch) 1.5 else 0.004;
+
+    args.discardWhitespace();
+    const first = args.consume();
+    const lightness: ?f64 = if (isNone(first)) null else std.math.clamp(number(first, max_lightness / 100) orelse return null, 0, max_lightness);
+
+    args.discardWhitespace();
+    const second = args.consume();
+    const chroma: ?f64 = if (isNone(second)) null else @max(0, number(second, chroma_scale) orelse return null);
+
+    args.discardWhitespace();
+    const third = args.consume();
+    const hue: ?f64 = if (isNone(third)) null else parseHue(third) orelse return null;
+
+    return finish(args, .{
+        .space = space,
+        .channels = .{ lightness, chroma, hue },
+    }, false);
 }
 
 fn parsePredefined(args: *Stream) ?Absolute {

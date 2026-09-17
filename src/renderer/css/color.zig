@@ -37,7 +37,7 @@ pub const Color = union(enum) {
 
 pub fn parse(input: *Stream) error{NestingLimit}!?Color {
     input.discardWhitespace();
-    return switch (input.take()) {
+    return switch (input.consume()) {
         .hash => |hash| if (parseHex(hash.value)) |rgba| .{ .absolute = .{
             .space = .srgb,
             .channels = .{ @as(f64, @floatFromInt(rgba[0])) / 255, @as(f64, @floatFromInt(rgba[1])) / 255, @as(f64, @floatFromInt(rgba[2])) / 255 },

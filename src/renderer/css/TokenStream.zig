@@ -66,16 +66,16 @@ pub fn deinit(self: *TokenStream) void {
 /// token.
 /// "process" operation is intentionally expressed at each call site so there
 /// is no callback or dynamic dispatch in the parser hot path.
-pub inline fn peek(self: *const TokenStream) *const Token {
-    if (self.index < self.tokens.len) return &self.tokens[self.index];
-    return &eof_item;
+pub inline fn peek(self: *const TokenStream) Token {
+    if (self.index < self.tokens.len) return self.tokens[self.index];
+    return eof_item;
 }
 
 pub inline fn empty(self: *const TokenStream) bool {
-    return self.peek().* == .eof;
+    return self.peek() == .eof;
 }
 
-pub inline fn consume(self: *TokenStream) *const Token {
+pub inline fn consume(self: *TokenStream) Token {
     const item = self.peek();
     self.index += 1;
     return item;
@@ -98,7 +98,7 @@ pub fn discardMark(self: *TokenStream) MarkError!void {
 }
 
 pub fn discardWhitespace(self: *TokenStream) void {
-    while (self.peek().* == .whitespace) self.discardToken();
+    while (self.peek() == .whitespace) self.discardToken();
 }
 
 pub fn originalText(self: *const TokenStream, first: usize, past_last: usize) ?[]const u8 {
@@ -112,6 +112,66 @@ pub fn originalText(self: *const TokenStream, first: usize, past_last: usize) ?[
     }
 
     return source[spans[first].start..spans[past_last - 1].end];
+}
+
+/// A bounded view shares tokens and source storage, but has its own cursor.
+pub fn view(self: *const TokenStream, start: usize, end: usize) TokenStream {
+    return .{
+        .allocator = self.allocator,
+        .tokens = self.tokens[start..end],
+        .source = self.source,
+        .spans = if (self.spans) |spans| spans[start..end] else null,
+    };
+}
+
+/// Consume one component without allocating a component-value tree.
+pub fn skipComponent(self: *TokenStream) error{NestingLimit}!void {
+    var stack: [128]std.meta.Tag(Token) = undefined;
+    var len: usize = 0;
+    while (!self.empty()) {
+        const tk = self.consume();
+        switch (tk) {
+            .function, .left_paren, .left_bracket, .left_brace => {
+                if (len == stack.len) return error.NestingLimit;
+                stack[len] = switch (tk) {
+                    .function, .left_paren => .right_paren,
+                    .left_bracket => .right_bracket,
+                    else => .right_brace,
+                };
+                len += 1;
+            },
+            .right_paren, .right_bracket, .right_brace => {
+                if (len != 0 and stack[len - 1] == std.meta.activeTag(tk)) len -= 1;
+            },
+            else => {},
+        }
+        if (len == 0) return;
+    }
+}
+
+/// The opening token is at the cursor. EOF implicitly closes the block, as in
+/// CSS Syntax. The parent advances past the closing token, if present.
+pub fn block(self: *TokenStream) error{NestingLimit}!TokenStream {
+    const opening = self.peek();
+    const closing: std.meta.Tag(Token) = switch (opening) {
+        .function, .left_paren => .right_paren,
+        .left_bracket => .right_bracket,
+        .left_brace => .right_brace,
+        else => unreachable,
+    };
+    _ = self.consume();
+    const start = self.index;
+    // Skip nested components as units. A close belonging to a nested block at
+    // EOF must remain inside this view, not be mistaken for our own close.
+    while (!self.empty()) {
+        if (std.meta.activeTag(self.peek()) == closing) {
+            const end = self.index;
+            _ = self.consume();
+            return self.view(start, end);
+        }
+        try self.skipComponent();
+    }
+    return self.view(start, self.index);
 }
 
 const testing = std.testing;
@@ -131,7 +191,7 @@ test "CSS Token Stream: consumes discards and reaches conceptual EOF" {
     try testing.expect(stream.empty());
     stream.discardToken();
     try testing.expectEqual(2, stream.index);
-    try testing.expectEqual(std.meta.Tag(Token).eof, std.meta.activeTag(stream.consume().*));
+    try testing.expectEqual(std.meta.Tag(Token).eof, std.meta.activeTag(stream.consume()));
     try testing.expectEqual(3, stream.index);
 }
 
@@ -174,4 +234,25 @@ test "CSS Token Stream: reproduces original text" {
     try testing.expectEqualStrings(": red", stream.originalText(1, 3).?);
     try testing.expectEqualStrings("", stream.originalText(3, 3).?);
     try testing.expect(stream.originalText(2, 1) == null);
+}
+
+test "CSS Token Stream: block excludes its delimiters and preserves nested content" {
+    const items = [_]Token{
+        .left_paren,
+        .left_bracket,
+        .right_bracket,
+        .right_paren,
+        .semicolon,
+    };
+    var stream = TokenStream.init(testing.allocator, &items);
+    defer stream.deinit();
+    var content = try stream.block();
+    defer content.deinit();
+
+    try testing.expectEqual(2, content.tokens.len);
+    try testing.expect(content.consume() == .left_bracket);
+    try testing.expect(content.consume() == .right_bracket);
+    try testing.expect(content.empty());
+    try testing.expectEqual(4, stream.index);
+    try testing.expect(stream.peek() == .semicolon);
 }

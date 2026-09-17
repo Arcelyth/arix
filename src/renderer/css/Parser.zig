@@ -84,7 +84,7 @@ pub fn parseRule(self: *Parser) ParserError!results.Rule {
     self.input.discardWhitespace();
     if (self.input.empty()) return error.Syntax;
 
-    const rule = switch (self.input.peek().*) {
+    const rule = switch (self.input.peek()) {
         .at_keyword => (try self.consumeAtRule(self.input, false)) orelse return error.Syntax,
         else => (try self.consumeQualifiedRule(self.input, null, false)) orelse return error.Syntax,
     };
@@ -141,7 +141,7 @@ fn consumeStylesheetContents(
     var rules: std.ArrayList(results.Rule) = .empty;
     errdefer rules.deinit(self.allocator);
 
-    while (true) switch (input.peek().*) {
+    while (true) switch (input.peek()) {
         .whitespace, .cdo, .cdc => input.discardToken(),
         .eof => return rules.toOwnedSlice(self.allocator),
         .at_keyword => if (try self.consumeAtRule(input, false)) |rule|
@@ -162,7 +162,7 @@ fn consumeAtRule(
     var prelude: std.ArrayList(results.ComponentValue) = .empty;
     errdefer prelude.deinit(self.allocator);
 
-    while (true) switch (input.peek().*) {
+    while (true) switch (input.peek()) {
         .semicolon, .eof => {
             input.discardToken();
             return .{ .at_rule = .{
@@ -244,7 +244,7 @@ fn consumeQualifiedRule(
     defer prelude.deinit(self.allocator);
 
     while (true) {
-        const tk = input.peek().*;
+        const tk = input.peek();
         if (tk == .eof or isStopToken_O(tk, stop)) {
             return null;
         }
@@ -378,7 +378,7 @@ fn consumeBlockContents(
     var decls: std.ArrayList(results.Declaration) = .empty;
     defer decls.deinit(self.allocator);
 
-    while (true) switch (input.peek().*) {
+    while (true) switch (input.peek()) {
         .whitespace, .semicolon => input.discardToken(),
         .eof, .right_brace => {
             try self.flushDeclarations(&rules, &decls);
@@ -444,7 +444,7 @@ fn consumeDeclaration(
     input: *TokenStream,
     nested: bool,
 ) ParserError!?results.Declaration {
-    const name = switch (input.peek().*) {
+    const name = switch (input.peek()) {
         .ident => |value| value,
         else => {
             try self.consumeBadDeclarationRemnants(input, nested);
@@ -454,7 +454,7 @@ fn consumeDeclaration(
     input.discardToken();
 
     input.discardWhitespace();
-    if (input.peek().* != .colon) {
+    if (input.peek() != .colon) {
         try self.consumeBadDeclarationRemnants(input, nested);
         return null;
     }
@@ -524,7 +524,7 @@ fn consumeBadDeclarationRemnants(
     input: *TokenStream,
     nested: bool,
 ) ParserError!void {
-    while (true) switch (input.peek().*) {
+    while (true) switch (input.peek()) {
         .eof, .semicolon => {
             input.discardToken();
             return;
@@ -587,7 +587,7 @@ fn consumeListOfComponentValues(
     errdefer values.deinit(self.allocator);
 
     while (true) {
-        const tk = input.peek().*;
+        const tk = input.peek();
         if (tk == .eof or isStopToken_O(tk, stop))
             return values.toOwnedSlice(self.allocator);
 
@@ -603,12 +603,12 @@ fn consumeComponentValue(
     self: *Parser,
     input: *TokenStream,
 ) ParserError!results.ComponentValue {
-    return switch (input.peek().*) {
+    return switch (input.peek()) {
         .left_brace, .left_bracket, .left_paren => .{
             .simple_block = try self.consumeSimpleBlock(input),
         },
         .function => .{ .function = try self.consumeFunction(input) },
-        else => .{ .preserved_token = results.preservedToken(input.consume().*) },
+        else => .{ .preserved_token = results.preservedToken(input.consume()) },
     };
 }
 
@@ -617,7 +617,7 @@ fn consumeSimpleBlock(
     self: *Parser,
     input: *TokenStream,
 ) ParserError!results.SimpleBlock {
-    const opening = input.peek().*;
+    const opening = input.peek();
     const associated_tk: results.BlockToken, const ending: Token = switch (opening) {
         .left_brace => .{ .left_brace, .right_brace },
         .left_bracket => .{ .left_bracket, .right_bracket },
@@ -629,7 +629,7 @@ fn consumeSimpleBlock(
     var value: std.ArrayList(results.ComponentValue) = .empty;
     errdefer value.deinit(self.allocator);
     while (true) {
-        const tk = input.peek().*;
+        const tk = input.peek();
         if (tk == .eof or std.meta.activeTag(tk) == std.meta.activeTag(ending)) {
             input.discardToken();
             return .{
@@ -652,7 +652,7 @@ fn consumeFunction(
     var value: std.ArrayList(results.ComponentValue) = .empty;
     errdefer value.deinit(self.allocator);
     while (true) {
-        const tk = input.peek().*;
+        const tk = input.peek();
         if (tk == .eof or tk == .right_paren) {
             input.discardToken();
             return .{
@@ -766,7 +766,7 @@ pub const Nth = struct {
 pub fn parseNth(self: *Parser) ParserError!Nth {
     self.input.discardWhitespace();
 
-    const first = self.input.consume().*;
+    const first = self.input.consume();
     const result: Nth = switch (first) {
         .ident => |name| blk: {
             if (name.eqlAscii("odd")) break :blk .{ .a = 2, .b = 1 };
@@ -787,7 +787,7 @@ pub fn parseNth(self: *Parser) ParserError!Nth {
 
             // The grammar permits no whitespace between this optional '+' and
             // the following ident token.
-            const name = switch (self.input.consume().*) {
+            const name = switch (self.input.consume()) {
                 .ident => |name| name,
                 else => return error.Syntax,
             };
@@ -839,7 +839,7 @@ fn parseNthDimension(
 
 fn parseNthOffset(self: *Parser, signless: bool) ParserError!i32 {
     self.input.discardWhitespace();
-    const tk = self.input.consume().*;
+    const tk = self.input.consume();
     if (tk == .eof) return if (signless) error.Syntax else 0;
 
     if (tk == .number) {
@@ -856,7 +856,7 @@ fn parseNthOffset(self: *Parser, signless: bool) ParserError!i32 {
     if (!signless and tk == .delim and (tk.delim == '+' or tk.delim == '-')) {
         const negative = tk.delim == '-';
         self.input.discardWhitespace();
-        const number = switch (self.input.consume().*) {
+        const number = switch (self.input.consume()) {
             .number => |number| number,
             else => return error.Syntax,
         };

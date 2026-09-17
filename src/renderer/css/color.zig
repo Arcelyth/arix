@@ -86,7 +86,124 @@ pub fn parseHex(value: String) ?[4]u8 {
     return rgba;
 }
 
-pub fn parseFunction(name: String, args: *Stream) ?Absolute {
-    _ = name;
+fn parseFunction(name: String, args: *Stream) ?Absolute {
+    if (name.eqlAscii("rgb") or name.eqlAscii("rgba")) return parseRgb(args);
+    if (name.eqlAscii("hsl") or name.eqlAscii("hsla")) return parseHsl(args);
+    if (name.eqlAscii("hwb")) return parseHwb(args);
+    if (name.eqlAscii("lab")) return parseLab(args, .lab);
+    if (name.eqlAscii("oklab")) return parseLab(args, .oklab);
+    if (name.eqlAscii("lch")) return parseLch(args, .lch);
+    if (name.eqlAscii("oklch")) return parseLch(args, .oklch);
+    if (name.eqlAscii("color")) return parsePredefined(args);
+    return null;
+}
+
+fn parseRgb(args: *Stream) ?Absolute {
+    args.discardWhitespace();
+    const first = args.consume();
+    const ws = args.whitespace();
+    return switch (args.peek()) {
+        .comma => parseLegacyRgb(args, first),
+        else => if (ws) parseModernRgb(args, first) else null,
+    };
+}
+
+fn parseLegacyRgb(args: *Stream, first: Token) ?Absolute {
+    const red = rgbChannel(first) orelse return null;
+
+    if (args.consume() != .comma) return null;
+    args.discardWhitespace();
+    const second = args.consume();
+    if (std.meta.activeTag(second) != std.meta.activeTag(first)) return null;
+    const green = rgbChannel(second) orelse return null;
+
+    args.discardWhitespace();
+    if (args.consume() != .comma) return null;
+    args.discardWhitespace();
+    const third = args.consume();
+    if (std.meta.activeTag(third) != std.meta.activeTag(first)) return null;
+    const blue = rgbChannel(third) orelse return null;
+
+    return finish(args, .{ .channels = .{ red, green, blue } }, true);
+}
+
+fn parseModernRgb(args: *Stream, first: Token) ?Absolute {
+    const red: ?f64 = if (isNone(first)) null else rgbChannel(first) orelse return null;
+    const second = args.consume();
+    const green: ?f64 = if (isNone(second)) null else rgbChannel(second) orelse return null;
+
+    if (!args.whitespace()) return null;
+    const third = args.consume();
+    const blue: ?f64 = if (isNone(third)) null else rgbChannel(third) orelse return null;
+
+    return finish(args, .{ .channels = .{ red, green, blue } }, false);
+}
+
+// Shared numeric conversion and parse-time clamping for both RGB syntaxes.
+fn rgbChannel(tk: Token) ?f64 {
+    const value = number(tk, 1) orelse return null;
+    return std.math.clamp(value / @as(f64, if (tk == .percentage) 100 else 255), 0, 1);
+}
+
+fn parseHsl(args: *Stream) ?Absolute {
     _ = args;
+}
+
+fn parseHwb(args: *Stream) ?Absolute {
+    _ = args;
+}
+
+fn parseLab(args: *Stream, comptime space: Space) ?Absolute {
+    _ = args;
+    _ = space;
+}
+
+fn parseLch(args: *Stream, comptime space: Space) ?Absolute {
+    _ = args;
+    _ = space;
+}
+
+fn parsePredefined(args: *Stream) ?Absolute {
+    _ = args;
+}
+
+// Helper for literal coordinates: scale percentages, leave
+// numbers unchanged, and reject non-finite input.
+fn number(tk: Token, percentage_scale: f64) ?f64 {
+    const value = switch (tk) {
+        .number => |n| n.value,
+        .percentage => |p| p.value * percentage_scale,
+        else => return null,
+    };
+    return if (std.math.isFinite(value)) value else null;
+}
+
+inline fn isNone(tk: Token) bool {
+    return tk == .ident and tk.ident.eqlAscii("none");
+}
+
+// Shared optional-alpha tail and exhaustion check. Legacy syntax uses a comma
+// and forbids missing alpha; modern syntax uses '/' and permits none.
+fn finish(args: *Stream, value: Absolute, comma: bool) ?Absolute {
+    var result = value;
+    args.discardWhitespace();
+    if (comma and args.peek() == .comma) {
+        _ = args.consume();
+        result.alpha = parseAlpha(args) orelse return null;
+    } else if (!comma and args.delim('/')) {
+        args.discardWhitespace();
+        if (isNone(args.peek())) {
+            _ = args.consume();
+            result.alpha = null;
+        } else result.alpha = parseAlpha(args) orelse return null;
+    }
+    args.discardWhitespace();
+    return if (args.empty()) result else null;
+}
+
+// Numeric/percentage alpha only; the caller handles the none keyword.
+fn parseAlpha(args: *Stream) ?f64 {
+    args.discardWhitespace();
+    const value = number(args.consume(), 0.01) orelse return null;
+    return std.math.clamp(value, 0, 1);
 }

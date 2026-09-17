@@ -23,7 +23,7 @@ pub const Space = enum {
 };
 
 pub const Absolute = struct {
-    space: Space = .srgb,
+    space: Space,
     channels: [3]?f64,
     alpha: ?f64 = 1,
 };
@@ -39,6 +39,7 @@ pub fn parse(input: *Stream) error{NestingLimit}!?Color {
     input.discardWhitespace();
     return switch (input.take()) {
         .hash => |hash| if (parseHex(hash.value)) |rgba| .{ .absolute = .{
+            .space = .srgb,
             .channels = .{ @as(f64, @floatFromInt(rgba[0])) / 255, @as(f64, @floatFromInt(rgba[1])) / 255, @as(f64, @floatFromInt(rgba[2])) / 255 },
             .alpha = @as(f64, @floatFromInt(rgba[3])) / 255,
         } } else null,
@@ -62,4 +63,3 @@ pub fn parseHex(value: String) ?[4]u8 {
     }
     return rgba;
 }
-

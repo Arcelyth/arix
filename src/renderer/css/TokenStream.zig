@@ -7,12 +7,7 @@ const ComponentValue = parsing_results.ComponentValue;
 const Token = @import("token.zig").Token;
 const String = @import("String.zig");
 
-pub const Item = union(enum) {
-    token: Token,
-    component_value: ComponentValue,
-};
-
-const eof_item: Item = .{ .token = .eof };
+const eof_item: Token = .eof;
 
 /// Half-open byte offsets into the decoded UTF-8 source.
 pub const Span = struct {
@@ -24,7 +19,7 @@ pub const MarkError = error{NoMark};
 pub const SourceMapError = error{InvalidSourceMap};
 
 allocator: std.mem.Allocator,
-tokens: []const Item,
+tokens: []const Token,
 index: usize = 0,
 marked_indexes: std.ArrayList(usize) = .empty,
 
@@ -32,7 +27,7 @@ marked_indexes: std.ArrayList(usize) = .empty,
 source: ?[]const u8 = null,
 spans: ?[]const Span = null,
 
-pub fn init(allocator: std.mem.Allocator, tokens: []const Item) TokenStream {
+pub fn init(allocator: std.mem.Allocator, tokens: []const Token) TokenStream {
     return .{
         .allocator = allocator,
         .tokens = tokens,
@@ -41,7 +36,7 @@ pub fn init(allocator: std.mem.Allocator, tokens: []const Item) TokenStream {
 
 pub fn initWithSource(
     allocator: std.mem.Allocator,
-    tokens: []const Item,
+    tokens: []const Token,
     source: []const u8,
     spans: []const Span,
 ) SourceMapError!TokenStream {
@@ -71,17 +66,17 @@ pub fn deinit(self: *TokenStream) void {
 /// token.
 /// "process" operation is intentionally expressed at each call site so there
 /// is no callback or dynamic dispatch in the parser hot path.
-pub inline fn nextToken(self: *const TokenStream) *const Item {
+pub inline fn peek(self: *const TokenStream) *const Token {
     if (self.index < self.tokens.len) return &self.tokens[self.index];
     return &eof_item;
 }
 
 pub inline fn empty(self: *const TokenStream) bool {
-    return isEof(self.nextToken());
+    return self.peek().* == .eof;
 }
 
-pub inline fn consumeToken(self: *TokenStream) *const Item {
-    const item = self.nextToken();
+pub inline fn consume(self: *TokenStream) *const Token {
+    const item = self.peek();
     self.index += 1;
     return item;
 }
@@ -103,7 +98,7 @@ pub fn discardMark(self: *TokenStream) MarkError!void {
 }
 
 pub fn discardWhitespace(self: *TokenStream) void {
-    while (isWhitespace(self.nextToken())) self.discardToken();
+    while (self.peek().* == .whitespace) self.discardToken();
 }
 
 pub fn originalText(self: *const TokenStream, first: usize, past_last: usize) ?[]const u8 {
@@ -119,48 +114,31 @@ pub fn originalText(self: *const TokenStream, first: usize, past_last: usize) ?[
     return source[spans[first].start..spans[past_last - 1].end];
 }
 
-inline fn isEof(item: *const Item) bool {
-    return switch (item.*) {
-        .token => |value| value == .eof,
-        .component_value => false,
-    };
-}
-
-inline fn isWhitespace(item: *const Item) bool {
-    return switch (item.*) {
-        .token => |value| value == .whitespace,
-        .component_value => |value| switch (value) {
-            .preserved_token => |preserved| preserved == .whitespace,
-            else => false,
-        },
-    };
-}
-
 const testing = std.testing;
 
 test "CSS Token Stream: consumes discards and reaches conceptual EOF" {
-    const items = [_]Item{
-        .{ .token = .whitespace },
-        .{ .token = .{ .ident = String.fromSource("a") } },
+    const items = [_]Token{
+        .whitespace,
+        .{ .ident = String.fromSource("a") },
     };
     var stream = TokenStream.init(testing.allocator, &items);
     defer stream.deinit();
 
     stream.discardWhitespace();
     try testing.expectEqual(1, stream.index);
-    const ident = stream.consumeToken().token.ident;
+    const ident = stream.consume().ident;
     try testing.expect(ident.eqlAscii("a"));
     try testing.expect(stream.empty());
     stream.discardToken();
     try testing.expectEqual(2, stream.index);
-    try testing.expectEqual(std.meta.Tag(Token).eof, std.meta.activeTag(stream.consumeToken().token));
+    try testing.expectEqual(std.meta.Tag(Token).eof, std.meta.activeTag(stream.consume().*));
     try testing.expectEqual(3, stream.index);
 }
 
 test "CSS Token Stream: restores and discards nested marks" {
-    const items = [_]Item{
-        .{ .token = .colon },
-        .{ .token = .semicolon },
+    const items = [_]Token{
+        .colon,
+        .semicolon,
     };
     var stream = TokenStream.init(testing.allocator, &items);
     defer stream.deinit();
@@ -179,10 +157,10 @@ test "CSS Token Stream: restores and discards nested marks" {
 
 test "CSS Token Stream: reproduces original text" {
     const source = "color /* retained */ : red";
-    const items = [_]Item{
-        .{ .token = .{ .ident = String.fromSource("color") } },
-        .{ .token = .colon },
-        .{ .token = .{ .ident = String.fromSource("red") } },
+    const items = [_]Token{
+        .{ .ident = String.fromSource("color") },
+        .colon,
+        .{ .ident = String.fromSource("red") },
     };
     const spans = [_]Span{
         .{ .start = 0, .end = 5 },

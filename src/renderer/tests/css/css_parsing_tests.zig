@@ -20,14 +20,14 @@ fn normalize(value: *std.json.Value) void {
     }
 }
 
-fn tokenize(allocator: std.mem.Allocator, input: []const u8, unicode_ranges_allowed: bool) ![]TokenStream.Item {
+fn tokenize(allocator: std.mem.Allocator, input: []const u8, unicode_ranges_allowed: bool) ![]Token {
     var tokenizer = Tokenizer.init(allocator, input);
     defer tokenizer.deinit();
-    var items: std.ArrayList(TokenStream.Item) = .empty;
+    var items: std.ArrayList(Token) = .empty;
     while (true) {
         const tk = tokenizer.consume(unicode_ranges_allowed);
         if (tk == .eof) break;
-        try items.append(allocator, .{ .token = try cloneToken(allocator, tk) });
+        try items.append(allocator, try cloneToken(allocator, tk));
     }
     return items.toOwnedSlice(allocator);
 }

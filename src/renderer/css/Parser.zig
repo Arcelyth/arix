@@ -3,7 +3,7 @@ const Parser = @This();
 const std = @import("std");
 const Tokenizer = @import("Tokenizer.zig");
 const TokenStream = @import("TokenStream.zig");
-const Item = TokenStream.Item;
+const ComponentValueStream = @import("ComponentValueStream.zig");
 const token = @import("token.zig");
 const Token = token.Token;
 const cloneToken = token.cloneToken;
@@ -30,16 +30,19 @@ pub fn init(alloc: std.mem.Allocator, input: *TokenStream) Parser {
 pub fn parseSomething(
     self: *Parser,
     comptime T: type,
-    comptime parse: fn ([]const results.ComponentValue) ?T,
+    comptime parse: fn (*ComponentValueStream) ?T,
 ) ParserError!?T {
-    return parse(try self.parseListOfComponentValues());
+    var input = ComponentValueStream.init(try self.parseListOfComponentValues());
+    const result = parse(&input) orelse return null;
+    input.discardWhitespace();
+    return if (input.empty()) result else null;
 }
 
 // https://drafts.csswg.org/css-syntax/#parse-comma-list
 pub fn parseCommaSeparatedList(
     self: *Parser,
     comptime T: type,
-    comptime parse: fn ([]const results.ComponentValue) ?T,
+    comptime parse: fn (*ComponentValueStream) ?T,
 ) ParserError![]?T {
     const start = self.input.index;
     self.input.discardWhitespace();
@@ -52,7 +55,12 @@ pub fn parseCommaSeparatedList(
     defer self.allocator.free(groups);
 
     const list = try self.allocator.alloc(?T, groups.len);
-    for (groups, list) |group, *result| result.* = parse(group);
+    for (groups, list) |group, *result| {
+        var input = ComponentValueStream.init(group);
+        result.* = parse(&input);
+        input.discardWhitespace();
+        if (!input.empty()) result.* = null;
+    }
     return list;
 }
 
@@ -76,13 +84,9 @@ pub fn parseRule(self: *Parser) ParserError!results.Rule {
     self.input.discardWhitespace();
     if (self.input.empty()) return error.Syntax;
 
-    const rule = switch (self.input.nextToken().*) {
-        .token => |tk| if (tk == .at_keyword)
-            (try self.consumeAtRule(self.input, false)) orelse return error.Syntax
-        else
-            (try self.consumeQualifiedRule(self.input, null, false)) orelse return error.Syntax,
-        .component_value => (try self.consumeQualifiedRule(self.input, null, false)) orelse
-            return error.Syntax,
+    const rule = switch (self.input.peek().*) {
+        .at_keyword => (try self.consumeAtRule(self.input, false)) orelse return error.Syntax,
+        else => (try self.consumeQualifiedRule(self.input, null, false)) orelse return error.Syntax,
     };
 
     self.input.discardWhitespace();
@@ -137,16 +141,12 @@ fn consumeStylesheetContents(
     var rules: std.ArrayList(results.Rule) = .empty;
     errdefer rules.deinit(self.allocator);
 
-    while (true) switch (input.nextToken().*) {
-        .token => |tk| switch (tk) {
-            .whitespace, .cdo, .cdc => input.discardToken(),
-            .eof => return rules.toOwnedSlice(self.allocator),
-            .at_keyword => if (try self.consumeAtRule(input, false)) |rule|
-                try rules.append(self.allocator, rule),
-            else => if (try self.consumeQualifiedRule(input, null, false)) |rule|
-                try rules.append(self.allocator, rule),
-        },
-        .component_value => if (try self.consumeQualifiedRule(input, null, false)) |rule|
+    while (true) switch (input.peek().*) {
+        .whitespace, .cdo, .cdc => input.discardToken(),
+        .eof => return rules.toOwnedSlice(self.allocator),
+        .at_keyword => if (try self.consumeAtRule(input, false)) |rule|
+            try rules.append(self.allocator, rule),
+        else => if (try self.consumeQualifiedRule(input, null, false)) |rule|
             try rules.append(self.allocator, rule),
     };
 }
@@ -157,52 +157,40 @@ fn consumeAtRule(
     input: *TokenStream,
     nested: bool,
 ) ParserError!?results.Rule {
-    const name = switch (input.consumeToken().*) {
-        .token => |tk| switch (tk) {
-            .at_keyword => |value| value,
-            else => unreachable,
-        },
-        .component_value => unreachable,
-    };
+    const name = input.consume().at_keyword;
 
     var prelude: std.ArrayList(results.ComponentValue) = .empty;
     errdefer prelude.deinit(self.allocator);
 
-    while (true) switch (input.nextToken().*) {
-        .token => |tk| switch (tk) {
-            .semicolon, .eof => {
-                input.discardToken();
+    while (true) switch (input.peek().*) {
+        .semicolon, .eof => {
+            input.discardToken();
+            return .{ .at_rule = .{
+                .name = name,
+                .prelude = try prelude.toOwnedSlice(self.allocator),
+            } };
+        },
+        .right_brace => {
+            if (nested) {
                 return .{ .at_rule = .{
                     .name = name,
                     .prelude = try prelude.toOwnedSlice(self.allocator),
                 } };
-            },
-            .right_brace => {
-                if (nested) {
-                    return .{ .at_rule = .{
-                        .name = name,
-                        .prelude = try prelude.toOwnedSlice(self.allocator),
-                    } };
-                }
-                input.discardToken();
-                try prelude.append(self.allocator, .{ .preserved_token = .right_brace });
-            },
-            .left_brace => {
-                const block = try self.consumeBlock(input);
-                var rule: results.AtRule = .{
-                    .name = name,
-                    .prelude = try prelude.toOwnedSlice(self.allocator),
-                };
-                errdefer self.allocator.free(rule.prelude);
-                try self.materializeAtRuleRuleBlock(block, &rule);
-                return .{ .at_rule = rule };
-            },
-            else => try prelude.append(self.allocator, try self.consumeComponentValue(input)),
+            }
+            input.discardToken();
+            try prelude.append(self.allocator, .{ .preserved_token = .right_brace });
         },
-        .component_value => try prelude.append(
-            self.allocator,
-            try self.consumeComponentValue(input),
-        ),
+        .left_brace => {
+            const block = try self.consumeBlock(input);
+            var rule: results.AtRule = .{
+                .name = name,
+                .prelude = try prelude.toOwnedSlice(self.allocator),
+            };
+            errdefer self.allocator.free(rule.prelude);
+            try self.materializeAtRuleRuleBlock(block, &rule);
+            return .{ .at_rule = rule };
+        },
+        else => try prelude.append(self.allocator, try self.consumeComponentValue(input)),
     };
 }
 
@@ -256,45 +244,37 @@ fn consumeQualifiedRule(
     defer prelude.deinit(self.allocator);
 
     while (true) {
-        const item = input.nextToken();
-        switch (item.*) {
-            .token => |tk| {
-                if (tk == .eof or isStopToken_O(tk, stop)) {
+        const tk = input.peek().*;
+        if (tk == .eof or isStopToken_O(tk, stop)) {
+            return null;
+        }
+
+        switch (tk) {
+            .right_brace => {
+                if (nested) return null;
+                input.discardToken();
+                try prelude.append(self.allocator, .{ .preserved_token = .right_brace });
+            },
+            .left_brace => {
+                if (startsCustomPropertyDeclaration(prelude.items)) {
+                    if (nested) {
+                        try self.consumeBadDeclarationRemnants(input, true);
+                    } else {
+                        const discarded = try self.consumeBlock(input);
+                        self.freeBlockItems(discarded);
+                    }
                     return null;
                 }
 
-                switch (tk) {
-                    .right_brace => {
-                        if (nested) return null;
-                        input.discardToken();
-                        try prelude.append(self.allocator, .{ .preserved_token = .right_brace });
-                    },
-                    .left_brace => {
-                        if (startsCustomPropertyDeclaration(prelude.items)) {
-                            if (nested) {
-                                try self.consumeBadDeclarationRemnants(input, true);
-                            } else {
-                                const discarded = try self.consumeBlock(input);
-                                self.freeBlockItems(discarded);
-                            }
-                            return null;
-                        }
-
-                        const block = try self.consumeBlock(input);
-                        var rule: results.QualifiedRule = .{
-                            .prelude = try prelude.toOwnedSlice(self.allocator),
-                        };
-                        errdefer self.allocator.free(rule.prelude);
-                        try self.materializeQualifiedRuleBlock(block, &rule);
-                        return .{ .qualified_rule = rule };
-                    },
-                    else => try prelude.append(
-                        self.allocator,
-                        try self.consumeComponentValue(input),
-                    ),
-                }
+                const block = try self.consumeBlock(input);
+                var rule: results.QualifiedRule = .{
+                    .prelude = try prelude.toOwnedSlice(self.allocator),
+                };
+                errdefer self.allocator.free(rule.prelude);
+                try self.materializeQualifiedRuleBlock(block, &rule);
+                return .{ .qualified_rule = rule };
             },
-            .component_value => try prelude.append(
+            else => try prelude.append(
                 self.allocator,
                 try self.consumeComponentValue(input),
             ),
@@ -398,21 +378,18 @@ fn consumeBlockContents(
     var decls: std.ArrayList(results.Declaration) = .empty;
     defer decls.deinit(self.allocator);
 
-    while (true) switch (input.nextToken().*) {
-        .token => |tk| switch (tk) {
-            .whitespace, .semicolon => input.discardToken(),
-            .eof, .right_brace => {
-                try self.flushDeclarations(&rules, &decls);
-                return rules.toOwnedSlice(self.allocator);
-            },
-            .at_keyword => {
-                try self.flushDeclarations(&rules, &decls);
-                if (try self.consumeAtRule(input, true)) |rule|
-                    try rules.append(self.allocator, .{ .rule = rule });
-            },
-            else => try self.consumeBlockContentItem(input, &rules, &decls),
+    while (true) switch (input.peek().*) {
+        .whitespace, .semicolon => input.discardToken(),
+        .eof, .right_brace => {
+            try self.flushDeclarations(&rules, &decls);
+            return rules.toOwnedSlice(self.allocator);
         },
-        .component_value => try self.consumeBlockContentItem(input, &rules, &decls),
+        .at_keyword => {
+            try self.flushDeclarations(&rules, &decls);
+            if (try self.consumeAtRule(input, true)) |rule|
+                try rules.append(self.allocator, .{ .rule = rule });
+        },
+        else => try self.consumeBlockContentItem(input, &rules, &decls),
     };
 }
 
@@ -467,15 +444,9 @@ fn consumeDeclaration(
     input: *TokenStream,
     nested: bool,
 ) ParserError!?results.Declaration {
-    const name = switch (input.nextToken().*) {
-        .token => |tk| switch (tk) {
-            .ident => |value| value,
-            else => {
-                try self.consumeBadDeclarationRemnants(input, nested);
-                return null;
-            },
-        },
-        .component_value => {
+    const name = switch (input.peek().*) {
+        .ident => |value| value,
+        else => {
             try self.consumeBadDeclarationRemnants(input, nested);
             return null;
         },
@@ -483,16 +454,11 @@ fn consumeDeclaration(
     input.discardToken();
 
     input.discardWhitespace();
-    switch (input.nextToken().*) {
-        .token => |tk| if (tk == .colon) input.discardToken() else {
-            try self.consumeBadDeclarationRemnants(input, nested);
-            return null;
-        },
-        .component_value => {
-            try self.consumeBadDeclarationRemnants(input, nested);
-            return null;
-        },
+    if (input.peek().* != .colon) {
+        try self.consumeBadDeclarationRemnants(input, nested);
+        return null;
     }
+    input.discardToken();
 
     const value_start = input.index;
     var value = try self.consumeListOfComponentValues(
@@ -558,19 +524,16 @@ fn consumeBadDeclarationRemnants(
     input: *TokenStream,
     nested: bool,
 ) ParserError!void {
-    while (true) switch (input.nextToken().*) {
-        .token => |tk| switch (tk) {
-            .eof, .semicolon => {
-                input.discardToken();
-                return;
-            },
-            .right_brace => {
-                if (nested) return;
-                input.discardToken();
-            },
-            else => _ = try self.consumeComponentValue(input),
+    while (true) switch (input.peek().*) {
+        .eof, .semicolon => {
+            input.discardToken();
+            return;
         },
-        .component_value => _ = try self.consumeComponentValue(input),
+        .right_brace => {
+            if (nested) return;
+            input.discardToken();
+        },
+        else => _ = try self.consumeComponentValue(input),
     };
 }
 
@@ -623,21 +586,16 @@ fn consumeListOfComponentValues(
     var values: std.ArrayList(results.ComponentValue) = .empty;
     errdefer values.deinit(self.allocator);
 
-    while (true) switch (input.nextToken().*) {
-        .token => |tk| {
-            if (tk == .eof or isStopToken_O(tk, stop))
-                return values.toOwnedSlice(self.allocator);
+    while (true) {
+        const tk = input.peek().*;
+        if (tk == .eof or isStopToken_O(tk, stop))
+            return values.toOwnedSlice(self.allocator);
 
-            if (tk == .right_brace and nested)
-                return values.toOwnedSlice(self.allocator);
+        if (tk == .right_brace and nested)
+            return values.toOwnedSlice(self.allocator);
 
-            try values.append(self.allocator, try self.consumeComponentValue(input));
-        },
-        .component_value => try values.append(
-            self.allocator,
-            try self.consumeComponentValue(input),
-        ),
-    };
+        try values.append(self.allocator, try self.consumeComponentValue(input));
+    }
 }
 
 // https://drafts.csswg.org/css-syntax/#consume-component-value
@@ -645,15 +603,12 @@ fn consumeComponentValue(
     self: *Parser,
     input: *TokenStream,
 ) ParserError!results.ComponentValue {
-    return switch (input.nextToken().*) {
-        .component_value => input.consumeToken().component_value,
-        .token => |tk| switch (tk) {
-            .left_brace, .left_bracket, .left_paren => .{
-                .simple_block = try self.consumeSimpleBlock(input),
-            },
-            .function => .{ .function = try self.consumeFunction(input) },
-            else => .{ .preserved_token = results.preservedToken(input.consumeToken().token) },
+    return switch (input.peek().*) {
+        .left_brace, .left_bracket, .left_paren => .{
+            .simple_block = try self.consumeSimpleBlock(input),
         },
+        .function => .{ .function = try self.consumeFunction(input) },
+        else => .{ .preserved_token = results.preservedToken(input.consume().*) },
     };
 }
 
@@ -662,7 +617,7 @@ fn consumeSimpleBlock(
     self: *Parser,
     input: *TokenStream,
 ) ParserError!results.SimpleBlock {
-    const opening = input.nextToken().token;
+    const opening = input.peek().*;
     const associated_tk: results.BlockToken, const ending: Token = switch (opening) {
         .left_brace => .{ .left_brace, .right_brace },
         .left_bracket => .{ .left_bracket, .right_bracket },
@@ -673,19 +628,17 @@ fn consumeSimpleBlock(
 
     var value: std.ArrayList(results.ComponentValue) = .empty;
     errdefer value.deinit(self.allocator);
-    while (true) switch (input.nextToken().*) {
-        .token => |tk| if (tk == .eof or std.meta.activeTag(tk) == std.meta.activeTag(ending)) {
+    while (true) {
+        const tk = input.peek().*;
+        if (tk == .eof or std.meta.activeTag(tk) == std.meta.activeTag(ending)) {
             input.discardToken();
             return .{
                 .associated_token = associated_tk,
                 .value = try value.toOwnedSlice(self.allocator),
             };
-        } else try value.append(self.allocator, try self.consumeComponentValue(input)),
-        .component_value => try value.append(
-            self.allocator,
-            try self.consumeComponentValue(input),
-        ),
-    };
+        }
+        try value.append(self.allocator, try self.consumeComponentValue(input));
+    }
 }
 
 // https://drafts.csswg.org/css-syntax/#consume-function
@@ -693,24 +646,22 @@ fn consumeFunction(
     self: *Parser,
     input: *TokenStream,
 ) ParserError!results.Function {
-    const name = input.nextToken().token.function;
+    const name = input.peek().function;
     input.discardToken();
 
     var value: std.ArrayList(results.ComponentValue) = .empty;
     errdefer value.deinit(self.allocator);
-    while (true) switch (input.nextToken().*) {
-        .token => |tk| if (tk == .eof or tk == .right_paren) {
+    while (true) {
+        const tk = input.peek().*;
+        if (tk == .eof or tk == .right_paren) {
             input.discardToken();
             return .{
                 .name = name,
                 .value = try value.toOwnedSlice(self.allocator),
             };
-        } else try value.append(self.allocator, try self.consumeComponentValue(input)),
-        .component_value => try value.append(
-            self.allocator,
-            try self.consumeComponentValue(input),
-        ),
-    };
+        }
+        try value.append(self.allocator, try self.consumeComponentValue(input));
+    }
 }
 
 // https://drafts.csswg.org/css-syntax/#consume-unicode-range-value
@@ -815,7 +766,7 @@ pub const Nth = struct {
 pub fn parseNth(self: *Parser) ParserError!Nth {
     self.input.discardWhitespace();
 
-    const first = item2Token(self.input.consumeToken()) orelse return error.Syntax;
+    const first = self.input.consume().*;
     const result: Nth = switch (first) {
         .ident => |name| blk: {
             if (name.eqlAscii("odd")) break :blk .{ .a = 2, .b = 1 };
@@ -836,7 +787,7 @@ pub fn parseNth(self: *Parser) ParserError!Nth {
 
             // The grammar permits no whitespace between this optional '+' and
             // the following ident token.
-            const name = switch (item2Token(self.input.consumeToken()) orelse return error.Syntax) {
+            const name = switch (self.input.consume().*) {
                 .ident => |name| name,
                 else => return error.Syntax,
             };
@@ -854,13 +805,6 @@ fn integerValue(value: f64, type_flag: token.NumberType) ?i32 {
     if (type_flag != .integer or !std.math.isFinite(value)) return null;
     if (value < std.math.minInt(i32) or value > std.math.maxInt(i32)) return null;
     return @intFromFloat(value);
-}
-
-inline fn item2Token(item: *const Item) ?Token {
-    return switch (item.*) {
-        .token => |tk| tk,
-        .component_value => null,
-    };
 }
 
 fn parseNthIdent(self: *Parser, name: CssString, after_plus: bool) ParserError!Nth {
@@ -895,7 +839,7 @@ fn parseNthDimension(
 
 fn parseNthOffset(self: *Parser, signless: bool) ParserError!i32 {
     self.input.discardWhitespace();
-    const tk = item2Token(self.input.consumeToken()) orelse return if (signless) error.Syntax else 0;
+    const tk = self.input.consume().*;
     if (tk == .eof) return if (signless) error.Syntax else 0;
 
     if (tk == .number) {
@@ -912,7 +856,7 @@ fn parseNthOffset(self: *Parser, signless: bool) ParserError!i32 {
     if (!signless and tk == .delim and (tk.delim == '+' or tk.delim == '-')) {
         const negative = tk.delim == '-';
         self.input.discardWhitespace();
-        const number = switch (item2Token(self.input.consumeToken()) orelse return error.Syntax) {
+        const number = switch (self.input.consume().*) {
             .number => |number| number,
             else => return error.Syntax,
         };

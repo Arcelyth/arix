@@ -47,6 +47,21 @@ pub fn startsWith(self: String, prefix: []const u8) bool {
     };
 }
 
+/// Writes lowercase ASCII into buffer without allocating.
+pub fn toAsciiLower(self: String, buffer: []u8) ?[]const u8 {
+    switch (self.value) {
+        inline else => |characters| {
+            if (characters.len > buffer.len) return null;
+            const result = buffer[0..characters.len];
+            for (characters, result) |cp, *byte| {
+                if (cp > 0x7f) return null;
+                byte.* = std.ascii.toLower(@intCast(cp));
+            }
+            return result;
+        },
+    }
+}
+
 pub fn cloneDecoded(self: String, allocator: std.mem.Allocator) !String {
     return switch (self.value) {
         .borrowed => self,

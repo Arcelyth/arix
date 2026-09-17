@@ -43,8 +43,30 @@ pub fn parse(input: *Stream) error{NestingLimit}!?Color {
             .channels = .{ @as(f64, @floatFromInt(rgba[0])) / 255, @as(f64, @floatFromInt(rgba[1])) / 255, @as(f64, @floatFromInt(rgba[2])) / 255 },
             .alpha = @as(f64, @floatFromInt(rgba[3])) / 255,
         } } else null,
-        .ident => {},
-        .function => {},
+
+        .ident => |name| blk: {
+            if (name.eqlAscii("currentcolor"))
+                break :blk .current_color;
+            if (name.eqlAscii("transparent"))
+                break :blk .{ .absolute = .{ .channels = .{ 0, 0, 0 }, .alpha = 0 } };
+
+            var lower: [32]u8 = undefined;
+            const key = name.toAsciiLower(&lower) orelse break :blk null;
+
+            if (names.colors.get(key)) |rgb| break :blk .{ .absolute = .{ .channels = .{
+                @as(f64, @floatFromInt(rgb >> 16)) / 255,
+                @as(f64, @floatFromInt((rgb >> 8) & 255)) / 255,
+                @as(f64, @floatFromInt(rgb & 255)) / 255,
+            } } };
+            if (names.system_colors.getIndex(key)) |index| break :blk .{ .system = index };
+            break :blk null;
+        },
+
+        .function => |name| blk: {
+            input.index -= 1;
+            var args = try input.block();
+            break :blk if (parseFunction(name, &args)) |value| .{ .absolute = value } else null;
+        },
         else => null,
     };
 }
@@ -62,4 +84,9 @@ pub fn parseHex(value: String) ?[4]u8 {
         rgba[i] = @as(u8, ascii.toHexDigit(u21, first)) * 16 + ascii.toHexDigit(u21, second);
     }
     return rgba;
+}
+
+pub fn parseFunction(name: String, args: *Stream) ?Absolute {
+    _ = name;
+    _ = args;
 }

@@ -8,6 +8,7 @@ const Token = token.Token;
 const cloneToken = token.cloneToken;
 const String = @import("../../css/String.zig");
 const testing = std.testing;
+const color = @import("../../css/color.zig");
 
 fn normalize(value: *std.json.Value) void {
     switch (value.*) {
@@ -376,6 +377,11 @@ fn parseAnPlusB(parser: *Parser, expected: std.json.Value) !void {
     try std.testing.expectEqual(@as(i32, @intCast(pair[1].integer)), result.b);
 }
 
+fn parseColor(parser: *Parser, expected: std.json.Value) !void {
+    _ = parser;
+    _ = expected;
+}
+
 fn runParsingTests(
     alloc: std.mem.Allocator,
     path: []const u8,
@@ -488,4 +494,27 @@ test "CSS css-parsing-tests: stylesheet" {
         false,
         parseStylesheet,
     );
+}
+
+test "CSS css-parsing-tests: colors" {
+    const files = .{
+        "css-parsing-tests/color_keywords_3.json",
+        "css-parsing-tests/color_keywords_4.json",
+        "css-parsing-tests/color_hexadecimal_3.json",
+        "css-parsing-tests/color_hexadecimal_4.json",
+        "css-parsing-tests/color_hsl_3.json",
+        "tests_patch/color_hsl_4.json",
+        "tests_patch/color_hwb_4.json",
+        "tests_patch/color_lab_4.json",
+        "tests_patch/color_lch_4.json",
+        "tests_patch/color_oklab_4.json",
+        "tests_patch/color_oklch_4.json",
+        "css-parsing-tests/color_function_4.json",
+    };
+    inline for (files) |file| {
+        errdefer std.debug.print("Fixture: {s} Failed\n", .{file});
+        var arena = std.heap.ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        try runParsingTests(arena.allocator(), "src/renderer/tests/css/" ++ file, testing.io, false, parseColor);
+    }
 }

@@ -367,3 +367,28 @@ fn parseAlpha(args: *Stream) ?f64 {
     const value = number(args.consume(), 0.01) orelse return null;
     return std.math.clamp(value, 0, 1);
 }
+
+// https://drafts.csswg.org/css-color-4/#hsl-to-rgb
+pub fn hslToRgb(hue: f64, saturation: f64, lightness: f64) [3]f64 {
+    const light = lightness / 100;
+    const amplitude = saturation / 100 * @min(light, 1 - light);
+    var rgb: [3]f64 = .{ 0, 8, 4 };
+    for (&rgb) |*channel| {
+        const k = @mod(channel.* + hue / 30, 12);
+        channel.* = light - amplitude * @max(-1, @min(k - 3, 9 - k, 1));
+    }
+    return rgb;
+}
+
+// https://drafts.csswg.org/css-color-4/#hwb-to-rgb
+pub fn hwbToRgb(hue: f64, whiteness: f64, blackness: f64) [3]f64 {
+    const white = whiteness / 100;
+    const black = blackness / 100;
+    if (white + black >= 1) {
+        const gray = white / (white + black);
+        return .{ gray, gray, gray };
+    }
+    var rgb = hslToRgb(hue, 100, 50);
+    for (&rgb) |*channel| channel.* = channel.* * (1 - white - black) + white;
+    return rgb;
+}

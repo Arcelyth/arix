@@ -570,3 +570,15 @@ test "CSS css-parsing-tests: colors" {
         try runParsingTests(arena.allocator(), "src/renderer/tests/css/" ++ file, testing.io, false, parseColor);
     }
 }
+
+test "CSS css-parsing-tests: declaration list" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    try runParsingTests(
+        arena.allocator(),
+        "src/renderer/tests/css/tests_patch/declaration_list.json",
+        testing.io,
+        false,
+        parseBlockContents,
+    );
+}

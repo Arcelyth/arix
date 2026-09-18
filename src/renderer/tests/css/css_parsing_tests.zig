@@ -73,6 +73,10 @@ fn expectToken(expected: std.json.Value, actual: css.PreservedToken) !void {
             else => error.UnexpectedToken,
         };
         return switch (actual) {
+            .delim => |cp| if (text.len > 0 and text.len <= 4)
+                try testing.expectEqual(try std.unicode.utf8Decode(text), cp)
+            else
+                error.UnexpectedToken,
             .whitespace => try std.testing.expectEqualStrings(" ", text),
             .cdo => try std.testing.expectEqualStrings("<!--", text),
             .cdc => try std.testing.expectEqualStrings("-->", text),
@@ -449,9 +453,6 @@ fn runParsingTests(
         if (cases[i] != .string) return error.InvalidTestFile;
         const input = cases[i].string;
 
-        // Skip legacy fixtures that rely on the old treatment of U+0080/U+0081.
-        if (std.mem.indexOf(u8, input, "\xC2\x80\xC2\x81") != null) continue;
-
         const items = try tokenize(alloc, input, unicode_ranges_allowed);
         var stream = TokenStream.init(alloc, items);
         defer stream.deinit();
@@ -492,7 +493,7 @@ test "CSS css-parsing-tests: component value list" {
     defer arena.deinit();
     try runParsingTests(
         arena.allocator(),
-        "src/renderer/tests/css/css-parsing-tests/component_value_list.json",
+        "src/renderer/tests/css/tests_patch/component_value_list.json",
         testing.io,
         true,
         parseComponentValueList,

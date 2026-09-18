@@ -582,3 +582,15 @@ test "CSS css-parsing-tests: declaration list" {
         parseBlockContents,
     );
 }
+
+test "CSS css-parsing-tests: rule list" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    try runParsingTests(
+        arena.allocator(),
+        "src/renderer/tests/css/tests_patch/rule_list.json",
+        testing.io,
+        false,
+        parseStylesheet,
+    );
+}

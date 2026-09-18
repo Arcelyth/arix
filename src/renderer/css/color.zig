@@ -9,6 +9,7 @@ pub const Space = enum {
     srgb,
     srgb_linear,
     display_p3,
+    display_p3_linear,
     a98_rgb,
     prophoto_rgb,
     rec2020,

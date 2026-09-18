@@ -377,9 +377,60 @@ fn parseAnPlusB(parser: *Parser, expected: std.json.Value) !void {
     try std.testing.expectEqual(@as(i32, @intCast(pair[1].integer)), result.b);
 }
 
+// Decode the fixture's canonical serialization without using the color parser
+// under test: in particular, do not clamp or normalize its expected values.
+fn fixtureColor(text: []const u8) !color.Absolute {
+    var parts = std.mem.tokenizeAny(u8, text, "(), /\t\r\n");
+    const function = parts.next() orelse return error.InvalidFixture;
+    const rgb = std.mem.eql(u8, function, "rgb") or std.mem.eql(u8, function, "rgba");
+    const name = if (std.mem.eql(u8, function, "color"))
+        parts.next() orelse return error.InvalidFixture
+    else if (rgb) "srgb" else function;
+    var key: [32]u8 = undefined;
+    if (name.len > key.len) return error.InvalidFixture;
+    for (name, key[0..name.len]) |byte, *out| out.* = if (byte == '-') '_' else byte;
+    const space = std.meta.stringToEnum(color.Space, key[0..name.len]) orelse return error.InvalidFixture;
+    var result: color.Absolute = .{ .space = space, .channels = .{ null, null, null } };
+    for (&result.channels) |*channel| {
+        const value = parts.next() orelse return error.InvalidFixture;
+        if (std.mem.eql(u8, value, "none")) continue;
+        const numeric = std.mem.trimEnd(u8, value, "%");
+        channel.* = try std.fmt.parseFloat(f64, numeric);
+        if (rgb) channel.* = channel.*.? / 255;
+    }
+    if (parts.next()) |alpha| {
+        result.alpha = if (std.mem.eql(u8, alpha, "none")) null else try std.fmt.parseFloat(f64, alpha);
+    }
+    if (parts.next() != null) return error.InvalidFixture;
+    return result;
+}
+
 fn parseColor(parser: *Parser, expected: std.json.Value) !void {
-    _ = parser;
-    _ = expected;
+    const actual = try color.parse(parser.input);
+    parser.input.discardWhitespace();
+    if (expected == .null)
+        return testing.expect(actual == null or !parser.input.empty());
+    if (expected != .string) return error.InvalidFixture;
+    try testing.expect(actual != null and actual.? == .absolute);
+    try testing.expect(parser.input.empty());
+    const want = try fixtureColor(expected.string);
+    var got = actual.?.absolute;
+    if (want.space == .srgb and (got.space == .hsl or got.space == .hwb)) {
+        const hue = got.channels[0] orelse return error.UnexpectedMissingChannel;
+        const second = got.channels[1] orelse return error.UnexpectedMissingChannel;
+        const third = got.channels[2] orelse return error.UnexpectedMissingChannel;
+        const rgb = if (got.space == .hsl) color.hslToRgb(hue, second, third) else color.hwbToRgb(hue, second, third);
+        got.space = .srgb;
+        got.channels = .{ rgb[0], rgb[1], rgb[2] };
+    }
+    try testing.expectEqual(want.space, got.space);
+    for (want.channels ++ [1]?f64{want.alpha}, got.channels ++ [1]?f64{got.alpha}) |reference, channel| {
+        if (reference) |value| {
+            try testing.expect(channel != null);
+            // Bundled fixture numbers are rounded to six decimal places.
+            try testing.expectApproxEqAbs(value, channel.?, 0.000001);
+        } else try testing.expect(channel == null);
+    }
 }
 
 fn runParsingTests(

@@ -290,8 +290,40 @@ fn parseLch(args: *Stream, comptime space: Space) ?Absolute {
 }
 
 fn parsePredefined(args: *Stream) ?Absolute {
-    _ = args;
-    return null;
+    args.discardWhitespace();
+    const name = switch (args.consume()) {
+        .ident => |value| value,
+        else => return null,
+    };
+    const space: Space = blk: {
+        if (name.eqlAscii("srgb")) break :blk .srgb;
+        if (name.eqlAscii("srgb-linear")) break :blk .srgb_linear;
+        if (name.eqlAscii("display-p3")) break :blk .display_p3;
+        if (name.eqlAscii("display-p3-linear")) break :blk .display_p3_linear;
+        if (name.eqlAscii("a98-rgb")) break :blk .a98_rgb;
+        if (name.eqlAscii("prophoto-rgb")) break :blk .prophoto_rgb;
+        if (name.eqlAscii("rec2020")) break :blk .rec2020;
+        if (name.eqlAscii("xyz-d50")) break :blk .xyz_d50;
+        if (name.eqlAscii("xyz-d65") or name.eqlAscii("xyz")) break :blk .xyz_d65;
+        return null;
+    };
+
+    args.discardWhitespace();
+    const first = args.consume();
+    const x: ?f64 = if (isNone(first)) null else number(first, 0.01) orelse return null;
+
+    args.discardWhitespace();
+    const second = args.consume();
+    const y: ?f64 = if (isNone(second)) null else number(second, 0.01) orelse return null;
+
+    args.discardWhitespace();
+    const third = args.consume();
+    const z: ?f64 = if (isNone(third)) null else number(third, 0.01) orelse return null;
+
+    return finish(args, .{
+        .space = space,
+        .channels = .{ x, y, z },
+    }, false);
 }
 
 // Helper for literal coordinates: scale percentages, leave

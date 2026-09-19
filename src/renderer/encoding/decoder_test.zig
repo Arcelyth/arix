@@ -105,3 +105,9 @@ test "encoding Decoder: GBK and gb18030" {
         for (1..4) |len| try expectDecode(enc, "\x81\x30\x81"[0..len], &.{0xFFFD});
     }
 }
+
+test "encoding Decoder: Big5" {
+    try expectDecode(.big5, "\xA4\x40\x88\x62\x88\x64\x88\xA3\x88\xA5", &.{ 0x4E00, 0xCA, 0x304, 0xCA, 0x30C, 0xEA, 0x304, 0xEA, 0x30C });
+    try expectDecode(.big5, "\x81\x40", &.{ 0xFFFD, '@' }); // Unmapped pair restores its ASCII trail.
+    try expectDecode(.big5, "\xA4<\x80\xFF\xA4", &.{ 0xFFFD, '<', 0xFFFD, 0xFFFD, 0xFFFD });
+}

@@ -271,14 +271,37 @@ fn handleGb18030(self: *Decoder, allocator: std.mem.Allocator, input: *IoQueue(u
     return .err;
 }
 
-/// https://encoding.spec.whatwg.org/#big5-decoder
-fn handleBig5(self: *Decoder, allocator: std.mem.Allocator, input: *IoQueue(u8), item: ?u8) HandlerResult {
-    // TODO: §11.1.1.
-    _ = self;
-    _ = allocator;
-    _ = input;
-    _ = item;
-    @panic("TODO");
+// https://encoding.spec.whatwg.org/#big5-decoder
+fn handleBig5(self: *Decoder, allocator: std.mem.Allocator, input: *IoQueue(u8), item: ?u8) !HandlerResult {
+    const byte = item orelse {
+        if (self.state.leading == 0) return .finished;
+        self.state.leading = 0;
+        return .err;
+    };
+    if (self.state.leading != 0) {
+        const leading = self.state.leading;
+        self.state.leading = 0;
+        if ((byte >= 0x40 and byte <= 0x7E) or (byte >= 0xA1 and byte <= 0xFE)) {
+            const offset: u8 = if (byte < 0x7F) 0x40 else 0x62;
+            const pointer = @as(usize, leading - 0x81) * 157 + byte - offset;
+            switch (pointer) {
+                1133 => return .{ .items = &.{ 0x00CA, 0x0304 } },
+                1135 => return .{ .items = &.{ 0x00CA, 0x030C } },
+                1164 => return .{ .items = &.{ 0x00EA, 0x0304 } },
+                1166 => return .{ .items = &.{ 0x00EA, 0x030C } },
+                else => {},
+            }
+            if (indexes.codePoint(indexes.big5, pointer)) |cp| return self.emit(cp);
+        }
+        if (byte < 0x80) try input.restore(allocator, byte);
+        return .err;
+    }
+    if (byte < 0x80) return self.emit(byte);
+    if (byte >= 0x81 and byte <= 0xFE) {
+        self.state.leading = byte;
+        return .continue_;
+    }
+    return .err;
 }
 
 /// https://encoding.spec.whatwg.org/#euc-jp-decoder

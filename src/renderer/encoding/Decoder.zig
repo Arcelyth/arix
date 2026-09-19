@@ -459,14 +459,29 @@ fn handleShiftJis(self: *Decoder, allocator: std.mem.Allocator, input: *IoQueue(
     return .err;
 }
 
-/// https://encoding.spec.whatwg.org/#euc-kr-decoder
-fn handleEucKr(self: *Decoder, allocator: std.mem.Allocator, input: *IoQueue(u8), item: ?u8) HandlerResult {
-    // TODO: §13.1.1.
-    _ = self;
-    _ = allocator;
-    _ = input;
-    _ = item;
-    @panic("TODO");
+// https://encoding.spec.whatwg.org/#euc-kr-decoder
+fn handleEucKr(self: *Decoder, allocator: std.mem.Allocator, input: *IoQueue(u8), item: ?u8) !HandlerResult {
+    const byte = item orelse {
+        if (self.state.leading == 0) return .finished;
+        self.state.leading = 0;
+        return .err;
+    };
+    if (self.state.leading != 0) {
+        const leading = self.state.leading;
+        self.state.leading = 0;
+        if (byte >= 0x41 and byte <= 0xFE) {
+            const pointer = @as(usize, leading - 0x81) * 190 + byte - 0x41;
+            if (indexes.codePoint(indexes.euc_kr, pointer)) |cp| return self.emit(cp);
+        }
+        if (byte < 0x80) try input.restore(allocator, byte);
+        return .err;
+    }
+    if (byte < 0x80) return self.emit(byte);
+    if (byte >= 0x81 and byte <= 0xFE) {
+        self.state.leading = byte;
+        return .continue_;
+    }
+    return .err;
 }
 
 /// https://encoding.spec.whatwg.org/#replacement-decoder

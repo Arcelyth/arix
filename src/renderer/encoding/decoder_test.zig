@@ -138,3 +138,8 @@ test "encoding Decoder: Shift_JIS" {
     try expectDecode(.shift_jis, "\x82\xA0\x80\xA1\xF0\x40\xF9\xFC", &.{ 0x3042, 0x80, 0xFF61, 0xE000, 0xE757 });
     try expectDecode(.shift_jis, "\x82\"\xFF\x82", &.{ 0xFFFD, '"', 0xFFFD, 0xFFFD });
 }
+
+test "encoding Decoder: EUC-KR" {
+    try expectDecode(.euckr, "\xB0\xA1\x81\x41", &.{ 0xAC00, 0xAC02 });
+    try expectDecode(.euckr, "\x81<\x80\xFF\x81", &.{ 0xFFFD, '<', 0xFFFD, 0xFFFD, 0xFFFD });
+}

@@ -87,3 +87,45 @@ pub fn IoQueue(comptime T: type) type {
         }
     };
 }
+
+const testing = std.testing;
+
+test "encoding queue: basic operations" {
+    var input = try IoQueue(u8).fromSlice(testing.allocator, "abc");
+    defer input.deinit(testing.allocator);
+
+    try testing.expectEqualStrings("", try input.peek(0));
+    try testing.expectEqualStrings("ab", try input.peek(2));
+    try testing.expectEqualStrings("abc", try input.peek(99));
+    try testing.expectEqual(0, input.index);
+    try testing.expectEqualStrings("", try input.readMany(0));
+    try testing.expectEqual(@as(?u8, 'a'), try input.read());
+    try testing.expectEqualStrings("bc", try input.readMany(99));
+    try testing.expectEqualStrings("", try input.peek(1));
+    try testing.expectEqualStrings("", try input.readMany(1));
+    try testing.expectEqual(@as(?u8, null), try input.read());
+    try testing.expectEqual(@as(?u8, null), try input.read());
+}
+
+test "encoding queue: streaming waits for enough input or end-of-queue" {
+    var input: IoQueue(u8) = .{};
+    defer input.deinit(testing.allocator);
+
+    try testing.expectEqualStrings("", try input.peek(0));
+    try testing.expectEqualStrings("", try input.readMany(0));
+    try testing.expectError(error.NeedInput, input.read());
+    try testing.expectError(error.NeedInput, input.peek(1));
+    try testing.expectError(error.NeedInput, input.readAll());
+    try input.pushSlice(testing.allocator, "ab");
+    try testing.expectError(error.NeedInput, input.peek(3));
+    try testing.expectError(error.NeedInput, input.readMany(3));
+    try testing.expectEqual(@as(usize, 0), input.index);
+    try input.push(testing.allocator, 'c');
+    try testing.expectEqualStrings("abc", try input.readMany(3));
+    try testing.expectError(error.NeedInput, input.read());
+    try input.pushSlice(testing.allocator, "de");
+    try testing.expectError(error.NeedInput, input.readAll());
+    try input.push(testing.allocator, null);
+    try testing.expectEqualStrings("de", try input.readAll());
+    try testing.expectEqual(@as(?u8, null), try input.read());
+}

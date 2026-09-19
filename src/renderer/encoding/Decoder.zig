@@ -55,6 +55,12 @@ pub fn init(encoding: Encoding) Decoder {
         .encoding = encoding,
         .state = switch (encoding) {
             .utf8 => .{ .utf8 = .{} },
+            .utf16le, .utf16be => .{ .utf16 = .{} },
+            .gbk, .gb18030 => .{ .gb18030 = .{} },
+            .eucjp => .{ .euc_jp = .{} },
+            .iso2022jp => .{ .iso2022_jp = .{} },
+            .big5, .shift_jis, .euckr => .{ .leading = 0 },
+            .replacement => .{ .replacement_error_returned = false },
             else => .{ .none = {} },
         },
     };
@@ -77,7 +83,7 @@ pub fn processQueue(
     }
 }
 
-/// https://encoding.spec.whatwg.org/#concept-encoding-process
+// https://encoding.spec.whatwg.org/#concept-encoding-process
 pub fn processItem(
     self: *Decoder,
     allocator: std.mem.Allocator,
@@ -110,7 +116,7 @@ fn processResult(allocator: std.mem.Allocator, output: *IoQueue(u21), result: Ha
     return .continue_;
 }
 
-/// https://encoding.spec.whatwg.org/#handler
+// https://encoding.spec.whatwg.org/#handler
 fn handler(self: *Decoder, allocator: std.mem.Allocator, input: *IoQueue(u8), item: ?u8) !HandlerResult {
     return switch (self.encoding) {
         .utf8 => self.handleUtf8(allocator, input, item),
@@ -155,7 +161,7 @@ fn handler(self: *Decoder, allocator: std.mem.Allocator, input: *IoQueue(u8), it
     };
 }
 
-/// https://encoding.spec.whatwg.org/#utf-8-decoder
+// https://encoding.spec.whatwg.org/#utf-8-decoder
 fn handleUtf8(self: *Decoder, allocator: std.mem.Allocator, input: *IoQueue(u8), item: ?u8) !HandlerResult {
     const state = &self.state.utf8;
     const byte = item orelse {
@@ -205,7 +211,7 @@ fn handleUtf8(self: *Decoder, allocator: std.mem.Allocator, input: *IoQueue(u8),
     return self.emit(cp);
 }
 
-/// https://encoding.spec.whatwg.org/#single-byte-decoder
+// https://encoding.spec.whatwg.org/#single-byte-decoder
 fn handleSingleByte(self: *Decoder, item: ?u8) HandlerResult {
     const byte = item orelse return .finished;
     if (byte < 0x80) return self.emit(byte);
@@ -213,14 +219,56 @@ fn handleSingleByte(self: *Decoder, item: ?u8) HandlerResult {
     return self.emit(cp);
 }
 
-/// https://encoding.spec.whatwg.org/#gb18030-decoder
-fn handleGb18030(self: *Decoder, allocator: std.mem.Allocator, input: *IoQueue(u8), item: ?u8) HandlerResult {
-    // TODO: §10.2.1
-    _ = self;
-    _ = allocator;
-    _ = input;
-    _ = item;
-    @panic("TODO");
+// https://encoding.spec.whatwg.org/#gb18030-decoder
+fn handleGb18030(self: *Decoder, allocator: std.mem.Allocator, input: *IoQueue(u8), item: ?u8) !HandlerResult {
+    const state = &self.state.gb18030;
+    const byte = item orelse {
+        if (state.first == 0 and state.second == 0 and state.third == 0) return .finished;
+        state.* = .{};
+        return .err;
+    };
+    if (state.third != 0) {
+        if (byte < 0x30 or byte > 0x39) {
+            try input.restoreSlice(allocator, &.{ state.second, state.third, byte });
+            state.* = .{};
+            return .err;
+        }
+        const pointer = @as(u32, state.first - 0x81) * 12600 + @as(u32, state.second - 0x30) * 1260 + @as(u32, state.third - 0x81) * 10 + byte - 0x30;
+        state.* = .{};
+        return self.emit(indexes.gb18030RangeCodePoint(pointer) orelse return .err);
+    }
+    if (state.second != 0) {
+        if (byte >= 0x81 and byte <= 0xFE) {
+            state.third = byte;
+            return .continue_;
+        }
+        try input.restoreSlice(allocator, &.{ state.second, byte });
+        state.first = 0;
+        state.second = 0;
+        return .err;
+    }
+    if (state.first != 0) {
+        if (byte >= 0x30 and byte <= 0x39) {
+            state.second = byte;
+            return .continue_;
+        }
+        const leading = state.first;
+        state.first = 0;
+        if ((byte >= 0x40 and byte <= 0x7E) or (byte >= 0x80 and byte <= 0xFE)) {
+            const offset: u8 = if (byte < 0x7F) 0x40 else 0x41;
+            const pointer = @as(usize, leading - 0x81) * 190 + byte - offset;
+            if (indexes.codePoint(indexes.gb18030, pointer)) |cp| return self.emit(cp);
+        }
+        if (byte < 0x80) try input.restore(allocator, byte);
+        return .err;
+    }
+    if (byte < 0x80) return self.emit(byte);
+    if (byte == 0x80) return self.emit(0x20AC);
+    if (byte >= 0x81 and byte <= 0xFE) {
+        state.first = byte;
+        return .continue_;
+    }
+    return .err;
 }
 
 /// https://encoding.spec.whatwg.org/#big5-decoder

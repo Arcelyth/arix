@@ -81,3 +81,27 @@ test "encoding Decoder: every single-byte index" {
     };
     inline for (cases) |case| try expectDecode(case[0], "\x00A\x7F\x80\xFF", &.{ 0, 'A', 0x7F, case[1], case[2] });
 }
+
+fn gb18030Bytes(pointer: u32) [4]u8 {
+    return .{
+        @intCast(pointer / 12600 + 0x81),
+        @intCast(pointer / 1260 % 10 + 0x30),
+        @intCast(pointer / 10 % 126 + 0x81),
+        @intCast(pointer % 10 + 0x30),
+    };
+}
+
+test "encoding Decoder: GBK and gb18030" {
+    for ([_]Encoding{ .gbk, .gb18030 }) |enc| {
+        try expectDecode(enc, "\xD6\xD0\x80\x81\x30\x81\x30", &.{ 0x4E2D, 0x20AC, 0x80 });
+        try expectDecode(enc, &gb18030Bytes(7457), &.{0xE7C7});
+        try expectDecode(enc, &gb18030Bytes(39419), &.{0xFFFF});
+        try expectDecode(enc, &gb18030Bytes(189000), &.{0x10000});
+        try expectDecode(enc, &gb18030Bytes(1237575), &.{0x10FFFF});
+        for ([_]u32{ 39420, 188999, 1237576 }) |pointer| try expectDecode(enc, &gb18030Bytes(pointer), &.{0xFFFD});
+        try expectDecode(enc, "\x81\x30 ", &.{ 0xFFFD, '0', ' ' });
+        try expectDecode(enc, "\x81\x30\x81 ", &.{ 0xFFFD, '0', 0xFFFD, ' ' });
+        try expectDecode(enc, "\x81<\xFF", &.{ 0xFFFD, '<', 0xFFFD });
+        for (1..4) |len| try expectDecode(enc, "\x81\x30\x81"[0..len], &.{0xFFFD});
+    }
+}

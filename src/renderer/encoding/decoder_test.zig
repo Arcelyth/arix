@@ -133,3 +133,8 @@ test "encoding Decoder: ISO-2022-JP states, escapes and EOF recovery" {
     try expectDecode(.iso2022jp, "\x0E\x0F\x80", &.{ 0xFFFD, 0xFFFD, 0xFFFD });
     try expectDecode(.iso2022jp, "\x1B(I \x1B$B $\x00", &.{ 0xFFFD, 0xFFFD, 0xFFFD });
 }
+
+test "encoding Decoder: Shift_JIS" {
+    try expectDecode(.shift_jis, "\x82\xA0\x80\xA1\xF0\x40\xF9\xFC", &.{ 0x3042, 0x80, 0xFF61, 0xE000, 0xE757 });
+    try expectDecode(.shift_jis, "\x82\"\xFF\x82", &.{ 0xFFFD, '"', 0xFFFD, 0xFFFD });
+}

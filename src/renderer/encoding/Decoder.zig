@@ -430,14 +430,33 @@ fn handleIso2022Jp(self: *Decoder, allocator: std.mem.Allocator, input: *IoQueue
     }
 }
 
-/// https://encoding.spec.whatwg.org/#shift_jis-decoder
-fn handleShiftJis(self: *Decoder, allocator: std.mem.Allocator, input: *IoQueue(u8), item: ?u8) HandlerResult {
-    // TODO: §12.3.1.
-    _ = self;
-    _ = allocator;
-    _ = input;
-    _ = item;
-    @panic("TODO");
+// https://encoding.spec.whatwg.org/#shift_jis-decoder
+fn handleShiftJis(self: *Decoder, allocator: std.mem.Allocator, input: *IoQueue(u8), item: ?u8) !HandlerResult {
+    const byte = item orelse {
+        if (self.state.leading == 0) return .finished;
+        self.state.leading = 0;
+        return .err;
+    };
+    if (self.state.leading != 0) {
+        const leading = self.state.leading;
+        self.state.leading = 0;
+        if ((byte >= 0x40 and byte <= 0x7E) or (byte >= 0x80 and byte <= 0xFC)) {
+            const offset: u8 = if (byte < 0x7F) 0x40 else 0x41;
+            const leading_offset: u8 = if (leading < 0xA0) 0x81 else 0xC1;
+            const pointer = @as(usize, leading - leading_offset) * 188 + byte - offset;
+            if (pointer >= 8836 and pointer <= 10715) return self.emit(@intCast(0xE000 + pointer - 8836));
+            if (indexes.codePoint(indexes.jis0208, pointer)) |cp| return self.emit(cp);
+        }
+        if (byte < 0x80) try input.restore(allocator, byte);
+        return .err;
+    }
+    if (byte <= 0x80) return self.emit(byte);
+    if (byte >= 0xA1 and byte <= 0xDF) return self.emit(0xFF61 + @as(u21, byte - 0xA1));
+    if ((byte >= 0x81 and byte <= 0x9F) or (byte >= 0xE0 and byte <= 0xFC)) {
+        self.state.leading = byte;
+        return .continue_;
+    }
+    return .err;
 }
 
 /// https://encoding.spec.whatwg.org/#euc-kr-decoder

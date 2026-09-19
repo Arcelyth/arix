@@ -156,3 +156,8 @@ test "encoding Decoder: UTF-16" {
         try expectDecode(.utf16be, "\xD8\x00A"[0..len], &.{0xFFFD});
     }
 }
+
+test "encoding Decoder: replacement and x-user-defined" {
+    try expectDecode(.replacement, "anything\xFF", &.{0xFFFD});
+    try expectDecode(.user_defined, "\x00A\x7F\x80\xFF", &.{ 0, 'A', 0x7F, 0xF780, 0xF7FF });
+}

@@ -523,10 +523,8 @@ fn handleUtf16(self: *Decoder, allocator: std.mem.Allocator, input: *IoQueue(u8)
     return self.emit(unit);
 }
 
-/// https://encoding.spec.whatwg.org/#x-user-defined-decoder
+// https://encoding.spec.whatwg.org/#x-user-defined-decoder
 fn handleUserDefined(self: *Decoder, item: ?u8) HandlerResult {
-    // TODO: §14.5.1.
-    _ = self;
-    _ = item;
-    @panic("TODO");
+    const byte = item orelse return .finished;
+    return self.emit(if (byte < 0x80) byte else 0xF780 + @as(u21, byte - 0x80));
 }

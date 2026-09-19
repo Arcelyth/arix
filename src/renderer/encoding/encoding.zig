@@ -446,3 +446,11 @@ pub fn nameToEncoding(label: []const u8) ?Encoding {
 
     return enc_map.get(l);
 }
+
+/// https://encoding.spec.whatwg.org/#decode
+pub fn decode(allocator: std.mem.Allocator, input: []const u8, fallback: Encoding) []u21 {
+    // TODO: Encoding 6.1
+    _ = allocator;
+    _ = input;
+    _ = fallback;
+}

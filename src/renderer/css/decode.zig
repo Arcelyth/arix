@@ -1,6 +1,17 @@
 const std = @import("std");
 const encoding = @import("../encoding/encoding.zig");
 
+// https://drafts.csswg.org/css-syntax/#css-decode-bytes
+pub fn decodeStylesheet(
+    allocator: std.mem.Allocator,
+    byte_stream: []const u8,
+    http_encoding: ?[]const u8,
+    env_encoding: ?[]const u8,
+) ![]u21 {
+    const fallback = determineFallbackEncoding(http_encoding, byte_stream, env_encoding);
+    return encoding.decode(allocator, byte_stream, fallback);
+}
+
 // https://drafts.csswg.org/css-syntax/#determine-the-fallback-encoding
 pub fn determineFallbackEncoding(
     http_encoding: ?[]const u8,

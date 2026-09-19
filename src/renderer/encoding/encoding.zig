@@ -1,5 +1,6 @@
 const std = @import("std");
 const Decoder = @import("Decoder.zig");
+const IoQueue = @import("queue.zig").IoQueue;
 
 pub const Encoding = enum {
     utf8,
@@ -458,5 +459,10 @@ pub fn decode(allocator: std.mem.Allocator, input: []const u8, fallback: Encodin
     }
 
     var decoder: Decoder = .{ .encoding = encoding };
-    return decoder.processQueue(allocator, bytes, .replacement);
+    var input_queue = try IoQueue(u8).fromSlice(allocator, bytes);
+    defer input_queue.deinit(allocator);
+    var output: IoQueue(u21) = .{};
+    defer output.deinit(allocator);
+    _ = try decoder.processQueue(allocator, &input_queue, &output, .replacement);
+    return output.items.toOwnedSlice(allocator);
 }

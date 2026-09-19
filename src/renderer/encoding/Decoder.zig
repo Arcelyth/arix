@@ -20,7 +20,7 @@ encoding: Encoding,
 
 // https://encoding.spec.whatwg.org/#concept-encoding-run
 /// NeedInput suspends an unfinished stream; the caller retains both queues and
-/// the decoder to resume. 
+/// the decoder to resume.
 /// Fatal decoding errors return InvalidSequence.
 pub fn processQueue(
     self: *Decoder,
@@ -70,7 +70,7 @@ fn processResult(allocator: std.mem.Allocator, output: *IoQueue(u21), result: Ha
 
 /// https://encoding.spec.whatwg.org/#handler
 fn handler(self: *Decoder, allocator: std.mem.Allocator, input: *IoQueue(u8), item: ?u8) HandlerResult {
-    // TODO: 
+    // TODO:
     _ = self;
     _ = allocator;
     _ = input;

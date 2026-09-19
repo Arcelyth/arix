@@ -9,6 +9,8 @@ const cloneToken = token.cloneToken;
 const String = @import("../../css/String.zig");
 const testing = std.testing;
 const color = @import("../../css/color.zig");
+const decode = @import("../../css/decode.zig");
+const encoding = @import("../../encoding/encoding.zig");
 
 fn normalize(value: *std.json.Value) void {
     switch (value.*) {
@@ -256,6 +258,12 @@ fn expectRule(expected: std.json.Value, actual: css.Rule) anyerror!void {
         };
         try expectString(array[1].string, rule.name);
         try expectComponents(array[2].array.items, rule.prelude);
+        // Upstream represents a blockless at-rule with four fields. It has
+        // neither declarations nor child rules in the current representation.
+        if (array.len == 4 and array[3] == .null) {
+            try testing.expect(rule.declarations == null and rule.child_rules == null);
+            return;
+        }
         if (array[3] == .null)
             try std.testing.expect(rule.declarations == null)
         else
@@ -437,6 +445,39 @@ fn parseColor(parser: *Parser, expected: std.json.Value) !void {
     }
 }
 
+fn decodeStylesheetFixture(alloc: std.mem.Allocator, input: std.json.Value, expected_encoding: std.json.Value) ![]u8 {
+    const fields = input.object;
+    const css_bytes = fields.get("css_bytes") orelse return error.InvalidFixture;
+    // JSON code points U+0000..U+00FF represent individual input bytes.
+    var bytes: std.ArrayList(u8) = .empty;
+    defer bytes.deinit(alloc);
+    var chars = (try std.unicode.Utf8View.init(css_bytes.string)).iterator();
+    while (chars.nextCodepoint()) |cp| {
+        if (cp > 0xFF) return error.InvalidFixture;
+        try bytes.append(alloc, @intCast(cp));
+    }
+    const protocol = fields.get("protocol_encoding") orelse .null;
+    const environment = fields.get("environment_encoding") orelse .null;
+    const protocol_label = if (protocol == .null) null else protocol.string;
+    const environment_label = if (environment == .null) null else environment.string;
+    const selected_encoding = encoding.getBomEncoding(bytes.items) orelse
+        decode.determineFallbackEncoding(protocol_label, bytes.items, environment_label);
+    try testing.expectEqual(encoding.nameToEncoding(expected_encoding.string).?, selected_encoding);
+
+    const code_points = try decode.decodeStylesheet(alloc, bytes.items, protocol_label, environment_label);
+    defer alloc.free(code_points);
+    // The tokenizer accepts UTF-8; preserve the decoded scalars without doing
+    // CSS preprocessing here (that belongs to its input stream).
+    var utf8: std.ArrayList(u8) = .empty;
+    errdefer utf8.deinit(alloc);
+    for (code_points) |cp| {
+        var buffer: [4]u8 = undefined;
+        const len = try std.unicode.utf8Encode(cp, &buffer);
+        try utf8.appendSlice(alloc, buffer[0..len]);
+    }
+    return utf8.toOwnedSlice(alloc);
+}
+
 fn runParsingTests(
     alloc: std.mem.Allocator,
     path: []const u8,
@@ -450,14 +491,20 @@ fn runParsingTests(
     const cases = parsed.value.array.items;
     var i: usize = 0;
     while (i < cases.len) : (i += 2) {
-        if (cases[i] != .string) return error.InvalidTestFile;
-        const input = cases[i].string;
+        errdefer std.debug.print("\ncss-parsing-tests fixture: {s}, case {d}\n", .{ path, i / 2 });
+        const input = switch (cases[i]) {
+            .string => |input| input,
+            .object => try decodeStylesheetFixture(alloc, cases[i], cases[i + 1].array.items[1]),
+            else => return error.InvalidTestFile,
+        };
+        defer if (cases[i] == .object) alloc.free(input);
+        const expected = if (cases[i] == .object) cases[i + 1].array.items[0] else cases[i + 1];
 
         const items = try tokenize(alloc, input, unicode_ranges_allowed);
         var stream = TokenStream.init(alloc, items);
         defer stream.deinit();
         var parser = Parser.init(alloc, &stream);
-        parse(&parser, cases[i + 1]) catch |err| {
+        parse(&parser, expected) catch |err| {
             std.debug.print("\ncss-parsing-tests input: {s}\n", .{input});
             return err;
         };
@@ -542,6 +589,18 @@ test "CSS css-parsing-tests: stylesheet" {
     try runParsingTests(
         arena.allocator(),
         "src/renderer/tests/css/tests_patch/stylesheet.json",
+        testing.io,
+        false,
+        parseStylesheet,
+    );
+}
+
+test "CSS css-parsing-tests: stylesheet bytes" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    try runParsingTests(
+        arena.allocator(),
+        "src/renderer/tests/css/css-parsing-tests/stylesheet_bytes.json",
         testing.io,
         false,
         parseStylesheet,

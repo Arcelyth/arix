@@ -455,7 +455,7 @@ pub fn consumeIdentSequence(self: *Tokenizer) String {
             const end = self.position();
             var encoded: [4]u8 = undefined;
             const len = std.unicode.utf8Encode(cp, &encoded) catch 0;
-            if (len == 0 or !std.mem.eql(u8, self.stream.slice(end - len, end), encoded[0..len]))
+            if (len == 0 or !std.mem.eql(u8, self.stream.slice(before, end), encoded[0..len]))
                 source_compatible = false;
             self.appendScratch(cp);
             continue;

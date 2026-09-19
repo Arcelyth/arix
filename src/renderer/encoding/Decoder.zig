@@ -491,14 +491,36 @@ fn handleReplacement(self: *Decoder, item: ?u8) HandlerResult {
     return .err;
 }
 
-/// https://encoding.spec.whatwg.org/#shared-utf-16-decoder
-fn handleUtf16(self: *Decoder, allocator: std.mem.Allocator, input: *IoQueue(u8), item: ?u8) HandlerResult {
-    // TODO: §14.2.1
-    _ = self;
-    _ = allocator;
-    _ = input;
-    _ = item;
-    @panic("TODO");
+// https://encoding.spec.whatwg.org/#shared-utf-16-decoder
+fn handleUtf16(self: *Decoder, allocator: std.mem.Allocator, input: *IoQueue(u8), item: ?u8) !HandlerResult {
+    const state = &self.state.utf16;
+    const byte = item orelse {
+        if (state.leading_byte == null and state.leading_surrogate == null) return .finished;
+        state.* = .{};
+        return .err;
+    };
+    const leading_byte = state.leading_byte orelse {
+        state.leading_byte = byte;
+        return .continue_;
+    };
+    const unit = if (self.encoding == .utf16be)
+        (@as(u16, leading_byte) << 8) | byte
+    else
+        (@as(u16, byte) << 8) | leading_byte;
+    state.leading_byte = null;
+    if (state.leading_surrogate) |leading| {
+        state.leading_surrogate = null;
+        if (ascii.isTrailingSurrogate(u16, unit))
+            return self.emit(0x10000 + (@as(u21, leading - 0xD800) << 10) + (unit - 0xDC00));
+        try input.restoreSlice(allocator, &.{ leading_byte, byte });
+        return .err;
+    }
+    if (ascii.isLeadingSurrogate(u16, unit)) {
+        state.leading_surrogate = unit;
+        return .continue_;
+    }
+    if (ascii.isTrailingSurrogate(u16, unit)) return .err;
+    return self.emit(unit);
 }
 
 /// https://encoding.spec.whatwg.org/#x-user-defined-decoder

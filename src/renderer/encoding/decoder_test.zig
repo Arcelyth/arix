@@ -143,3 +143,16 @@ test "encoding Decoder: EUC-KR" {
     try expectDecode(.euckr, "\xB0\xA1\x81\x41", &.{ 0xAC00, 0xAC02 });
     try expectDecode(.euckr, "\x81<\x80\xFF\x81", &.{ 0xFFFD, '<', 0xFFFD, 0xFFFD, 0xFFFD });
 }
+
+test "encoding Decoder: UTF-16" {
+    try expectDecode(.utf16le, "A\x00\x3D\xD8\x00\xDE", &.{ 'A', 0x1F600 });
+    try expectDecode(.utf16be, "\x00A\xD8\x3D\xDE\x00", &.{ 'A', 0x1F600 });
+    try expectDecode(.utf16le, "\x00\xD8A\x00\x00\xDC", &.{ 0xFFFD, 'A', 0xFFFD });
+    try expectDecode(.utf16be, "\xD8\x00\x00A\xDC\x00", &.{ 0xFFFD, 'A', 0xFFFD });
+    try expectDecode(.utf16le, "\x00\xD8\x3D\xD8\x00\xDE", &.{ 0xFFFD, 0x1F600 });
+    try expectDecode(.utf16be, "\xD8\x00\xD8\x3D\xDE\x00", &.{ 0xFFFD, 0x1F600 });
+    for (1..4) |len| {
+        try expectDecode(.utf16le, "\x00\xD8A"[0..len], &.{0xFFFD});
+        try expectDecode(.utf16be, "\xD8\x00A"[0..len], &.{0xFFFD});
+    }
+}

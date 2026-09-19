@@ -28,10 +28,22 @@ state: union {
     },
     none: void,
 },
+// HandlerResult borrows this slot until processItem appends it to the output.
+code_point: u21 = 0,
 
 inline fn emit(self: *Decoder, cp: u21) HandlerResult {
     self.code_point = cp;
     return .{ .items = @as(*const [1]u21, &self.code_point) };
+}
+
+pub fn init(encoding: Encoding) Decoder {
+    return .{
+        .encoding = encoding,
+        .state = switch (encoding) {
+            .utf8 => .{ .utf8 = .{} },
+            else => .{ .none = {} },
+        },
+    };
 }
 
 // https://encoding.spec.whatwg.org/#concept-encoding-run
@@ -184,6 +196,7 @@ fn handleSingleByte(self: *Decoder, item: ?u8) HandlerResult {
     // TODO: §9.1
     _ = self;
     _ = item;
+    @panic("TODO");
 }
 
 /// https://encoding.spec.whatwg.org/#gb18030-decoder
@@ -193,6 +206,7 @@ fn handleGb18030(self: *Decoder, allocator: std.mem.Allocator, input: *IoQueue(u
     _ = allocator;
     _ = input;
     _ = item;
+    @panic("TODO");
 }
 
 /// https://encoding.spec.whatwg.org/#big5-decoder
@@ -202,6 +216,7 @@ fn handleBig5(self: *Decoder, allocator: std.mem.Allocator, input: *IoQueue(u8),
     _ = allocator;
     _ = input;
     _ = item;
+    @panic("TODO");
 }
 
 /// https://encoding.spec.whatwg.org/#euc-jp-decoder
@@ -211,6 +226,7 @@ fn handleEucJp(self: *Decoder, allocator: std.mem.Allocator, input: *IoQueue(u8)
     _ = allocator;
     _ = input;
     _ = item;
+    @panic("TODO");
 }
 
 /// https://encoding.spec.whatwg.org/#iso-2022-jp-decoder
@@ -220,6 +236,7 @@ fn handleIso2022Jp(self: *Decoder, allocator: std.mem.Allocator, input: *IoQueue
     _ = allocator;
     _ = input;
     _ = item;
+    @panic("TODO");
 }
 
 /// https://encoding.spec.whatwg.org/#shift_jis-decoder
@@ -229,6 +246,7 @@ fn handleShiftJis(self: *Decoder, allocator: std.mem.Allocator, input: *IoQueue(
     _ = allocator;
     _ = input;
     _ = item;
+    @panic("TODO");
 }
 
 /// https://encoding.spec.whatwg.org/#euc-kr-decoder
@@ -238,6 +256,7 @@ fn handleEucKr(self: *Decoder, allocator: std.mem.Allocator, input: *IoQueue(u8)
     _ = allocator;
     _ = input;
     _ = item;
+    @panic("TODO");
 }
 
 /// https://encoding.spec.whatwg.org/#replacement-decoder
@@ -245,6 +264,7 @@ fn handleReplacement(self: *Decoder, item: ?u8) HandlerResult {
     // TODO: §14.1.1.
     _ = self;
     _ = item;
+    @panic("TODO");
 }
 
 /// https://encoding.spec.whatwg.org/#shared-utf-16-decoder
@@ -254,6 +274,7 @@ fn handleUtf16(self: *Decoder, allocator: std.mem.Allocator, input: *IoQueue(u8)
     _ = allocator;
     _ = input;
     _ = item;
+    @panic("TODO");
 }
 
 /// https://encoding.spec.whatwg.org/#x-user-defined-decoder
@@ -261,4 +282,5 @@ fn handleUserDefined(self: *Decoder, item: ?u8) HandlerResult {
     // TODO: §14.5.1.
     _ = self;
     _ = item;
+    @panic("TODO");
 }

@@ -484,12 +484,11 @@ fn handleEucKr(self: *Decoder, allocator: std.mem.Allocator, input: *IoQueue(u8)
     return .err;
 }
 
-/// https://encoding.spec.whatwg.org/#replacement-decoder
+// https://encoding.spec.whatwg.org/#replacement-decoder
 fn handleReplacement(self: *Decoder, item: ?u8) HandlerResult {
-    // TODO: §14.1.1.
-    _ = self;
-    _ = item;
-    @panic("TODO");
+    if (item == null or self.state.replacement_error_returned) return .finished;
+    self.state.replacement_error_returned = true;
+    return .err;
 }
 
 /// https://encoding.spec.whatwg.org/#shared-utf-16-decoder

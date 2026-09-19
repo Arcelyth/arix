@@ -17,6 +17,22 @@ pub const HandlerResult = union(enum) {
 pub const ProcessResult = enum { finished, continue_ };
 
 encoding: Encoding,
+// The encoding selects the active state; it must not change during decoding.
+state: union {
+    utf8: struct {
+        code_point: u21 = 0,
+        bytes_seen: u8 = 0,
+        bytes_needed: u8 = 0,
+        lower: u8 = 0x80,
+        upper: u8 = 0xBF,
+    },
+    none: void,
+},
+
+inline fn emit(self: *Decoder, cp: u21) HandlerResult {
+    self.code_point = cp;
+    return .{ .items = @as(*const [1]u21, &self.code_point) };
+}
 
 // https://encoding.spec.whatwg.org/#concept-encoding-run
 /// NeedInput suspends an unfinished stream; the caller retains both queues and
@@ -114,12 +130,53 @@ fn handler(self: *Decoder, allocator: std.mem.Allocator, input: *IoQueue(u8), it
 }
 
 /// https://encoding.spec.whatwg.org/#utf-8-decoder
-fn handleUtf8(self: *Decoder, allocator: std.mem.Allocator, input: *IoQueue(u8), item: ?u8) HandlerResult {
-    // TODO: §8.1.1.
-    _ = self;
-    _ = allocator;
-    _ = input;
-    _ = item;
+fn handleUtf8(self: *Decoder, allocator: std.mem.Allocator, input: *IoQueue(u8), item: ?u8) !HandlerResult {
+    const state = &self.state.utf8;
+    const byte = item orelse {
+        if (state.bytes_needed != 0) {
+            state.bytes_needed = 0;
+            return .err;
+        }
+        return .finished;
+    };
+    if (state.bytes_needed == 0) {
+        switch (byte) {
+            0x00...0x7F => return self.emit(byte),
+            0xC2...0xDF => {
+                state.bytes_needed = 1;
+                state.code_point = byte & 0x1F;
+            },
+            0xE0...0xEF => {
+                if (byte == 0xE0) state.lower = 0xA0;
+                if (byte == 0xED) state.upper = 0x9F;
+                state.bytes_needed = 2;
+                state.code_point = byte & 0x0F;
+            },
+            0xF0...0xF4 => {
+                if (byte == 0xF0) state.lower = 0x90;
+                if (byte == 0xF4) state.upper = 0x8F;
+                state.bytes_needed = 3;
+                state.code_point = byte & 0x07;
+            },
+            else => return .err,
+        }
+        return .continue_;
+    }
+    if (byte < state.lower or byte > state.upper) {
+        state.* = .{};
+        try input.restore(allocator, byte);
+        return .err;
+    }
+    state.lower = 0x80;
+    state.upper = 0xBF;
+    state.code_point = (state.code_point << 6) | (byte & 0x3F);
+    state.bytes_seen += 1;
+    if (state.bytes_seen != state.bytes_needed) return .continue_;
+    const cp = state.code_point;
+    state.code_point = 0;
+    state.bytes_needed = 0;
+    state.bytes_seen = 0;
+    return self.emit(cp);
 }
 
 /// https://encoding.spec.whatwg.org/#single-byte-decoder

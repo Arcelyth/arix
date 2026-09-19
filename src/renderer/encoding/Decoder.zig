@@ -69,10 +69,139 @@ fn processResult(allocator: std.mem.Allocator, output: *IoQueue(u21), result: Ha
 }
 
 /// https://encoding.spec.whatwg.org/#handler
-fn handler(self: *Decoder, allocator: std.mem.Allocator, input: *IoQueue(u8), item: ?u8) HandlerResult {
-    // TODO:
+fn handler(self: *Decoder, allocator: std.mem.Allocator, input: *IoQueue(u8), item: ?u8) !HandlerResult {
+    return switch (self.encoding) {
+        .utf8 => self.handleUtf8(allocator, input, item),
+        .ibm866,
+        .iso88592,
+        .iso88593,
+        .iso88594,
+        .iso88595,
+        .iso88596,
+        .iso88597,
+        .iso88598,
+        .iso88598_i,
+        .iso885910,
+        .iso885913,
+        .iso885914,
+        .iso885915,
+        .iso885916,
+        .koi8r,
+        .koi8u,
+        .macintosh,
+        .windows874,
+        .windows1250,
+        .windows1251,
+        .windows1252,
+        .windows1253,
+        .windows1254,
+        .windows1255,
+        .windows1256,
+        .windows1257,
+        .windows1258,
+        .x_mac_cyrillic,
+        => self.handleSingleByte(item),
+        .gbk, .gb18030 => self.handleGb18030(allocator, input, item),
+        .big5 => self.handleBig5(allocator, input, item),
+        .eucjp => self.handleEucJp(allocator, input, item),
+        .iso2022jp => self.handleIso2022Jp(allocator, input, item),
+        .shift_jis => self.handleShiftJis(allocator, input, item),
+        .euckr => self.handleEucKr(allocator, input, item),
+        .replacement => self.handleReplacement(item),
+        .utf16le, .utf16be => self.handleUtf16(allocator, input, item),
+        .user_defined => self.handleUserDefined(item),
+    };
+}
+
+/// https://encoding.spec.whatwg.org/#utf-8-decoder
+fn handleUtf8(self: *Decoder, allocator: std.mem.Allocator, input: *IoQueue(u8), item: ?u8) HandlerResult {
+    // TODO: §8.1.1.
     _ = self;
     _ = allocator;
     _ = input;
+    _ = item;
+}
+
+/// https://encoding.spec.whatwg.org/#single-byte-decoder
+fn handleSingleByte(self: *Decoder, item: ?u8) HandlerResult {
+    // TODO: §9.1
+    _ = self;
+    _ = item;
+}
+
+/// https://encoding.spec.whatwg.org/#gb18030-decoder
+fn handleGb18030(self: *Decoder, allocator: std.mem.Allocator, input: *IoQueue(u8), item: ?u8) HandlerResult {
+    // TODO: §10.2.1
+    _ = self;
+    _ = allocator;
+    _ = input;
+    _ = item;
+}
+
+/// https://encoding.spec.whatwg.org/#big5-decoder
+fn handleBig5(self: *Decoder, allocator: std.mem.Allocator, input: *IoQueue(u8), item: ?u8) HandlerResult {
+    // TODO: §11.1.1.
+    _ = self;
+    _ = allocator;
+    _ = input;
+    _ = item;
+}
+
+/// https://encoding.spec.whatwg.org/#euc-jp-decoder
+fn handleEucJp(self: *Decoder, allocator: std.mem.Allocator, input: *IoQueue(u8), item: ?u8) HandlerResult {
+    // TODO: §12.1.1.
+    _ = self;
+    _ = allocator;
+    _ = input;
+    _ = item;
+}
+
+/// https://encoding.spec.whatwg.org/#iso-2022-jp-decoder
+fn handleIso2022Jp(self: *Decoder, allocator: std.mem.Allocator, input: *IoQueue(u8), item: ?u8) HandlerResult {
+    // TODO: §12.2.1.
+    _ = self;
+    _ = allocator;
+    _ = input;
+    _ = item;
+}
+
+/// https://encoding.spec.whatwg.org/#shift_jis-decoder
+fn handleShiftJis(self: *Decoder, allocator: std.mem.Allocator, input: *IoQueue(u8), item: ?u8) HandlerResult {
+    // TODO: §12.3.1.
+    _ = self;
+    _ = allocator;
+    _ = input;
+    _ = item;
+}
+
+/// https://encoding.spec.whatwg.org/#euc-kr-decoder
+fn handleEucKr(self: *Decoder, allocator: std.mem.Allocator, input: *IoQueue(u8), item: ?u8) HandlerResult {
+    // TODO: §13.1.1.
+    _ = self;
+    _ = allocator;
+    _ = input;
+    _ = item;
+}
+
+/// https://encoding.spec.whatwg.org/#replacement-decoder
+fn handleReplacement(self: *Decoder, item: ?u8) HandlerResult {
+    // TODO: §14.1.1.
+    _ = self;
+    _ = item;
+}
+
+/// https://encoding.spec.whatwg.org/#shared-utf-16-decoder
+fn handleUtf16(self: *Decoder, allocator: std.mem.Allocator, input: *IoQueue(u8), item: ?u8) HandlerResult {
+    // TODO: §14.2.1
+    _ = self;
+    _ = allocator;
+    _ = input;
+    _ = item;
+}
+
+/// https://encoding.spec.whatwg.org/#x-user-defined-decoder
+fn handleUserDefined(self: *Decoder, item: ?u8) HandlerResult {
+    // TODO: §14.5.1.
+    _ = self;
     _ = item;
 }

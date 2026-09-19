@@ -458,7 +458,7 @@ pub fn decode(allocator: std.mem.Allocator, input: []const u8, fallback: Encodin
         bytes = input[if (bom == .utf8) @as(usize, 3) else 2..];
     }
 
-    var decoder: Decoder = .{ .encoding = encoding };
+    var decoder = Decoder.init(encoding);
     var input_queue = try IoQueue(u8).fromSlice(allocator, bytes);
     defer input_queue.deinit(allocator);
     var output: IoQueue(u21) = .{};

@@ -19,7 +19,7 @@ pub fn determineFallbackEncoding(
     env_encoding: ?[]const u8,
 ) encoding.Encoding {
     if (http_encoding) |encoding_label|
-        if (encoding.enc_map.get(encoding_label)) |enc| return enc;
+        if (encoding.nameToEncoding(encoding_label)) |enc| return enc;
 
     const check_len = @min(byte_stream.len, 1024);
     const prefix = byte_stream[0..check_len];
@@ -38,7 +38,7 @@ pub fn determineFallbackEncoding(
                 if (i + 1 < prefix.len and prefix[i + 1] == ';') {
                     const label = prefix[marker.len..i];
 
-                    if (encoding.enc_map.get(label)) |enc| {
+                    if (encoding.nameToEncoding(label)) |enc| {
                         if (enc == .utf16be or enc == .utf16le)
                             return .utf8;
                         return enc;
@@ -56,7 +56,7 @@ pub fn determineFallbackEncoding(
     }
 
     if (env_encoding) |label|
-        if (encoding.enc_map.get(label)) |enc| return enc;
+        if (encoding.nameToEncoding(label)) |enc| return enc;
 
     return .utf8;
 }

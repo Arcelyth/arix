@@ -304,14 +304,42 @@ fn handleBig5(self: *Decoder, allocator: std.mem.Allocator, input: *IoQueue(u8),
     return .err;
 }
 
-/// https://encoding.spec.whatwg.org/#euc-jp-decoder
-fn handleEucJp(self: *Decoder, allocator: std.mem.Allocator, input: *IoQueue(u8), item: ?u8) HandlerResult {
-    // TODO: §12.1.1.
-    _ = self;
-    _ = allocator;
-    _ = input;
-    _ = item;
-    @panic("TODO");
+// https://encoding.spec.whatwg.org/#euc-jp-decoder
+fn handleEucJp(self: *Decoder, allocator: std.mem.Allocator, input: *IoQueue(u8), item: ?u8) !HandlerResult {
+    const state = &self.state.euc_jp;
+    const byte = item orelse {
+        if (state.leading == 0) return .finished;
+        state.leading = 0;
+        return .err;
+    };
+    if (state.leading == 0x8E and byte >= 0xA1 and byte <= 0xDF) {
+        state.leading = 0;
+        return self.emit(0xFF61 + @as(u21, byte - 0xA1));
+    }
+    if (state.leading == 0x8F and byte >= 0xA1 and byte <= 0xFE) {
+        state.jis0212 = true;
+        state.leading = byte;
+        return .continue_;
+    }
+    if (state.leading != 0) {
+        const leading = state.leading;
+        state.leading = 0;
+        var cp: ?u21 = null;
+        if (leading >= 0xA1 and leading <= 0xFE and byte >= 0xA1 and byte <= 0xFE) {
+            const index: []const u21 = if (state.jis0212) indexes.jis0212 else indexes.jis0208;
+            cp = indexes.codePoint(index, @as(usize, leading - 0xA1) * 94 + byte - 0xA1);
+        }
+        state.jis0212 = false;
+        if (cp) |value| return self.emit(value);
+        if (byte < 0x80) try input.restore(allocator, byte);
+        return .err;
+    }
+    if (byte < 0x80) return self.emit(byte);
+    if (byte == 0x8E or byte == 0x8F or (byte >= 0xA1 and byte <= 0xFE)) {
+        state.leading = byte;
+        return .continue_;
+    }
+    return .err;
 }
 
 /// https://encoding.spec.whatwg.org/#iso-2022-jp-decoder

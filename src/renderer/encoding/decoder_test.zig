@@ -111,3 +111,11 @@ test "encoding Decoder: Big5" {
     try expectDecode(.big5, "\x81\x40", &.{ 0xFFFD, '@' }); // Unmapped pair restores its ASCII trail.
     try expectDecode(.big5, "\xA4<\x80\xFF\xA4", &.{ 0xFFFD, '<', 0xFFFD, 0xFFFD, 0xFFFD });
 }
+
+test "encoding Decoder: EUC-JP JIS0208, JIS0212 and halfwidth katakana" {
+    try expectDecode(.eucjp, "\xA4\xA2\x8E\xB1\x8F\xA2\xAF", &.{ 0x3042, 0xFF71, 0x02D8 });
+    try expectDecode(.eucjp, "\x8F\xA2<\xA4\xA2", &.{ 0xFFFD, '<', 0x3042 });
+    try expectDecode(.eucjp, "\x8E<\x80\xFF", &.{ 0xFFFD, '<', 0xFFFD, 0xFFFD });
+    try expectDecode(.eucjp, "\x8F", &.{0xFFFD});
+    try expectDecode(.eucjp, "\x8F\xA2", &.{0xFFFD});
+}

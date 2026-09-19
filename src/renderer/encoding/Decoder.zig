@@ -342,14 +342,92 @@ fn handleEucJp(self: *Decoder, allocator: std.mem.Allocator, input: *IoQueue(u8)
     return .err;
 }
 
-/// https://encoding.spec.whatwg.org/#iso-2022-jp-decoder
-fn handleIso2022Jp(self: *Decoder, allocator: std.mem.Allocator, input: *IoQueue(u8), item: ?u8) HandlerResult {
-    // TODO: §12.2.1.
-    _ = self;
-    _ = allocator;
-    _ = input;
-    _ = item;
-    @panic("TODO");
+// https://encoding.spec.whatwg.org/#iso-2022-jp-decoder
+fn handleIso2022Jp(self: *Decoder, allocator: std.mem.Allocator, input: *IoQueue(u8), item: ?u8) !HandlerResult {
+    const state = &self.state.iso2022_jp;
+    switch (state.state) {
+        .ascii, .roman, .katakana, .leading => {
+            const byte = item orelse return .finished;
+            if (byte == 0x1B) {
+                state.state = .escape_start;
+                return .continue_;
+            }
+            state.output = false;
+            switch (state.state) {
+                .ascii, .roman => {
+                    if (byte > 0x7F or byte == 0x0E or byte == 0x0F) return .err;
+                    if (state.state == .roman) {
+                        if (byte == 0x5C) return self.emit(0x00A5);
+                        if (byte == 0x7E) return self.emit(0x203E);
+                    }
+                    return self.emit(byte);
+                },
+                .katakana => {
+                    if (byte >= 0x21 and byte <= 0x5F) return self.emit(0xFF61 + @as(u21, byte - 0x21));
+                    return .err;
+                },
+                .leading => {
+                    if (byte < 0x21 or byte > 0x7E) return .err;
+                    state.leading = byte;
+                    state.state = .trailing;
+                    return .continue_;
+                },
+                else => unreachable,
+            }
+        },
+        .trailing => {
+            state.state = .leading;
+            const byte = item orelse return .err;
+            if (byte == 0x1B) {
+                state.state = .escape_start;
+                return .err;
+            }
+            if (byte < 0x21 or byte > 0x7E) return .err;
+            const pointer = @as(usize, state.leading - 0x21) * 94 + byte - 0x21;
+            return self.emit(indexes.codePoint(indexes.jis0208, pointer) orelse return .err);
+        },
+        .escape_start => {
+            if (item) |byte| {
+                if (byte == 0x24 or byte == 0x28) {
+                    state.leading = byte;
+                    state.state = .escape;
+                    return .continue_;
+                }
+                try input.restore(allocator, byte);
+            }
+            state.output = false;
+            state.state = state.output_state;
+            return .err;
+        },
+        .escape => {
+            const leading = state.leading;
+            state.leading = 0;
+            const next: ?Iso2022JpState = if (leading == 0x28 and item == 0x42)
+                .ascii
+            else if (leading == 0x28 and item == 0x4A)
+                .roman
+            else if (leading == 0x28 and item == 0x49)
+                .katakana
+            else if (leading == 0x24 and (item == 0x40 or item == 0x42))
+                .leading
+            else
+                null;
+            if (next) |value| {
+                state.state = value;
+                state.output_state = value;
+                const output = state.output;
+                state.output = true;
+                return if (output) .err else .continue_;
+            }
+            if (item) |byte|
+                try input.restoreSlice(allocator, &.{ leading, byte })
+            else
+                try input.restore(allocator, leading);
+            state.output = false;
+            state.state = state.output_state;
+            return .err;
+        },
+    }
 }
 
 /// https://encoding.spec.whatwg.org/#shift_jis-decoder

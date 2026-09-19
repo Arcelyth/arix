@@ -119,3 +119,17 @@ test "encoding Decoder: EUC-JP JIS0208, JIS0212 and halfwidth katakana" {
     try expectDecode(.eucjp, "\x8F", &.{0xFFFD});
     try expectDecode(.eucjp, "\x8F\xA2", &.{0xFFFD});
 }
+
+test "encoding Decoder: ISO-2022-JP states, escapes and EOF recovery" {
+    try expectDecode(.iso2022jp, "A\x1B$B$\"\x1B(BA", &.{ 'A', 0x3042, 'A' });
+    try expectDecode(.iso2022jp, "\x1B(J\\~\x1B(I!", &.{ 0xA5, 0x203E, 0xFF61 });
+    try expectDecode(.iso2022jp, "\x1B$@$\"", &.{0x3042});
+    try expectDecode(.iso2022jp, "\x1B(B\x1B(B", &.{0xFFFD});
+    try expectDecode(.iso2022jp, "\x1B(X", &.{ 0xFFFD, '(', 'X' });
+    try expectDecode(.iso2022jp, "\x1B", &.{0xFFFD});
+    try expectDecode(.iso2022jp, "\x1B$", &.{ 0xFFFD, '$' });
+    try expectDecode(.iso2022jp, "\x1B$B$", &.{0xFFFD});
+    try expectDecode(.iso2022jp, "\x1B$B$\x1B(BA", &.{ 0xFFFD, 'A' });
+    try expectDecode(.iso2022jp, "\x0E\x0F\x80", &.{ 0xFFFD, 0xFFFD, 0xFFFD });
+    try expectDecode(.iso2022jp, "\x1B(I \x1B$B $\x00", &.{ 0xFFFD, 0xFFFD, 0xFFFD });
+}

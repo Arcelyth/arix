@@ -123,3 +123,90 @@ pub fn get_attr(input: []const u8, i: *usize, l: usize) struct { ?Attr, usize } 
 
     return .{ Attr{ .name = input[n_start..n_end], .value = input[v_start..v_end] }, i.* };
 }
+
+test "charset quoted" {
+    const html = " charset=\"utf-8\">";
+    var pos: usize = 0;
+    const res = get_attr(html, &pos, html.len);
+    try std.testing.expect(res[0] != null);
+    const attr = res[0].?;
+    try std.testing.expectEqualStrings(
+        "charset",
+        attr.name,
+    );
+
+    try std.testing.expectEqualStrings(
+        "utf-8",
+        attr.value,
+    );
+}
+
+test "charset single quoted" {
+    const html = " charset='utf-8'>";
+    var pos: usize = 0;
+    const res = get_attr(html, &pos, html.len);
+    const attr = res[0].?;
+
+    try std.testing.expectEqualStrings(
+        "charset",
+        attr.name,
+    );
+
+    try std.testing.expectEqualStrings(
+        "utf-8",
+        attr.value,
+    );
+}
+
+test "charset unquoted" {
+    const html = " charset=utf-8>";
+
+    var pos: usize = 0;
+    const res = get_attr(html, &pos, html.len);
+    const attr = res[0].?;
+
+    try std.testing.expectEqualStrings(
+        "charset",
+        attr.name,
+    );
+
+    try std.testing.expectEqualStrings(
+        "utf-8",
+        attr.value,
+    );
+}
+
+test "attribute without value" {
+    const html = " disabled>";
+
+    var pos: usize = 0;
+    const res = get_attr(html, &pos, html.len);
+    const attr = res[0].?;
+
+    try std.testing.expectEqualStrings(
+        "disabled",
+        attr.name,
+    );
+
+    try std.testing.expectEqualStrings(
+        "",
+        attr.value,
+    );
+}
+
+test "multiple attributes" {
+    const html = " charset=\"utf-8\" content=\"text/html\">";
+    var pos: usize = 0;
+    const r1 = get_attr(html, &pos, html.len);
+
+    try std.testing.expectEqualStrings(
+        "charset",
+        r1[0].?.name,
+    );
+    const r2 = get_attr(html, &pos, html.len);
+
+    try std.testing.expectEqualStrings(
+        "content",
+        r2[0].?.name,
+    );
+}

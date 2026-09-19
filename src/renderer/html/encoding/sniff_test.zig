@@ -1,17 +1,17 @@
 const std = @import("std");
-const normLabel = @import("sniff.zig").normLabel;
-const nameToEncoding = @import("sniff.zig").nameToEncoding;
+const normLabel = @import("../../encoding/encoding.zig").normLabel;
+const nameToEncoding = @import("../../encoding/encoding.zig").nameToEncoding;
 const encodingSniff = @import("sniff.zig").encodingSniff;
 const types = @import("types.zig");
 const Confidence = types.Confidence;
 const EncodingOptions = types.EncodingOptions;
 const extractXmlDeclEncoding = @import("sniff.zig").extractXmlDeclEncoding;
 const extractFromMeta = @import("sniff.zig").extractFromMeta;
-const normPrescanEncoding = @import("sniff.zig").normPrescanEncoding;
-const getBomEncoding = @import("sniff.zig").getBomEncoding;
+const normPrescanEncoding = @import("../../encoding/encoding.zig").normPrescanEncoding;
+const getBomEncoding = @import("../../encoding/encoding.zig").getBomEncoding;
 const prescan = @import("sniff.zig").prescan;
 
-const Encoding = @import("encoding.zig").Encoding;
+const Encoding = @import("../../encoding/encoding.zig").Encoding;
 
 test "normLabel trims and lowercases" {
     var buf: [64]u8 = undefined;

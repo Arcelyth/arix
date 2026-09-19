@@ -1,5 +1,5 @@
 const std = @import("std");
-const encoding = @import("../html/encoding/encoding.zig");
+const encoding = @import("../encoding/encoding.zig");
 
 // https://drafts.csswg.org/css-syntax/#determine-the-fallback-encoding
 pub fn determineFallbackEncoding(

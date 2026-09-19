@@ -37,6 +37,14 @@ pub inline fn isAsciiHexDigit(c: u21) bool {
     return isAsciiDigit(c) or (c >= 'a' and c <= 'f') or (c >= 'A' and c <= 'F');
 }
 
+pub inline fn isLeadingSurrogate(comptime T: type, c: T) bool {
+    return c >= 0xD800 and c <= 0xDBFF;
+}
+
+pub inline fn isTrailingSurrogate(comptime T: type, c: T) bool {
+    return c >= 0xDC00 and c <= 0xDFFF;
+}
+
 // https://infra.spec.whatwg.org/#surrogate
 pub inline fn isSurrogate(comptime T: type, c: T) bool {
     return (c >= 0xD800 and c <= 0xDBFF) or (c >= 0xDC00 and c <= 0xDFFF);
@@ -55,11 +63,25 @@ pub inline fn isAsciiWhitespace(comptime T: type, c: T) bool {
 
 // https://infra.spec.whatwg.org/#control
 pub inline fn isControl(comptime T: type, c: T) bool {
-    if (c == 0) return false;
-    if (isAsciiWhitespace(T, c)) return false;
-    return (c >= 0x0001 and c <= 0x001F) or (c >= 0x007F and c <= 0x009F);
+    return isC0(T, c) or (c >= 0x007F and c <= 0x009F);
 }
 
+// https://infra.spec.whatwg.org/#scalar-value
+pub inline fn isScalarValue(comptime T: type, c: T) bool {
+    return !isSurrogate(T, c);
+}
+
+// https://infra.spec.whatwg.org/#c0-control
+pub inline fn isC0(comptime T: type, c: T) bool {
+    return c >= 0x0000 and c <= 0x001F;
+}
+
+// https://infra.spec.whatwg.org/#c0-control-or-space
+pub inline fn isC0OrSpace(comptime T: type, c: T) bool {
+    return isC0(T, c) or 0x0020;
+}
+
+// https://infra.spec.whatwg.org/#noncharacter
 pub inline fn isNoncharacter(comptime T: type, ch: T) bool {
     return (ch >= 0xFDD0 and ch <= 0xFDEF) or
         ((ch & 0xFFFE) == 0xFFFE and ch <= 0x10FFFF);

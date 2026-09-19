@@ -3,6 +3,7 @@ const std = @import("std");
 const Encoding = @import("encoding.zig").Encoding;
 const IoQueue = @import("queue.zig").IoQueue;
 const ascii = @import("../utils/ascii.zig");
+const indexes = @import("indexes.zig");
 
 pub const ErrorMode = enum { replacement, fatal };
 
@@ -16,6 +17,8 @@ pub const HandlerResult = union(enum) {
 
 pub const ProcessResult = enum { finished, continue_ };
 
+const Iso2022JpState = enum { ascii, roman, katakana, leading, trailing, escape_start, escape };
+
 encoding: Encoding,
 // The encoding selects the active state; it must not change during decoding.
 state: union {
@@ -26,6 +29,17 @@ state: union {
         lower: u8 = 0x80,
         upper: u8 = 0xBF,
     },
+    utf16: struct { leading_byte: ?u8 = null, leading_surrogate: ?u16 = null },
+    gb18030: struct { first: u8 = 0, second: u8 = 0, third: u8 = 0 },
+    euc_jp: struct { leading: u8 = 0, jis0212: bool = false },
+    iso2022_jp: struct {
+        state: Iso2022JpState = .ascii,
+        output_state: Iso2022JpState = .ascii,
+        leading: u8 = 0,
+        output: bool = false,
+    },
+    leading: u8,
+    replacement_error_returned: bool,
     none: void,
 },
 // HandlerResult borrows this slot until processItem appends it to the output.
@@ -193,10 +207,10 @@ fn handleUtf8(self: *Decoder, allocator: std.mem.Allocator, input: *IoQueue(u8),
 
 /// https://encoding.spec.whatwg.org/#single-byte-decoder
 fn handleSingleByte(self: *Decoder, item: ?u8) HandlerResult {
-    // TODO: §9.1
-    _ = self;
-    _ = item;
-    @panic("TODO");
+    const byte = item orelse return .finished;
+    if (byte < 0x80) return self.emit(byte);
+    const cp = indexes.codePoint(indexes.singleByte(self.encoding), byte - 0x80) orelse return .err;
+    return self.emit(cp);
 }
 
 /// https://encoding.spec.whatwg.org/#gb18030-decoder

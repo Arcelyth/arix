@@ -1,5 +1,5 @@
-//! Provides lookup helpers for the encoding index tables generated from 
-//! `indexes.json`. These helpers are used by the encoding decoders to map 
+//! Provides lookup helpers for the encoding index tables generated from
+//! `indexes.json`. These helpers are used by the encoding decoders to map
 //! encoding-specific indexes or pointers to Unicode code points.
 const Encoding = @import("encoding.zig").Encoding;
 const data = @import("encoding_indexes");

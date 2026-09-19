@@ -47,3 +47,37 @@ test "encoding Decoder: UTF-8 scalars and malformed sequences" {
     try expectDecode(.utf8, "\xC0\xAF\xFF", &.{ 0xFFFD, 0xFFFD, 0xFFFD });
     try expectDecode(.utf8, "\xF0\x9F\x92", &.{0xFFFD});
 }
+
+test "encoding Decoder: every single-byte index" {
+    const cases = .{
+        .{ Encoding.ibm866, 0x0410, 0x00A0 },
+        .{ Encoding.iso88592, 0x0080, 0x02D9 },
+        .{ Encoding.iso88593, 0x0080, 0x02D9 },
+        .{ Encoding.iso88594, 0x0080, 0x02D9 },
+        .{ Encoding.iso88595, 0x0080, 0x045F },
+        .{ Encoding.iso88596, 0x0080, 0xFFFD },
+        .{ Encoding.iso88597, 0x0080, 0xFFFD },
+        .{ Encoding.iso88598, 0x0080, 0xFFFD },
+        .{ Encoding.iso88598_i, 0x0080, 0xFFFD },
+        .{ Encoding.iso885910, 0x0080, 0x0138 },
+        .{ Encoding.iso885913, 0x0080, 0x2019 },
+        .{ Encoding.iso885914, 0x0080, 0x00FF },
+        .{ Encoding.iso885915, 0x0080, 0x00FF },
+        .{ Encoding.iso885916, 0x0080, 0x00FF },
+        .{ Encoding.koi8r, 0x2500, 0x042A },
+        .{ Encoding.koi8u, 0x2500, 0x042A },
+        .{ Encoding.macintosh, 0x00C4, 0x02C7 },
+        .{ Encoding.windows874, 0x20AC, 0xFFFD },
+        .{ Encoding.windows1250, 0x20AC, 0x02D9 },
+        .{ Encoding.windows1251, 0x0402, 0x044F },
+        .{ Encoding.windows1252, 0x20AC, 0x00FF },
+        .{ Encoding.windows1253, 0x20AC, 0xFFFD },
+        .{ Encoding.windows1254, 0x20AC, 0x00FF },
+        .{ Encoding.windows1255, 0x20AC, 0xFFFD },
+        .{ Encoding.windows1256, 0x20AC, 0x06D2 },
+        .{ Encoding.windows1257, 0x20AC, 0x02D9 },
+        .{ Encoding.windows1258, 0x20AC, 0x00FF },
+        .{ Encoding.x_mac_cyrillic, 0x0410, 0x20AC },
+    };
+    inline for (cases) |case| try expectDecode(case[0], "\x00A\x7F\x80\xFF", &.{ 0, 'A', 0x7F, case[1], case[2] });
+}

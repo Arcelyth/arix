@@ -16,6 +16,9 @@ test_tree:
 test_css: 
 	zig build test --summary all -- CSS 
 
+test_enc: 
+	zig build test --summary all -- encoding 
+
 bench_css:
 	zig build bench -- --iterations 100 res/bench/css/bench.css
 

@@ -1,4 +1,5 @@
 const std = @import("std");
+const Decoder = @import("Decoder.zig");
 
 pub const Encoding = enum {
     utf8,
@@ -448,9 +449,14 @@ pub fn nameToEncoding(label: []const u8) ?Encoding {
 }
 
 /// https://encoding.spec.whatwg.org/#decode
-pub fn decode(allocator: std.mem.Allocator, input: []const u8, fallback: Encoding) []u21 {
-    // TODO: Encoding 6.1
-    _ = allocator;
-    _ = input;
-    _ = fallback;
+pub fn decode(allocator: std.mem.Allocator, input: []const u8, fallback: Encoding) ![]u21 {
+    var encoding = fallback;
+    var bytes = input;
+    if (getBomEncoding(input)) |bom| {
+        encoding = bom;
+        bytes = input[if (bom == .utf8) @as(usize, 3) else 2..];
+    }
+
+    var decoder: Decoder = .{ .encoding = encoding };
+    return decoder.processQueue(allocator, bytes, .replacement);
 }

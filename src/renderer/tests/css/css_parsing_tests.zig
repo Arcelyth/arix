@@ -327,6 +327,75 @@ fn expectBlockItems(expected: []const std.json.Value, actual: []const css.BlockI
     }
 }
 
+fn expectColor(expected: std.json.Value, actual: color.Color) anyerror!void {
+    if (actual == .light_dark) {
+        if (expected != .array or expected.array.items.len != 2) return error.InvalidFixture;
+        try expectColor(expected.array.items[0], actual.light_dark.light);
+        try expectColor(expected.array.items[1], actual.light_dark.dark);
+        return;
+    }
+    if (expected != .string) return error.InvalidFixture;
+    if (actual == .device_cmyk or actual == .custom) {
+        // These are fixture representations, not CSS syntax to feed back into
+        // the parser (in particular, color(device-cmyk ...) is not valid CSS).
+        var parts = std.mem.tokenizeAny(u8, expected.string, "() \t\r\n");
+        try testing.expectEqualStrings("color", parts.next() orelse return error.InvalidFixture);
+        const name = parts.next() orelse return error.InvalidFixture;
+        if (actual == .custom) {
+            try expectString(name, actual.custom.name);
+            try expectColorChannels(parts.rest(), actual.custom.channels, actual.custom.alpha);
+        } else {
+            try testing.expectEqualStrings("device-cmyk", name);
+            try expectColorChannels(parts.rest(), &actual.device_cmyk.channels, actual.device_cmyk.alpha);
+        }
+        return;
+    }
+    if (actual != .absolute) return error.UnexpectedColor;
+    const want = try fixtureColor(expected.string);
+    var got = actual.absolute;
+    if (want.space == .srgb and (got.space == .hsl or got.space == .hwb)) {
+        const hue = got.channels[0] orelse return error.UnexpectedMissingChannel;
+        const second = got.channels[1] orelse return error.UnexpectedMissingChannel;
+        const third = got.channels[2] orelse return error.UnexpectedMissingChannel;
+        const rgb = if (got.space == .hsl) color.hslToRgb(hue, second, third) else color.hwbToRgb(hue, second, third);
+        got.space = .srgb;
+        got.channels = .{ rgb[0], rgb[1], rgb[2] };
+    }
+    try testing.expectEqual(want.space, got.space);
+    for (want.channels ++ [1]?f64{want.alpha}, got.channels ++ [1]?f64{got.alpha}) |reference, channel| {
+        if (reference) |value| {
+            try testing.expect(channel != null);
+            // Bundled fixture numbers are rounded to six decimal places.
+            try testing.expectApproxEqAbs(value, channel.?, 0.000001);
+        } else try testing.expect(channel == null);
+    }
+}
+
+fn expectColorChannels(text: []const u8, channels: []const ?f64, alpha: ?f64) !void {
+    var parts = std.mem.splitScalar(u8, text, '/');
+    var values = std.mem.tokenizeAny(u8, parts.next().?, "() \t\r\n");
+    for (channels) |channel| try expectColorChannel(values.next() orelse return error.InvalidFixture, channel);
+    try testing.expect(values.next() == null);
+    const expected_alpha = if (parts.next()) |value| std.mem.trim(u8, value, "() \t\r\n") else "1";
+    try expectColorChannel(expected_alpha, alpha);
+    try testing.expect(parts.next() == null);
+}
+
+fn expectColorChannel(text: []const u8, actual: ?f64) !void {
+    if (std.mem.eql(u8, text, "none")) return testing.expect(actual == null);
+    try testing.expect(actual != null);
+    try testing.expectApproxEqAbs(try std.fmt.parseFloat(f64, text), actual.?, 0.000001);
+}
+
+fn checkColorStorage(alloc: std.mem.Allocator, tokens: []const Token, valid: bool) !void {
+    var input = TokenStream.init(alloc, tokens);
+    defer input.deinit();
+    const actual = try color.parse(&input);
+    defer if (actual) |value| value.deinit(alloc);
+    try testing.expectEqual(valid, actual != null);
+    if (valid) try testing.expect(input.empty());
+}
+
 fn loadFixture(alloc: std.mem.Allocator, path: []const u8, io: std.Io) !std.json.Parsed(std.json.Value) {
     const content = try std.Io.Dir.cwd().readFileAlloc(io, path, alloc, .unlimited);
     defer alloc.free(content);
@@ -419,30 +488,13 @@ fn fixtureColor(text: []const u8) !color.Absolute {
 
 fn parseColor(parser: *Parser, expected: std.json.Value) !void {
     const actual = try color.parse(parser.input);
+    defer if (actual) |value| value.deinit(parser.input.allocator);
     parser.input.discardWhitespace();
     if (expected == .null)
         return testing.expect(actual == null or !parser.input.empty());
-    if (expected != .string) return error.InvalidFixture;
-    try testing.expect(actual != null and actual.? == .absolute);
+    try testing.expect(actual != null);
     try testing.expect(parser.input.empty());
-    const want = try fixtureColor(expected.string);
-    var got = actual.?.absolute;
-    if (want.space == .srgb and (got.space == .hsl or got.space == .hwb)) {
-        const hue = got.channels[0] orelse return error.UnexpectedMissingChannel;
-        const second = got.channels[1] orelse return error.UnexpectedMissingChannel;
-        const third = got.channels[2] orelse return error.UnexpectedMissingChannel;
-        const rgb = if (got.space == .hsl) color.hslToRgb(hue, second, third) else color.hwbToRgb(hue, second, third);
-        got.space = .srgb;
-        got.channels = .{ rgb[0], rgb[1], rgb[2] };
-    }
-    try testing.expectEqual(want.space, got.space);
-    for (want.channels ++ [1]?f64{want.alpha}, got.channels ++ [1]?f64{got.alpha}) |reference, channel| {
-        if (reference) |value| {
-            try testing.expect(channel != null);
-            // Bundled fixture numbers are rounded to six decimal places.
-            try testing.expectApproxEqAbs(value, channel.?, 0.000001);
-        } else try testing.expect(channel == null);
-    }
+    try expectColor(expected, actual.?);
 }
 
 fn decodeStylesheetFixture(alloc: std.mem.Allocator, input: std.json.Value, expected_encoding: std.json.Value) ![]u8 {
@@ -621,6 +673,7 @@ test "CSS css-parsing-tests: colors" {
         "tests_patch/color_oklab_4.json",
         "tests_patch/color_oklch_4.json",
         "css-parsing-tests/color_function_4.json",
+        "tests_patch/color_functions_5.json",
     };
     inline for (files) |file| {
         errdefer std.debug.print("Fixture: {s} Failed\n", .{file});

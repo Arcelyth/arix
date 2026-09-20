@@ -2,10 +2,10 @@ const Tokenizer = @This();
 
 const std = @import("std");
 const InputStream = @import("InputStream.zig");
-const ascii = @import("../utils/ascii.zig");
+const ascii = @import("../../utils/ascii.zig");
 const token = @import("token.zig");
 const Token = token.Token;
-const String = @import("String.zig");
+const String = @import("../String.zig");
 
 // Result for 4.3.13.
 const ConsumedNumber = struct {

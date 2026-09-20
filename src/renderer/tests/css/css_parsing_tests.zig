@@ -1,15 +1,15 @@
 const std = @import("std");
-const Tokenizer = @import("../../css/Tokenizer.zig");
-const TokenStream = @import("../../css/TokenStream.zig");
-const Parser = @import("../../css/Parser.zig");
-const css = @import("../../css/parsing_results.zig");
-const token = @import("../../css/token.zig");
+const Tokenizer = @import("../../css/syntax/Tokenizer.zig");
+const TokenStream = @import("../../css/syntax/TokenStream.zig");
+const Parser = @import("../../css/syntax/Parser.zig");
+const css = @import("../../css/syntax/parsing_results.zig");
+const token = @import("../../css/syntax/token.zig");
 const Token = token.Token;
 const cloneToken = token.cloneToken;
 const String = @import("../../css/String.zig");
 const testing = std.testing;
-const color = @import("../../css/color.zig");
-const decode = @import("../../css/decode.zig");
+const color = @import("../../css/color/parse.zig");
+const decode = @import("../../css/syntax/decode.zig");
 const encoding = @import("../../encoding/encoding.zig");
 
 fn normalize(value: *std.json.Value) void {

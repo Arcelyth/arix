@@ -1,5 +1,5 @@
 const std = @import("std");
-const String = @import("String.zig");
+const String = @import("../String.zig");
 
 pub const HashType = enum {
     id,

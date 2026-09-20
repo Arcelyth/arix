@@ -1,7 +1,7 @@
 const InputStream = @This();
 
 const std = @import("std");
-const ascii = @import("../utils/ascii.zig");
+const ascii = @import("../../utils/ascii.zig");
 
 utf8_bytes: []const u8,
 pos: usize = 0,

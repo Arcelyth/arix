@@ -8,8 +8,8 @@ const token = @import("token.zig");
 const Token = token.Token;
 const cloneToken = token.cloneToken;
 const results = @import("parsing_results.zig");
-const ascii = @import("../utils/ascii.zig");
-const CssString = @import("String.zig");
+const ascii = @import("../../utils/ascii.zig");
+const CssString = @import("../String.zig");
 
 pub const ParserError =
     std.mem.Allocator.Error ||

@@ -1,7 +1,7 @@
 /// Benchmark for CSS tokenizer.
 const Self = @This();
 const std = @import("std");
-const Tokenizer = @import("../renderer/css/Tokenizer.zig");
+const Tokenizer = @import("../renderer/css/syntax/Tokenizer.zig");
 
 allocator: std.mem.Allocator,
 arena: ?std.heap.ArenaAllocator = null,

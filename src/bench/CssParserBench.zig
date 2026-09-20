@@ -1,10 +1,10 @@
 /// Benchmark for CSS parser, only use the parseStylesheet entry.
 const Self = @This();
 const std = @import("std");
-const Tokenizer = @import("../renderer/css/Tokenizer.zig");
-const Parser = @import("../renderer/css/Parser.zig");
-const TokenStream = @import("../renderer/css/TokenStream.zig");
-const cloneToken = @import("../renderer/css/token.zig").cloneToken;
+const Tokenizer = @import("../renderer/css/syntax/Tokenizer.zig");
+const Parser = @import("../renderer/css/syntax/Parser.zig");
+const TokenStream = @import("../renderer/css/syntax/TokenStream.zig");
+const cloneToken = @import("../renderer/css/syntax/token.zig").cloneToken;
 
 allocator: std.mem.Allocator,
 arena: ?std.heap.ArenaAllocator = null,

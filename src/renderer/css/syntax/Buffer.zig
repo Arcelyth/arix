@@ -4,7 +4,7 @@ const Buffer = @This();
 
 const std = @import("std");
 const Token = @import("token.zig").Token;
-const String = @import("String.zig");
+const String = @import("../String.zig");
 const Tokenizer = @import("Tokenizer.zig");
 const token = @import("token.zig");
 const TokenStream = @import("TokenStream.zig");

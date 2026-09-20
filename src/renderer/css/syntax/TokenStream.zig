@@ -5,7 +5,7 @@ const std = @import("std");
 const parsing_results = @import("parsing_results.zig");
 const ComponentValue = parsing_results.ComponentValue;
 const Token = @import("token.zig").Token;
-const String = @import("String.zig");
+const String = @import("../String.zig");
 const types = @import("types.zig");
 const Span = types.Span;
 

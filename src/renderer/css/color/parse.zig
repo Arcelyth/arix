@@ -1,9 +1,9 @@
 const std = @import("std");
-const Stream = @import("TokenStream.zig");
-const Token = @import("token.zig").Token;
-const String = @import("String.zig");
-const names = @import("color_names.zig");
-const ascii = @import("../utils/ascii.zig");
+const Stream = @import("../syntax/TokenStream.zig");
+const Token = @import("../syntax/token.zig").Token;
+const String = @import("../String.zig");
+const names = @import("names.zig");
+const ascii = @import("../../utils/ascii.zig");
 
 pub const Space = enum {
     srgb,

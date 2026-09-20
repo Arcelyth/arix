@@ -1,5 +1,5 @@
 const std = @import("std");
-const encoding = @import("../encoding/encoding.zig");
+const encoding = @import("../../encoding/encoding.zig");
 
 // https://drafts.csswg.org/css-syntax/#css-decode-bytes
 pub fn decodeStylesheet(

@@ -49,7 +49,24 @@ pub const Color = union(enum) {
 
     device_cmyk: DeviceCmyk,
     custom: Custom,
+    light_dark: *const LightDark,
+
+    /// Release storage allocated through the token stream's allocator.
+    /// Custom profile names borrow token/source storage, which must outlive Color.
+    pub fn deinit(self: Color, allocator: std.mem.Allocator) void {
+        switch (self) {
+            .custom => |value| allocator.free(value.channels),
+            .light_dark => |value| {
+                value.light.deinit(allocator);
+                value.dark.deinit(allocator);
+                allocator.destroy(value);
+            },
+            else => {},
+        }
+    }
 };
+
+pub const LightDark = struct { light: Color, dark: Color };
 
 pub const ParseError = std.mem.Allocator.Error || error{NestingLimit};
 
@@ -433,8 +450,20 @@ fn parseCustom(args: *Stream, name: String) ParseError!?Color {
 
 // https://drafts.csswg.org/css-color-5/#light-dark
 fn parseLightDark(args: *Stream) ParseError!?Color {
-    _ = args;
-    @panic("TODO");
+    var transferred = false;
+    const light = try parse(args) orelse return null;
+    defer if (!transferred) light.deinit(args.allocator);
+    args.discardWhitespace();
+    if (args.consume() != .comma) return null;
+    const dark = try parse(args) orelse return null;
+    defer if (!transferred) dark.deinit(args.allocator);
+    args.discardWhitespace();
+    if (!args.empty()) return null;
+
+    const pair = try args.allocator.create(LightDark);
+    pair.* = .{ .light = light, .dark = dark };
+    transferred = true;
+    return .{ .light_dark = pair };
 }
 
 // Helper for literal coordinates: scale percentages, leave

@@ -29,14 +29,24 @@ pub const Absolute = struct {
     alpha: ?f64 = 1,
 };
 
+pub const DeviceCmyk = struct {
+    // Specified values: channel clamping belongs to computed-value resolution.
+    channels: [4]?f64,
+    alpha: ?f64 = 1,
+};
+
 pub const Color = union(enum) {
     absolute: Absolute,
     current_color,
     /// Index into the static system color table; not a resolved platform color.
     system: usize,
+
+    device_cmyk: DeviceCmyk,
 };
 
-pub fn parse(input: *Stream) error{NestingLimit}!?Color {
+pub const ParseError = std.mem.Allocator.Error || error{NestingLimit};
+
+pub fn parse(input: *Stream) ParseError!?Color {
     input.discardWhitespace();
     return switch (input.consume()) {
         .hash => |hash| if (parseHex(hash.value)) |rgba| .{ .absolute = .{
@@ -66,7 +76,7 @@ pub fn parse(input: *Stream) error{NestingLimit}!?Color {
         .function => |name| blk: {
             input.index -= 1;
             var args = try input.block();
-            break :blk if (parseFunction(name, &args)) |value| .{ .absolute = value } else null;
+            break :blk try parseFunction(name, &args);
         },
         else => null,
     };
@@ -87,16 +97,29 @@ pub fn parseHex(value: String) ?[4]u8 {
     return rgba;
 }
 
-fn parseFunction(name: String, args: *Stream) ?Absolute {
-    if (name.eqlAscii("rgb") or name.eqlAscii("rgba")) return parseRgb(args);
-    if (name.eqlAscii("hsl") or name.eqlAscii("hsla")) return parseHsl(args);
-    if (name.eqlAscii("hwb")) return parseHwb(args);
-    if (name.eqlAscii("lab")) return parseLab(args, .lab);
-    if (name.eqlAscii("oklab")) return parseLab(args, .oklab);
-    if (name.eqlAscii("lch")) return parseLch(args, .lch);
-    if (name.eqlAscii("oklch")) return parseLch(args, .oklch);
-    if (name.eqlAscii("color")) return parsePredefined(args);
-    return null;
+fn parseFunction(name: String, args: *Stream) ParseError!?Color {
+    if (name.eqlAscii("color")) return parseColorFunction(args);
+    if (name.eqlAscii("light-dark")) return parseLightDark(args);
+    if (name.eqlAscii("device-cmyk"))
+        return .{ .device_cmyk = parseDeviceCmyk(args) orelse return null };
+
+    const value = if (name.eqlAscii("rgb") or name.eqlAscii("rgba"))
+        parseRgb(args)
+    else if (name.eqlAscii("hsl") or name.eqlAscii("hsla"))
+        parseHsl(args)
+    else if (name.eqlAscii("hwb"))
+        parseHwb(args)
+    else if (name.eqlAscii("lab"))
+        parseLab(args, .lab)
+    else if (name.eqlAscii("oklab"))
+        parseLab(args, .oklab)
+    else if (name.eqlAscii("lch"))
+        parseLch(args, .lch)
+    else if (name.eqlAscii("oklch"))
+        parseLch(args, .oklch)
+    else
+        null;
+    return .{ .absolute = value orelse return null };
 }
 
 fn parseRgb(args: *Stream) ?Absolute {
@@ -290,12 +313,8 @@ fn parseLch(args: *Stream, comptime space: Space) ?Absolute {
     }, false);
 }
 
-fn parsePredefined(args: *Stream) ?Absolute {
-    args.discardWhitespace();
-    const name = switch (args.consume()) {
-        .ident => |value| value,
-        else => return null,
-    };
+// https://drafts.csswg.org/css-color-4/#predefined
+fn parsePredefined(args: *Stream, name: String) ?Absolute {
     const space: Space = blk: {
         if (name.eqlAscii("srgb")) break :blk .srgb;
         if (name.eqlAscii("srgb-linear")) break :blk .srgb_linear;
@@ -327,6 +346,72 @@ fn parsePredefined(args: *Stream) ?Absolute {
     }, false);
 }
 
+// https://drafts.csswg.org/css-color-5/#color-function
+fn parseColorFunction(args: *Stream) ParseError!?Color {
+    args.discardWhitespace();
+    const name = switch (args.consume()) {
+        .ident => |value| value,
+        else => return null,
+    };
+    if (name.startsWith("--")) return parseCustom(args, name);
+    return .{ .absolute = parsePredefined(args, name) orelse return null };
+}
+
+// https://drafts.csswg.org/css-color-5/#device-cmyk
+fn parseDeviceCmyk(args: *Stream) ?DeviceCmyk {
+    args.discardWhitespace();
+    const first = args.consume();
+    const index = args.index;
+    args.discardWhitespace();
+    return switch (args.peek()) {
+        .comma => parseLegacyDeviceCmyk(args, first),
+        else => if (args.index != index) parseModernDeviceCmyk(args, first) else null,
+    };
+}
+
+// https://drafts.csswg.org/css-color-5/#typedef-legacy-device-cmyk-syntax
+fn parseLegacyDeviceCmyk(args: *Stream, first: Token) ?DeviceCmyk {
+    if (first != .number) return null;
+    var value: DeviceCmyk = .{ .channels = .{ number(first, 1) orelse return null, null, null, null } };
+    for (value.channels[1..]) |*channel| {
+        if (args.consume() != .comma) return null;
+        args.discardWhitespace();
+        const tk = args.consume();
+        if (tk != .number) return null;
+        channel.* = number(tk, 1) orelse return null;
+        args.discardWhitespace();
+    }
+    return if (args.empty()) value else null;
+}
+
+// https://drafts.csswg.org/css-color-5/#typedef-modern-device-cmyk-syntax
+fn parseModernDeviceCmyk(args: *Stream, first: Token) ?DeviceCmyk {
+    var value: DeviceCmyk = .{ .channels = .{ null, null, null, null } };
+    if (!isNone(first)) value.channels[0] = number(first, 0.01) orelse return null;
+    for (value.channels[1..], 0..) |*channel, i| {
+        if (i != 0) {
+            const index = args.index;
+            args.discardWhitespace();
+            if (args.index == index) return null;
+        }
+        const tk = args.consume();
+        channel.* = if (isNone(tk)) null else number(tk, 0.01) orelse return null;
+    }
+    return if (finishAlpha(args, &value.alpha, false)) value else null;
+}
+
+fn parseCustom(args: *Stream, name: String) ParseError!?Color {
+    _ = args;
+    _ = name;
+    @panic("TODO");
+}
+
+// https://drafts.csswg.org/css-color-5/#light-dark
+fn parseLightDark(args: *Stream) ParseError!?Color {
+    _ = args;
+    @panic("TODO");
+}
+
 // Helper for literal coordinates: scale percentages, leave
 // numbers unchanged, and reject non-finite input.
 fn number(tk: Token, percentage_scale: f64) ?f64 {
@@ -342,24 +427,28 @@ inline fn isNone(tk: Token) bool {
     return tk == .ident and tk.ident.eqlAscii("none");
 }
 
-// Shared optional-alpha tail and exhaustion check. Legacy syntax uses a comma
-// and forbids missing alpha; modern syntax uses '/' and permits none.
 fn finish(args: *Stream, value: Absolute, comma: bool) ?Absolute {
     var result = value;
+    return if (finishAlpha(args, &result.alpha, comma)) result else null;
+}
+
+// Shared optional-alpha tail and exhaustion check. Legacy syntax uses a comma
+// and forbids missing alpha; modern syntax uses '/' and permits none.
+fn finishAlpha(args: *Stream, alpha: *?f64, comma: bool) bool {
     args.discardWhitespace();
     if (comma and args.peek() == .comma) {
         _ = args.consume();
-        result.alpha = parseAlpha(args) orelse return null;
+        alpha.* = parseAlpha(args) orelse return false;
     } else if (!comma and args.peek() == .delim and args.peek().delim == '/') {
         _ = args.consume();
         args.discardWhitespace();
         if (isNone(args.peek())) {
             _ = args.consume();
-            result.alpha = null;
-        } else result.alpha = parseAlpha(args) orelse return null;
+            alpha.* = null;
+        } else alpha.* = parseAlpha(args) orelse return false;
     }
     args.discardWhitespace();
-    return if (args.empty()) result else null;
+    return args.empty();
 }
 
 // Numeric/percentage alpha only; the caller handles the none keyword.

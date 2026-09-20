@@ -35,6 +35,12 @@ pub const DeviceCmyk = struct {
     alpha: ?f64 = 1,
 };
 
+pub const Custom = struct {
+    name: String,
+    channels: []const ?f64,
+    alpha: ?f64 = 1,
+};
+
 pub const Color = union(enum) {
     absolute: Absolute,
     current_color,
@@ -42,6 +48,7 @@ pub const Color = union(enum) {
     system: usize,
 
     device_cmyk: DeviceCmyk,
+    custom: Custom,
 };
 
 pub const ParseError = std.mem.Allocator.Error || error{NestingLimit};
@@ -400,10 +407,28 @@ fn parseModernDeviceCmyk(args: *Stream, first: Token) ?DeviceCmyk {
     return if (finishAlpha(args, &value.alpha, false)) value else null;
 }
 
+// https://drafts.csswg.org/css-color-5/#typedef-custom-params
 fn parseCustom(args: *Stream, name: String) ParseError!?Color {
-    _ = args;
-    _ = name;
-    @panic("TODO");
+    var channels: std.ArrayList(?f64) = .empty;
+    defer channels.deinit(args.allocator);
+
+    while (true) {
+        const index = args.index;
+        args.discardWhitespace();
+        const tk = args.peek();
+        if (tk == .eof or (tk == .delim and tk.delim == '/')) break;
+        if (args.index == index) return null;
+        _ = args.consume();
+        try channels.append(args.allocator, if (isNone(tk)) null else number(tk, 0.01) orelse return null);
+    }
+    if (channels.items.len == 0) return null;
+    var alpha: ?f64 = 1;
+    if (!finishAlpha(args, &alpha, false)) return null;
+    return .{ .custom = .{
+        .name = name,
+        .channels = try channels.toOwnedSlice(args.allocator),
+        .alpha = alpha,
+    } };
 }
 
 // https://drafts.csswg.org/css-color-5/#light-dark

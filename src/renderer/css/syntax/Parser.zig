@@ -34,8 +34,7 @@ pub fn parseSomething(
 ) ParserError!?T {
     var input = ComponentValueStream.init(try self.parseListOfComponentValues());
     const result = parse(&input) orelse return null;
-    input.discardWhitespace();
-    return if (input.empty()) result else null;
+    return result;
 }
 
 // https://drafts.csswg.org/css-syntax/#parse-comma-list

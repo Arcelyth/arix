@@ -10,6 +10,8 @@ const cloneToken = token.cloneToken;
 const results = @import("parsing_results.zig");
 const ascii = @import("../../utils/ascii.zig");
 const CssString = @import("../String.zig");
+const types = @import("types.zig");
+const ParseFn = types.ParseFn;
 
 pub const ParserError =
     std.mem.Allocator.Error ||
@@ -30,10 +32,10 @@ pub fn init(alloc: std.mem.Allocator, input: *TokenStream) Parser {
 pub fn parseSomething(
     self: *Parser,
     comptime T: type,
-    comptime parse: fn (*ComponentValueStream) ?T,
+    comptime parse: ParseFn(T),
 ) ParserError!?T {
     var input = ComponentValueStream.init(try self.parseListOfComponentValues());
-    const result = parse(&input) orelse return null;
+    const result = parse.parse(&input) orelse return null;
     return result;
 }
 
@@ -41,7 +43,7 @@ pub fn parseSomething(
 pub fn parseCommaSeparatedList(
     self: *Parser,
     comptime T: type,
-    comptime parse: fn (*ComponentValueStream) ?T,
+    comptime parse: ParseFn(T),
 ) ParserError![]?T {
     const start = self.input.index;
     self.input.discardWhitespace();
@@ -56,7 +58,7 @@ pub fn parseCommaSeparatedList(
     const list = try self.allocator.alloc(?T, groups.len);
     for (groups, list) |group, *result| {
         var input = ComponentValueStream.init(group);
-        result.* = parse(&input);
+        result.* = parse.parse(&input);
         input.discardWhitespace();
         if (!input.empty()) result.* = null;
     }

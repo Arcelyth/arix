@@ -1,6 +1,5 @@
 /// Implementation of selector's structures.
 /// See https://www.w3.org/TR/selectors-4/#structure
-
 const String = @import("../String.zig");
 const ComponentValue = @import("../syntax/parsing_results.zig").ComponentValue;
 

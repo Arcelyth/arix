@@ -1,5 +1,6 @@
 /// Implementation of selector's structures.
 /// See https://www.w3.org/TR/selectors-4/#structure
+const std = @import("std");
 const String = @import("../String.zig");
 const ComponentValue = @import("../syntax/parsing_results.zig").ComponentValue;
 
@@ -39,17 +40,34 @@ pub const Combinator = enum {
 };
 
 pub const ComplexSelector = struct {
-    parts: []const Part,
+    components: []const Component,
 
-    pub const Part = struct {
-        combinator: ?Combinator = null,
-        selector: union(enum) {
-            compound: CompoundSelector,
-            pseudo_compound: PseudoCompoundSelector,
-        },
+    pub const Component = union(enum) {
+        simple: SimpleSelector,
+        pseudo_element: PseudoElementSelector,
+        combinator: Combinator,
     };
+
+    pub fn deinit(self: ComplexSelector, allocator: std.mem.Allocator) void {
+        allocator.free(self.components);
+    }
 };
 
-pub const SelectorList = []const ComplexSelector;
+pub const SelectorList = struct {
+    selectors: []const ComplexSelector,
+
+    pub fn deinit(self: SelectorList, allocator: std.mem.Allocator) void {
+        for (self.selectors) |selector| selector.deinit(allocator);
+        allocator.free(self.selectors);
+    }
+};
 pub const CompoundSelectorList = []const CompoundSelector;
 pub const SimpleSelectorList = []const SimpleSelector;
+
+pub const Mode = struct {
+    kind: enum { complex, compound, simple} = .complex,
+    real: bool = false,
+    relative: bool = false,
+};
+
+

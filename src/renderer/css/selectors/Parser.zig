@@ -11,6 +11,7 @@ const SelectorList = types.SelectorList;
 const ComplexSelector = types.ComplexSelector;
 const Mode = types.Mode;
 const Component = types.ComplexSelector.Component;
+const Combinator = types.Combinator;
 
 allocator: std.mem.Allocator,
 input: *Stream,
@@ -27,7 +28,68 @@ pub fn deinit(self: *Parser) void {
     self.components.deinit(self.allocator);
 }
 
+pub fn append(self: *Parser, component: Component) !void {
+    try self.components.append(self.allocator, component);
+}
+
 pub fn consumeSelector(self: *Parser, comptime mode: Mode) !void {
+    while (true) {
+        try self.consumeUnit(mode);
+        const end = self.input.index;
+        self.input.discardWhitespace();
+
+        if (mode.kind != .complex or self.input.empty() or isToken(self.input, .comma)) return;
+        const cb: Combinator = self.consumeCombinator() orelse blk: {
+            // Check if index change.
+            if (self.input.index == end) return error.InvalidSelector;
+            break :blk .descendant;
+        };
+        try self.append(.{ .combinator = cb });
+        self.input.discardWhitespace();
+    }
+}
+
+pub fn consumeUnit(self: *Parser, comptime mode: Mode) void {
     _ = self;
     _ = mode;
+}
+
+// https://www.w3.org/TR/selectors-4/#typedef-combinator
+pub fn consumeCombinator(self: *Parser) ?Combinator {
+    const tk = self.peekToken() orelse return null;
+    if (tk.* != .delim) return null;
+    const cb: Combinator = switch (tk.delim) {
+        '>' => .child,
+        '+' => .next_sibling,
+        '~' => .subsequent_sibling,
+        '|' => blk: {
+            if (!self.isDelimAt(1, '|')) return null;
+            self.advance();
+            break :blk .column;
+        }, 
+        else => return null,
+    };
+    self.advance();
+    return cb;
+}
+
+fn peekToken(self: *const Parser) ?*const PreservedToken {
+    const value = self.input.peek() orelse return null;
+    return if (value.* == .preserved_token) &value.preserved_token else null;
+}
+
+fn isDelimAt(self: *const Parser, offset: usize, cp: u21) bool {
+    const input = self.input;
+    if (offset >= input.values.len - input.index) return false;
+    const value = &input.values[input.index + offset];
+    return value.* == .preserved_token and value.preserved_token == .delim and value.preserved_token.delim == cp;
+}
+
+inline fn advance(self: *Parser) void {
+    self.input.advance();
+}
+
+inline fn isToken(self: *const Parser, comptime tag: std.meta.Tag(PreservedToken)) bool {
+    const tk = peekToken(self.input) orelse return false;
+    return tk.* == tag;
 }

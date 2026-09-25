@@ -12,6 +12,7 @@ const ComplexSelector = types.ComplexSelector;
 const Mode = types.Mode;
 const Component = types.ComplexSelector.Component;
 const Combinator = types.Combinator;
+const SimpleSelector = types.SimpleSelector;
 
 allocator: std.mem.Allocator,
 input: *Stream,
@@ -50,8 +51,30 @@ pub fn consumeSelector(self: *Parser, comptime mode: Mode) !void {
 }
 
 pub fn consumeUnit(self: *Parser, comptime mode: Mode) void {
-    _ = self;
-    _ = mode;
+    const start = self.components.items.len;
+    if (try self.consumeType()) |selector| {
+        try self.append(.{ .simple = selector });
+        if (mode.kind == .simple) return;
+    }
+
+    var after_pseudo = false;
+    while (!self.input.empty()) {
+        if (self.isToken(.colon)) {
+            const pseudo = try self.consumePseudo();
+            if (pseudo == .pseudo_element) {
+                if (mode.real) return error.InvalidSelector;
+                after_pseudo = true;
+            }
+            try self.append(pseudo);
+        } else {
+            if (after_pseudo) break;
+            const selector = try self.consumeSubclass() orelse break;
+            try self.append(.{ .simple = selector });
+        }
+        if (mode.kind == .simple) return;
+    }
+    // At least one component is required.
+    if (self.components.items.len == start) return error.InvalidSelector;
 }
 
 // https://www.w3.org/TR/selectors-4/#typedef-combinator
@@ -66,11 +89,26 @@ pub fn consumeCombinator(self: *Parser) ?Combinator {
             if (!self.isDelimAt(1, '|')) return null;
             self.advance();
             break :blk .column;
-        }, 
+        },
         else => return null,
     };
     self.advance();
     return cb;
+}
+
+pub fn consumeType(self: *Parser) !SimpleSelector {
+    _ = self;
+    @panic("TODO");
+}
+
+pub fn consumePseudo(self: *Parser) !Component {
+    _ = self;
+    @panic("TODO");
+}
+
+pub fn consumeSubclass(self: *Parser) !SimpleSelector {
+    _ = self;
+    @panic("TODO");
 }
 
 fn peekToken(self: *const Parser) ?*const PreservedToken {

@@ -65,9 +65,7 @@ pub const CompoundSelectorList = []const CompoundSelector;
 pub const SimpleSelectorList = []const SimpleSelector;
 
 pub const Mode = struct {
-    kind: enum { complex, compound, simple} = .complex,
+    kind: enum { complex, compound, simple } = .complex,
     real: bool = false,
     relative: bool = false,
 };
-
-

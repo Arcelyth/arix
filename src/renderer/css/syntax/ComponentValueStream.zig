@@ -22,7 +22,7 @@ pub inline fn consume(self: *ComponentValueStream) ?*const ComponentValue {
 }
 
 pub inline fn advance(self: *ComponentValueStream) void {
-    self.index += 1; 
+    self.index += 1;
 }
 
 /// Restore an index.

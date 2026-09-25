@@ -116,11 +116,8 @@ fn peekToken(self: *const Parser) ?*const PreservedToken {
     return if (value.* == .preserved_token) &value.preserved_token else null;
 }
 
-fn isDelimAt(self: *const Parser, offset: usize, cp: u21) bool {
-    const input = self.input;
-    if (offset >= input.values.len - input.index) return false;
-    const value = &input.values[input.index + offset];
-    return value.* == .preserved_token and value.preserved_token == .delim and value.preserved_token.delim == cp;
+inline fn isDelimAt(self: *const Parser, offset: usize, cp: u21) bool {
+    return self.input.isDelimAt(offset, cp);
 }
 
 inline fn advance(self: *Parser) void {

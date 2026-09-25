@@ -48,3 +48,9 @@ pub inline fn consumeIdent(self: *ComponentValueStream) ?String {
     self.index += 1;
     return value.preserved_token.ident;
 }
+
+pub inline fn isDelimAt(self: *const ComponentValueStream, offset: usize, cp: u21) bool {
+    if (offset >= self.values.len - self.index) return false;
+    const value = self.values[self.index + offset];
+    return value == .preserved_token and value.preserved_token == .delim and value.preserved_token.delim == cp;
+}

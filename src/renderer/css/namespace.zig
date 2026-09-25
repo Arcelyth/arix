@@ -77,3 +77,47 @@ pub fn parseNamespace_NOCHECK(rule: *const syntax.AtRule) ?Declaration {
     if (!input.empty()) return null;
     return .{ .prefix = prefix, .name = name };
 }
+
+/// Consume qname or wqname.
+pub fn consumeQualifiedName(input: *Stream, comptime wildcard_prefix: bool) ?QualifiedName {
+    const start = input.index;
+    const prefix = consumePrefix(input, wildcard_prefix);
+    const name = input.consumeIdent() orelse {
+        // On mismatch, leave the stream unchanged.
+        input.restore(start);
+        return null;
+    };
+    return .{ .namespace = prefix, .name = name };
+}
+
+/// Consume wqwname, allowing wildcard prefixes and wildcard local names.
+pub fn consumeWildcardName(input: *Stream) ?WildcardName {
+    const start = input.index;
+    const prefix = consumePrefix(input, true);
+    if (input.consumeIdent()) |name| return .{ .namespace = prefix, .name = name };
+    if (input.isDelimAt(0, '*')) {
+        input.advance();
+        return .{ .namespace = prefix, .name = null };
+    }
+    input.restore(start);
+    return null;
+}
+
+fn consumePrefix(input: *Stream, comptime wildcard: bool) Prefix {
+    if (input.isDelimAt(0, '|') and !input.isDelimAt(1, '|')) {
+        input.advance();
+        return .none;
+    }
+    const value = input.peek() orelse return .omitted;
+    if (value.* != .preserved_token) return .omitted;
+    const tk = value.preserved_token;
+    // Leave the host's || combinator and |= attribute matcher unconsumed.
+    if ((tk == .ident or (wildcard and input.isDelimAt(0, '*'))) and
+        input.isDelimAt(1, '|') and !input.isDelimAt(2, '|') and !input.isDelimAt(2, '='))
+    {
+        input.advance();
+        input.advance();
+        return if (tk == .ident) .{ .named = tk.ident } else .any;
+    }
+    return .omitted;
+}

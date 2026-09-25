@@ -1,5 +1,6 @@
 const ComponentValueStream = @This();
 
+const String = @import("../String.zig");
 const ComponentValue = @import("parsing_results.zig").ComponentValue;
 
 values: []const ComponentValue,
@@ -22,7 +23,7 @@ pub inline fn consume(self: *ComponentValueStream) ?*const ComponentValue {
 }
 
 pub inline fn advance(self: *ComponentValueStream) void {
-    self.index += 1;
+    if (!self.empty()) self.index += 1;
 }
 
 /// Restore an index.
@@ -39,4 +40,11 @@ pub inline fn discardWhitespace(self: *ComponentValueStream) void {
         if (value.* != .preserved_token or value.preserved_token != .whitespace) return;
         self.index += 1;
     }
+}
+
+pub inline fn consumeIdent(self: *ComponentValueStream) ?String {
+    const value = self.peek() orelse return null;
+    if (value.* != .preserved_token or value.preserved_token != .ident) return null;
+    self.index += 1;
+    return value.preserved_token.ident;
 }

@@ -1,12 +1,13 @@
-/// Implementation of selector's structures.
-/// See https://www.w3.org/TR/selectors-4/#structure
+//! Implementation of selector's structures.
+//! See https://www.w3.org/TR/selectors-4/#structure
 const std = @import("std");
 const String = @import("../String.zig");
 const ComponentValue = @import("../syntax/parsing_results.zig").ComponentValue;
+const namespace = @import("../namespace.zig");
 
 pub const SimpleSelector = union(enum) {
-    type_selector: String,
-    universal,
+    type_selector: namespace.QualifiedName,
+    universal: namespace.Prefix,
     attribute: []const ComponentValue,
     class: String,
     id: String,

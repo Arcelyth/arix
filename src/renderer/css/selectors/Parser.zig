@@ -13,6 +13,7 @@ const Mode = types.Mode;
 const Component = types.ComplexSelector.Component;
 const Combinator = types.Combinator;
 const SimpleSelector = types.SimpleSelector;
+const namespace = @import("../namespace.zig");
 
 allocator: std.mem.Allocator,
 input: *Stream,
@@ -97,8 +98,15 @@ pub fn consumeCombinator(self: *Parser) ?Combinator {
 }
 
 pub fn consumeType(self: *Parser) !SimpleSelector {
-    _ = self;
-    @panic("TODO");
+    const qual = namespace.consumeWildcardName(self.input) orelse return null;
+    if (qual.name) |name| return .{
+        .type_selector = .{
+            .namespace = qual.namespace, 
+            .name = name
+        }
+    };
+
+    return .{.universal = qual.namespace};
 }
 
 pub fn consumePseudo(self: *Parser) !Component {

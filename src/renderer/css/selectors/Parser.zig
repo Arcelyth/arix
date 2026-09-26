@@ -43,7 +43,7 @@ pub fn consumeSelector(self: *Parser, comptime mode: Mode) !void {
         const end = self.input.index;
         self.input.discardWhitespace();
 
-        if (mode.kind != .complex or self.input.empty() or isToken(self.input, .comma)) return;
+        if (mode.kind != .complex or self.input.empty() or self.isToken(.comma)) return;
         const cb: Combinator = self.consumeCombinator() orelse blk: {
             // Check if index change.
             if (self.input.index == end) return error.InvalidSelector;
@@ -54,9 +54,9 @@ pub fn consumeSelector(self: *Parser, comptime mode: Mode) !void {
     }
 }
 
-pub fn consumeUnit(self: *Parser, comptime mode: Mode) void {
+pub fn consumeUnit(self: *Parser, comptime mode: Mode) !void {
     const start = self.components.items.len;
-    if (try self.consumeType()) |selector| {
+    if (self.consumeType()) |selector| {
         try self.append(.{ .simple = selector });
         if (mode.kind == .simple) return;
     }
@@ -100,7 +100,7 @@ pub fn consumeCombinator(self: *Parser) ?Combinator {
     return cb;
 }
 
-pub fn consumeType(self: *Parser) !SimpleSelector {
+pub fn consumeType(self: *Parser) ?SimpleSelector {
     const qual = namespace.consumeWildcardName(self.input) orelse return null;
     if (qual.name) |name| return .{ .type_selector = .{ .namespace = qual.namespace, .name = name } };
 
@@ -136,7 +136,7 @@ fn isLegacyPseudoElement(name: String) bool {
 }
 
 // Pseudo-classes are handled with pseudo-elements by consumePseudo.
-pub fn consumeSubclass(self: *Parser) !SimpleSelector {
+pub fn consumeSubclass(self: *Parser) !?SimpleSelector {
     var input = self.input;
     const value = input.peek() orelse return null;
     if (value.* == .simple_block) {

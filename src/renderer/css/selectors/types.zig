@@ -64,6 +64,7 @@ pub const Combinator = enum {
     child,
     next_sibling,
     subsequent_sibling,
+    column,
 };
 
 pub const ComplexSelector = struct {

@@ -55,7 +55,7 @@ pub fn parseList(allocator: std.mem.Allocator, input: *Stream, comptime mode: Mo
 }
 
 pub fn consumeList(allocator: std.mem.Allocator, input: *Stream, comptime mode: Mode, context: Context) !SelectorList {
-    const list: std.ArrayList(ComplexSelector) = .empty;
+    var list: std.ArrayList(ComplexSelector) = .empty;
     defer {
         for (list.items) |selector| selector.deinit(allocator);
         list.deinit(allocator);
@@ -82,7 +82,7 @@ pub fn consumeList(allocator: std.mem.Allocator, input: *Stream, comptime mode: 
                 if (!mode.forgiving) return error.InvalidSelector;
                 break :valid false;
             }
-            if (mode.forgiving) break :valid try isValidSelector(parser.components.items, context.namespaces);
+            if (mode.forgiving) break :valid isValidSelector(parser.components.items, context.namespaces);
             break :valid true;
         };
         if (valid) {
@@ -122,4 +122,40 @@ fn isValidSelector(components: []const Component, namespaces: *const namespace.C
         else => {},
     };
     return true;
+}
+
+test "CSS selector parsing: parseSelectorList" {
+    const testing = std.testing;
+    const String = @import("../String.zig");
+    const ComponentValue = @import("../syntax/parsing_results.zig").ComponentValue;
+    // a.class, b
+    const values = [_]ComponentValue{
+        .{ .preserved_token = .{ .ident = String.fromSource("a") } },
+        .{ .preserved_token = .{ .delim = '.' } },
+        .{ .preserved_token = .{ .ident = String.fromSource("class") } },
+        .{ .preserved_token = .comma },
+        .{ .preserved_token = .whitespace },
+        .{ .preserved_token = .{ .ident = String.fromSource("b") } },
+    };
+    var input = Stream.init(&values);
+    const result = try parseSelectorList(testing.allocator, &input, .{});
+    try testing.expect(result != null);
+    const list = result.?;
+    defer list.deinit(testing.allocator);
+    try testing.expect(input.empty());
+    try testing.expectEqual(2, list.selectors.len);
+
+    const first = list.selectors[0].components;
+    try testing.expectEqual(2, first.len);
+    try testing.expect(first[0].simple.type_selector.name.eqlAscii("a"));
+    try testing.expect(first[1].simple.class.eqlAscii("class"));
+    try testing.expectEqual(1, list.selectors[1].components.len);
+    try testing.expect(list.selectors[1].components[0].simple.type_selector.name.eqlAscii("b"));
+
+    // A trailing comma invalidates the whole list and restores the cursor.
+    input = Stream.init(values[0..4]);
+    const invalid = try parseSelectorList(testing.allocator, &input, .{});
+    defer if (invalid) |parsed| parsed.deinit(testing.allocator);
+    try testing.expect(invalid == null);
+    try testing.expectEqual(0, input.index);
 }

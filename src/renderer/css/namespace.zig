@@ -121,3 +121,69 @@ fn consumePrefix(input: *Stream, comptime wildcard: bool) Prefix {
     }
     return .omitted;
 }
+
+pub const Context = struct {
+    /// Something like @namespace svg "..".
+    const Binding = struct {
+        prefix: String,
+        name: String,
+    };
+
+    default_namespace: ?String = null,
+    bindings: std.ArrayList(Binding) = .empty,
+    declarations_allowed: bool = true,
+
+    pub fn deinit(self: *Context, allocator: std.mem.Allocator) void {
+        self.bindings.deinit(allocator);
+    }
+
+    /// Feed top-level rules in source order. The host supplies `ignored` for
+    /// rules rejected by its other grammars; these do not close the namespace
+    /// section. Returns true only for an applied @namespace rule.
+    pub fn consumeRule(self: *Context, allocator: std.mem.Allocator, rule: *const syntax.Rule, ignored: bool) !bool {
+        if (ignored) return false;
+        if (rule.* == .at_rule) {
+            const at_rule = &rule.at_rule;
+            if (at_rule.name.eqlAscii("namespace")) {
+                if (!self.declarations_allowed) return false;
+                const decl = parseNamespace_NOCHECK(at_rule) orelse return false;
+                try self.declare(allocator, decl);
+                return true;
+            }
+            // This make namespace declarations still allowed.
+            if (at_rule.name.eqlAscii("charset") or at_rule.name.eqlAscii("import")) return false;
+        }
+        self.declarations_allowed = false;
+        return false;
+    }
+
+    fn declare(self: *Context, allocator: std.mem.Allocator, declaration: Declaration) std.mem.Allocator.Error!void {
+        const prefix = declaration.prefix orelse {
+            self.default_namespace = declaration.name;
+            return;
+        };
+        for (self.bindings.items) |*binding| {
+            if (binding.prefix.eql(prefix)) {
+                binding.name = declaration.name;
+                return;
+            }
+        }
+        try self.bindings.append(allocator, .{ .prefix = prefix, .name = declaration.name });
+    }
+
+    pub fn lookup(self: *const Context, prefix: String) ?String {
+        for (self.bindings.items) |binding| {
+            if (binding.prefix.eql(prefix)) return binding.name;
+        }
+        return null;
+    }
+
+    pub fn resolve(self: *const Context, prefix: Prefix, unprefixed: Resolved) error{UndeclaredPrefix}!Resolved {
+        return switch (prefix) {
+            .omitted => unprefixed,
+            .none => .none,
+            .any => .any,
+            .named => |name| Resolved.fromName(self.lookup(name) orelse return error.UndeclaredPrefix),
+        };
+    }
+};

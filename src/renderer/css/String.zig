@@ -20,6 +20,28 @@ pub inline fn fromDecoded(code_points: []const u21) String {
     return .{ .value = .{ .owned = code_points } };
 }
 
+/// Case-sensitive equality, including escaped versus UTF-8 source names.
+pub fn eql(self: String, other: String) bool {
+    return switch (self.value) {
+        .borrowed => |bytes| switch (other.value) {
+            .borrowed => |right| std.mem.eql(u8, bytes, right),
+            .owned => |right| eqlDecoded(bytes, right),
+        },
+        .owned => |code_points| switch (other.value) {
+            .borrowed => |right| eqlDecoded(right, code_points),
+            .owned => |right| std.mem.eql(u21, code_points, right),
+        },
+    };
+}
+
+fn eqlDecoded(bytes: []const u8, code_points: []const u21) bool {
+    var iterator = std.unicode.Utf8Iterator{ .bytes = bytes, .i = 0 };
+    for (code_points) |cp| {
+        if ((iterator.nextCodepoint() orelse return false) != cp) return false;
+    }
+    return iterator.nextCodepoint() == null;
+}
+
 pub fn eqlAscii(self: String, expected: []const u8) bool {
     return switch (self.value) {
         .borrowed => |bytes| std.ascii.eqlIgnoreCase(bytes, expected),

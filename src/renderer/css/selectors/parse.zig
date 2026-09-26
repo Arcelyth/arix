@@ -15,6 +15,34 @@ pub const Context = struct {
     namespaces: *const namespace.Context = &.{},
 };
 
+pub fn parseSelectorList(allocator: std.mem.Allocator, input: *Stream, context: Context) !?SelectorList {
+    return parseList(allocator, input, .{}, context);
+}
+
+pub fn parseRealSelectorList(allocator: std.mem.Allocator, input: *Stream, context: Context) !?SelectorList {
+    return parseList(allocator, input, .{ .real = true }, context);
+}
+
+pub fn parseRelativeSelectorList(allocator: std.mem.Allocator, input: *Stream, context: Context) !?SelectorList {
+    return parseList(allocator, input, .{ .relative = true }, context);
+}
+
+pub fn parseRelativeRealSelectorList(allocator: std.mem.Allocator, input: *Stream, context: Context) !?SelectorList {
+    return parseList(allocator, input, .{ .relative = true, .real = true }, context);
+}
+
+pub fn parseCompoundSelectorList(allocator: std.mem.Allocator, input: *Stream, context: Context) !?SelectorList {
+    return parseList(allocator, input, .{ .kind = .simple, .real = true }, context);
+}
+
+pub fn parseSimpleSelectorList(allocator: std.mem.Allocator, input: *Stream, context: Context) !?SelectorList {
+    return parseList(allocator, input, .{ .kind = .simple, .real = true }, context);
+}
+
+pub fn parseForgivingSelectorList(allocator: std.mem.Allocator, input: *Stream, context: Context) !?SelectorList {
+    return parseList(allocator, input, .{ .real = true, .forgiving = true }, context);
+}
+
 pub fn parseList(allocator: std.mem.Allocator, input: *Stream, comptime mode: Mode, context: Context) !?SelectorList {
     const start = input.index;
     return consumeList(allocator, input, mode, context) catch |err| {
@@ -91,7 +119,7 @@ fn isValidSelector(components: []const Component, namespaces: *const namespace.C
             };
             _ = namespaces.resolve(prefix, .any) catch return false;
         },
-        else => {}
+        else => {},
     };
     return true;
 }

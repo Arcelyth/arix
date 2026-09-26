@@ -220,6 +220,5 @@ inline fn advance(self: *Parser) void {
 }
 
 inline fn isToken(self: *const Parser, comptime tag: std.meta.Tag(PreservedToken)) bool {
-    const tk = peekToken(self.input) orelse return false;
-    return tk.* == tag;
+    return self.input.isToken(tag);
 }

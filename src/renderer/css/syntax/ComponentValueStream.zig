@@ -1,5 +1,6 @@
 const ComponentValueStream = @This();
 
+const std = @import("std");
 const String = @import("../String.zig");
 const ComponentValue = @import("parsing_results.zig").ComponentValue;
 const PreservedToken = @import("parsing_results.zig").PreservedToken;
@@ -65,4 +66,9 @@ pub inline fn consumeDelim(self: *ComponentValueStream, cp: u21) bool {
     if (!isDelimAt(self, 0, cp)) return false;
     self.advance();
     return true;
+}
+
+pub inline fn isToken(self: *const ComponentValueStream, comptime tag: std.meta.Tag(PreservedToken)) bool {
+    const tk = self.peekToken() orelse return false;
+    return tk.* == tag;
 }

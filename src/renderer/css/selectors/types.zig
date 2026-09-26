@@ -95,4 +95,5 @@ pub const Mode = struct {
     kind: enum { complex, compound, simple } = .complex,
     real: bool = false,
     relative: bool = false,
+    forgiving: bool = false,
 };

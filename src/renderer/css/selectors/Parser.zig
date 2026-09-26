@@ -14,7 +14,9 @@ const Component = types.ComplexSelector.Component;
 const Combinator = types.Combinator;
 const SimpleSelector = types.SimpleSelector;
 const AttributeSelector = types.AttributeSelector;
+const PseudoClassSelector = types.PseudoClassSelector;
 const namespace = @import("../namespace.zig");
+const grammar = @import("../syntax/grammar.zig");
 
 allocator: std.mem.Allocator,
 input: *Stream,
@@ -106,8 +108,31 @@ pub fn consumeType(self: *Parser) !SimpleSelector {
 }
 
 pub fn consumePseudo(self: *Parser) !Component {
-    _ = self;
-    @panic("TODO");
+    self.advance(); // colon
+    var element = self.isToken(.colon);
+    if (element) self.advance();
+    const value = self.input.consume() orelse return error.InvalidSelector;
+    const pseudo: PseudoClassSelector = switch (value.*) {
+        .preserved_token => |tk| blk: {
+            if (tk != .ident) return error.InvalidSelector;
+            // Legacy names can never be reinterpreted as pseudo-classes.
+            element = element or isLegacyPseudoElement(tk.ident);
+            break :blk .{ .name = tk.ident };
+        },
+        .function => |function| blk: {
+            if (!grammar.parseAnyValue(function.value)) return error.InvalidSelector;
+            break :blk .{ .name = function.name, .arguments = function.value };
+        },
+        else => return error.InvalidSelector,
+    };
+    if (element) return .{ .pseudo_element = .{ .name = pseudo.name, .arguments = pseudo.arguments } };
+
+    return .{ .simple = .{ .pseudo_class = pseudo } };
+}
+
+fn isLegacyPseudoElement(name: String) bool {
+    return name.eqlAscii("before") or name.eqlAscii("after") or
+        name.eqlAscii("first-line") or name.eqlAscii("first-letter");
 }
 
 // Pseudo-classes are handled with pseudo-elements by consumePseudo.

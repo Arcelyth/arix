@@ -99,14 +99,9 @@ pub fn consumeCombinator(self: *Parser) ?Combinator {
 
 pub fn consumeType(self: *Parser) !SimpleSelector {
     const qual = namespace.consumeWildcardName(self.input) orelse return null;
-    if (qual.name) |name| return .{
-        .type_selector = .{
-            .namespace = qual.namespace, 
-            .name = name
-        }
-    };
+    if (qual.name) |name| return .{ .type_selector = .{ .namespace = qual.namespace, .name = name } };
 
-    return .{.universal = qual.namespace};
+    return .{ .universal = qual.namespace };
 }
 
 pub fn consumePseudo(self: *Parser) !Component {
@@ -114,9 +109,36 @@ pub fn consumePseudo(self: *Parser) !Component {
     @panic("TODO");
 }
 
+// Pseudo-classes are handled with pseudo-elements by consumePseudo.
 pub fn consumeSubclass(self: *Parser) !SimpleSelector {
-    _ = self;
-    @panic("TODO");
+    var input = self.input;
+    const value = input.peek() orelse return null;
+    if (value.* == .simple_block) {
+        if (value.simple_block.associated_token != .left_bracket) return null;
+        const attr = consumeAttribute(value.simple_block.value);
+        input.advance();
+        return .{ .attribute = attr };
+    }
+    const tk = peekToken(input) orelse return null;
+    switch (tk.*) {
+        .hash => |hash| {
+            if (hash.type_flag != .id) return error.InvalidSelector;
+            input.advance();
+            return .{ .id = hash.value };
+        },
+        .delim => |cp| if (cp == '.') {
+            input.advance();
+            return .{
+                .class = input.consumeIdent() orelse return error.InvalidSelector,
+            };
+        },
+        else => {},
+    }
+    return null;
+}
+
+fn consumeAttribute(values: []const ComponentValue) types.AttributeSelector {
+    _ = values;
 }
 
 fn peekToken(self: *const Parser) ?*const PreservedToken {

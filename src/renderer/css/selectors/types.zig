@@ -5,10 +5,36 @@ const String = @import("../String.zig");
 const ComponentValue = @import("../syntax/parsing_results.zig").ComponentValue;
 const namespace = @import("../namespace.zig");
 
+/// Represents `[attr]` or `[attr operator value modifier]`.
+pub const AttributeSelector = struct {
+    pub const Matcher = enum {
+        equal, // `=`
+        includes, // `~=`
+        dash_match, // `|=`
+        prefix, // `^=`
+        suffix, // `$=`
+        substring, // `*=`
+    };
+
+    pub const Modifier = enum {
+        omitted,
+        insensitive, // `i`
+        sensitive, // `s`
+    };
+
+    name: namespace.QualifiedName,
+
+    comparison: ?struct {
+        matcher: Matcher,
+        value: String,
+        modifier: Modifier = .omitted,
+    } = null,
+};
+
 pub const SimpleSelector = union(enum) {
     type_selector: namespace.QualifiedName,
     universal: namespace.Prefix,
-    attribute: []const ComponentValue,
+    attribute: AttributeSelector,
     class: String,
     id: String,
     pseudo_class: PseudoClassSelector,

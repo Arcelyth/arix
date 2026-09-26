@@ -399,3 +399,16 @@ pub fn cloneIntoSelectedContent(self: *Element, selected_content: *Element) void
     Node.replaceAll(&document_fragment.node, selected_content.asNode());
     document.allocator.destroy(document_fragment);
 }
+
+pub fn parentElement(self: *const Element) ?*const Element {
+    const parent = self.node.parent orelse return null;
+    return if (parent.type_id == .DOM_Element) parent.downcast(Element) else null;
+}
+
+pub fn previousElement(self: *const Element) ?*const Element {
+    var sibling = self.node.prev_sibling;
+    while (sibling) |node| : (sibling = node.prev_sibling) {
+        if (node.type_id == .DOM_Element) return node.downcast(Element);
+    }
+    return null;
+}

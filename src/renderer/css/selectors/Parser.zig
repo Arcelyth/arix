@@ -13,6 +13,7 @@ const Mode = types.Mode;
 const Component = types.ComplexSelector.Component;
 const Combinator = types.Combinator;
 const SimpleSelector = types.SimpleSelector;
+const AttributeSelector = types.AttributeSelector;
 const namespace = @import("../namespace.zig");
 
 allocator: std.mem.Allocator,
@@ -115,11 +116,11 @@ pub fn consumeSubclass(self: *Parser) !SimpleSelector {
     const value = input.peek() orelse return null;
     if (value.* == .simple_block) {
         if (value.simple_block.associated_token != .left_bracket) return null;
-        const attr = consumeAttribute(value.simple_block.value);
+        const attr = try consumeAttribute(value.simple_block.value);
         input.advance();
         return .{ .attribute = attr };
     }
-    const tk = peekToken(input) orelse return null;
+    const tk = self.peekToken() orelse return null;
     switch (tk.*) {
         .hash => |hash| {
             if (hash.type_flag != .id) return error.InvalidSelector;
@@ -137,8 +138,47 @@ pub fn consumeSubclass(self: *Parser) !SimpleSelector {
     return null;
 }
 
-fn consumeAttribute(values: []const ComponentValue) types.AttributeSelector {
-    _ = values;
+pub fn consumeAttribute(values: []const ComponentValue) !types.AttributeSelector {
+    var input = Stream.init(values);
+    input.discardWhitespace();
+    const name = namespace.consumeQualifiedName(&input, true) orelse return error.InvalidSelector;
+    var attr = AttributeSelector{ .name = name };
+    input.discardWhitespace();
+    if (input.empty()) return attr;
+    const matcher = input.peekToken() orelse return error.InvalidSelector;
+    if (matcher.* != .delim) return error.InvalidSelector;
+
+    // Handle Matcher.
+    const matcher_value: AttributeSelector.Matcher = switch (matcher.delim) {
+        '=' => .equal,
+        '~' => .includes,
+        '|' => .dash_match,
+        '^' => .prefix,
+        '$' => .suffix,
+        '*' => .substring,
+        else => return error.InvalidSelector,
+    };
+    input.advance();
+    if (matcher.delim != '=' and !input.consumeDelim('=')) return error.InvalidSelector;
+    input.discardWhitespace();
+    const value = input.peekToken() orelse return error.InvalidSelector;
+    const text = switch (value.*) {
+        .ident => value.ident,
+        .string => value.string,
+        else => return error.InvalidSelector,
+    };
+    input.advance();
+    input.discardWhitespace();
+
+    // Handle Modifier.
+    var modifier_value: AttributeSelector.Modifier = .omitted;
+    if (input.consumeIdent()) |modifier| {
+        modifier_value = if (modifier.eqlAscii("i")) .insensitive else if (modifier.eqlAscii("s")) .sensitive else return error.InvalidSelector;
+        input.discardWhitespace();
+    }
+    if (!input.empty()) return error.InvalidSelector;
+    attr.comparison = .{ .matcher = matcher_value, .value = text, .modifier = modifier_value };
+    return attr;
 }
 
 fn peekToken(self: *const Parser) ?*const PreservedToken {

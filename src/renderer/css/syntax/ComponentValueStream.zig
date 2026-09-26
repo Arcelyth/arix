@@ -2,6 +2,7 @@ const ComponentValueStream = @This();
 
 const String = @import("../String.zig");
 const ComponentValue = @import("parsing_results.zig").ComponentValue;
+const PreservedToken = @import("parsing_results.zig").PreservedToken;
 
 values: []const ComponentValue,
 index: usize = 0,
@@ -14,6 +15,11 @@ pub fn init(values: []const ComponentValue) ComponentValueStream {
 /// Component values contain no EOF variant; null denotes exhaustion.
 pub inline fn peek(self: *const ComponentValueStream) ?*const ComponentValue {
     return if (self.index < self.values.len) &self.values[self.index] else null;
+}
+
+pub inline fn peekToken(self: *const ComponentValueStream) ?*const PreservedToken {
+    const value = self.peek() orelse return null;
+    return if (value.* == .preserved_token) &value.preserved_token else null;
 }
 
 pub inline fn consume(self: *ComponentValueStream) ?*const ComponentValue {
@@ -53,4 +59,10 @@ pub inline fn isDelimAt(self: *const ComponentValueStream, offset: usize, cp: u2
     if (offset >= self.values.len - self.index) return false;
     const value = self.values[self.index + offset];
     return value == .preserved_token and value.preserved_token == .delim and value.preserved_token.delim == cp;
+}
+
+pub inline fn consumeDelim(self: *ComponentValueStream, cp: u21) bool {
+    if (!isDelimAt(self, 0, cp)) return false;
+    self.advance();
+    return true;
 }

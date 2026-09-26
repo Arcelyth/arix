@@ -9,12 +9,24 @@ const ComplexSelector = types.ComplexSelector;
 const Component = ComplexSelector.Component;
 const Mode = types.Mode;
 const grammar = @import("../syntax/grammar.zig");
+const namespace = @import("../namespace.zig");
 
-pub fn parseList(allocator: std.mem.Allocator, input: *Stream, comptime mode: Mode) !?SelectorList {
-    return consumeList(allocator, input, mode);
+pub const Context = struct {
+    namespaces: *const namespace.Context = &.{},
+};
+
+pub fn parseList(allocator: std.mem.Allocator, input: *Stream, comptime mode: Mode, context: Context) !?SelectorList {
+    const start = input.index;
+    return consumeList(allocator, input, mode, context) catch |err| {
+        input.restore(start);
+        return switch (err) {
+            error.InvalidSelector => null,
+            else => |failure| failure,
+        };
+    };
 }
 
-pub fn consumeList(allocator: std.mem.Allocator, input: *Stream, comptime mode: Mode) !SelectorList {
+pub fn consumeList(allocator: std.mem.Allocator, input: *Stream, comptime mode: Mode, context: Context) !SelectorList {
     const list: std.ArrayList(ComplexSelector) = .empty;
     defer {
         for (list.items) |selector| selector.deinit(allocator);
@@ -42,7 +54,7 @@ pub fn consumeList(allocator: std.mem.Allocator, input: *Stream, comptime mode: 
                 if (!mode.forgiving) return error.InvalidSelector;
                 break :valid false;
             }
-            if (mode.forgiving) break :valid try isValidSelector(parser.components.items);
+            if (mode.forgiving) break :valid try isValidSelector(parser.components.items, context.namespaces);
             break :valid true;
         };
         if (valid) {
@@ -63,7 +75,23 @@ pub fn consumeList(allocator: std.mem.Allocator, input: *Stream, comptime mode: 
     };
 }
 
-fn isValidSelector(components: []const Component) bool {
-    _ = components;
-    @panic("TODO:");
+// https://www.w3.org/TR/selectors-4/#invalid
+fn isValidSelector(components: []const Component, namespaces: *const namespace.Context) bool {
+    if (components.len == 0) return false;
+    for (components) |*component| switch (component.*) {
+        .simple => |simple| {
+            const prefix = switch (simple) {
+                .type_selector => |name| name.namespace,
+                .universal => |prefix| prefix,
+                .attribute => |attribute| attribute.name.namespace,
+                .id, .class => continue,
+                // Recognizing the generic :name(args) syntax is not support
+                // for a pseudo-selector's own syntax and contextual rules.
+                .pseudo_class => return false,
+            };
+            _ = namespaces.resolve(prefix, .any) catch return false;
+        },
+        else => {}
+    };
+    return true;
 }

@@ -99,18 +99,35 @@ pub fn prefixLength(self: String, bytes: []const u8, mode: Case) ?usize {
     }
 }
 
-pub fn isSuffixOf(self: String, bytes: []const u8, mode: Case) bool {
-    _ = self;
-    _ = bytes;
-    _ = mode;
-    @panic("TODO");
+pub fn isSuffixOfWithCase(self: String, bytes: []const u8, mode: Case) bool {
+    const length = self.utf8Len();
+    if (length > bytes.len) return false;
+    return self.eqlUtf8WithCase(bytes[bytes.len - length ..], mode);
 }
 
-pub fn isSubstringOf(self: String, bytes: []const u8, mode: Case) bool {
-    _ = self;
-    _ = bytes;
-    _ = mode;
-    @panic("TODO");
+pub fn isSubstringOfWithCase(self: String, bytes: []const u8, mode: Case) bool {
+    if (mode == .exact and self.value == .borrowed)
+        return std.mem.indexOf(u8, bytes, self.value.borrowed) != null;
+
+    const length = self.utf8Len();
+    if (length == 0) return true;
+    if (length > bytes.len) return false;
+    for (0..bytes.len - length + 1) |start| {
+        if (bytes[start] & 0xC0 == 0x80) continue;
+        if (self.prefixLength(bytes[start..], mode) != null) return true;
+    }
+    return false;
+}
+
+pub fn utf8Len(self: String) usize {
+    return switch (self.value) {
+        .borrowed => |bytes| bytes.len,
+        .owned => |points| blk: {
+            var length: usize = 0;
+            for (points) |cp| length += std.unicode.utf8CodepointSequenceLength(cp) catch unreachable;
+            break :blk length;
+        },
+    };
 }
 
 pub fn startsWith(self: String, prefix: []const u8) bool {
@@ -180,5 +197,21 @@ test "CSS String: comparisons" {
         try testing.expect(!string.eqlUtf8WithCase("éA", .lower_self));
         try testing.expectEqual(@as(?usize, 3), string.prefixLength("éAb", .exact));
         try testing.expect(string.prefixLength("é", .exact) == null);
+        try testing.expect(string.isSuffixOfWithCase("xéa", .ignore_ascii));
+        try testing.expect(!string.isSuffixOfWithCase("éAx", .exact));
+        try testing.expect(string.isSubstringOfWithCase("xéAy", .exact));
+        try testing.expect(string.isSubstringOfWithCase("xéay", .ignore_ascii));
+        try testing.expect(!string.isSubstringOfWithCase("xÉay", .ignore_ascii));
     }
+    for ([_]String{ fromSource(""), fromDecoded(&.{}) }) |empty| {
+        try testing.expect(empty.eqlUtf8WithCase("", .exact));
+        try testing.expect(!empty.eqlUtf8WithCase("x", .exact));
+        try testing.expectEqual(@as(?usize, 0), empty.prefixLength("x", .exact));
+        try testing.expect(empty.isSuffixOfWithCase("x", .exact));
+        try testing.expect(empty.isSubstringOfWithCase("", .ignore_ascii));
+        try testing.expect(empty.isSubstringOfWithCase("x", .exact));
+    }
+    // A byte-length suffix can start inside a multibyte code point.
+    try testing.expect(!fromDecoded(&.{'a'}).isSuffixOfWithCase("é", .exact));
+    try testing.expect(fromDecoded(&.{0x1F600}).isSubstringOfWithCase("x😀y", .exact));
 }

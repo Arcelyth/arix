@@ -99,6 +99,20 @@ pub fn prefixLength(self: String, bytes: []const u8, mode: Case) ?usize {
     }
 }
 
+pub fn isSuffixOf(self: String, bytes: []const u8, mode: Case) bool {
+    _ = self;
+    _ = bytes;
+    _ = mode;
+    @panic("TODO");
+}
+
+pub fn isSubstringOf(self: String, bytes: []const u8, mode: Case) bool {
+    _ = self;
+    _ = bytes;
+    _ = mode;
+    @panic("TODO");
+}
+
 pub fn startsWith(self: String, prefix: []const u8) bool {
     return switch (self.value) {
         .borrowed => |bytes| std.mem.startsWith(u8, bytes, prefix),

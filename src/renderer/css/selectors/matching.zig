@@ -73,7 +73,7 @@ pub fn matchCompound(components: []const Component, element: *const Element, con
 pub fn matchSimple(selector: SimpleSelector, element: *const Element, context: Context) bool {
     return switch (selector) {
         .type_selector => |name| matchNamespace(name.namespace, element.ns, context.defaultNamespace(), context) and
-            name.name.eqlUtf8WithCase(element.local_name.slice(), if (element.isHtml()) .selector_lower else .exact),
+            name.name.eqlUtf8WithCase(element.local_name.slice(), if (element.isHtml()) .lower_self else .exact),
         .universal => |prefix| matchNamespace(prefix, element.ns, context.defaultNamespace(), context),
         else => matchSubclass(selector, element, context),
     };
@@ -199,3 +199,50 @@ const insensitive_attributes = std.StaticStringMap(void).initComptime(.{
     .{"valuetype"},
     .{"vlink"},
 });
+
+test "CSS selector matching: matching a selector list" {
+    const testing = std.testing;
+    const Document = @import("../../dom/Document.zig");
+    const Attr = @import("../../dom/Attr.zig");
+    const LocalName = @import("local_name").LocalName;
+
+    const document = Document.init(testing.allocator);
+    defer document.destroy(testing.allocator);
+    document.ty = .DT_Html;
+
+    // <div><span class="notice active"></span><span></span></div>
+    const div = Element.create(document, try LocalName.fromSlice("div"), .NS_Html, null, null, false, null);
+    document.node.appendChild(div.asNode());
+    const span = Element.create(document, try LocalName.fromSlice("span"), .NS_Html, null, null, false, null);
+    div.node.appendChild(span.asNode());
+    const other = Element.create(document, try LocalName.fromSlice("span"), .NS_Html, null, null, false, null);
+    div.node.appendChild(other.asNode());
+    var attr: Attr = .{
+        .ns = null,
+        .prefix = null,
+        .local_name = try LocalName.fromSlice("class"),
+        .value = try @import("strale").StraleUtf8Global.initSlice("notice active"),
+        .element = span,
+    };
+    span.attrs.append(attr) catch |err| {
+        attr.deinit();
+        return err;
+    };
+
+    // p, DIV > span.active
+    const selectors: SelectorList = .{ .selectors = &.{
+        .{ .components = &.{
+            .{ .simple = .{ .type_selector = .{ .name = String.fromSource("p") } } },
+        } },
+        .{ .components = &.{
+            .{ .simple = .{ .type_selector = .{ .name = String.fromSource("DIV") } } },
+            .{ .combinator = .child },
+            .{ .simple = .{ .type_selector = .{ .name = String.fromSource("span") } } },
+            .{ .simple = .{ .class = String.fromSource("active") } },
+        } },
+    } };
+    try testing.expect(matchSelectorList(&selectors, span, .{}));
+    try testing.expect(!matchSelectorList(&selectors, other, .{}));
+    try testing.expect(!matchSelectorList(&selectors, div, .{}));
+    try testing.expect(!matchClass(String.fromSource("act"), span));
+}

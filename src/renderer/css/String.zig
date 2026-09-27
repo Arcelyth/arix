@@ -10,7 +10,7 @@ const std = @import("std");
 pub const Case = enum {
     exact,
     ignore_ascii,
-    /// Lowercase this string's ASCII letters, but leave the other string intact.
+    /// Lowercase only `self` during comparison, leaving the other string intact.
     lower_self,
 };
 
@@ -63,11 +63,40 @@ pub fn eqlAscii(self: String, expected: []const u8) bool {
     };
 }
 
-pub fn eqlUtf8(self: String, bytes: []const u8, mode: Case) bool {
-    _ = self;
-    _ = bytes;
-    _ = mode;
-    @panic("TODO");
+pub fn eqlUtf8WithCase(self: String, bytes: []const u8, mode: Case) bool {
+    if (mode == .exact and self.value == .borrowed)
+        return std.mem.eql(u8, self.value.borrowed, bytes);
+    return (self.prefixLength(bytes, mode) orelse return false) == bytes.len;
+}
+
+/// Match this string at the start of `bytes`, returning the number of UTF-8
+/// bytes matched, or null on mismatch. An empty string matches zero bytes.
+pub fn prefixLength(self: String, bytes: []const u8, mode: Case) ?usize {
+    switch (self.value) {
+        .borrowed => |expected| {
+            if (expected.len > bytes.len) return null;
+            if (mode == .exact) return if (std.mem.startsWith(u8, bytes, expected)) expected.len else null;
+            for (expected, bytes[0..expected.len]) |left, right| {
+                const rhs = if (mode == .ignore_ascii) std.ascii.toLower(right) else right;
+                if (std.ascii.toLower(left) != rhs) return null;
+            }
+            return expected.len;
+        },
+        .owned => |points| {
+            var cursor: usize = 0;
+            for (points) |cp| {
+                if (cursor == bytes.len) return null;
+                const length = std.unicode.utf8ByteSequenceLength(bytes[cursor]) catch return null;
+                if (length > bytes.len - cursor) return null;
+                const right = std.unicode.utf8Decode(bytes[cursor..][0..length]) catch return null;
+                const left = if (mode != .exact and cp <= 0x7F) std.ascii.toLower(@as(u8, @intCast(cp))) else cp;
+                const rhs = if (mode == .ignore_ascii and right <= 0x7F) std.ascii.toLower(@as(u8, @intCast(right))) else right;
+                if (left != rhs) return null;
+                cursor += length;
+            }
+            return cursor;
+        },
+    }
 }
 
 pub fn startsWith(self: String, prefix: []const u8) bool {
@@ -124,4 +153,18 @@ pub fn codePoint(self: *const String, index: usize) ?u21 {
         .borrowed => |bytes| if (index < bytes.len and bytes[index] < 0x80) bytes[index] else null,
         .owned => |code_points| if (index < code_points.len) code_points[index] else null,
     };
+}
+
+test "CSS String: comparisons" {
+    const testing = std.testing;
+    for ([_]String{ fromSource("éA"), fromDecoded(&.{ 0xE9, 'A' }) }) |string| {
+        try testing.expect(string.eqlUtf8WithCase("éA", .exact));
+        try testing.expect(!string.eqlUtf8WithCase("éa", .exact));
+        try testing.expect(string.eqlUtf8WithCase("éa", .ignore_ascii));
+        try testing.expect(!string.eqlUtf8WithCase("Éa", .ignore_ascii));
+        try testing.expect(string.eqlUtf8WithCase("éa", .lower_self));
+        try testing.expect(!string.eqlUtf8WithCase("éA", .lower_self));
+        try testing.expectEqual(@as(?usize, 3), string.prefixLength("éAb", .exact));
+        try testing.expect(string.prefixLength("é", .exact) == null);
+    }
 }

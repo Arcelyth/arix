@@ -70,7 +70,7 @@ pub fn matchCompound(components: []const Component, element: *const Element, con
 pub fn matchSimple(selector: types.SimpleSelector, element: *const Element, context: Context) bool {
     return switch (selector) {
         .type_selector => |name| matchNamespace(name.namespace, element.ns, context.defaultNamespace(), context) and
-            name.name.eqlUtf8(element.local_name.slice(), if (element.isHtml()) .selector_lower else .exact),
+            name.name.eqlUtf8WithCase(element.local_name.slice(), if (element.isHtml()) .selector_lower else .exact),
         .universal => |prefix| matchNamespace(prefix, element.ns, context.defaultNamespace(), context),
         else => matchSubclass(selector, element, context),
     };
@@ -90,7 +90,7 @@ pub fn matchId(value: String, element: *const Element) bool {
     if (value.len() == 0) return false;
     const attr = element.attrs.getFromNamespaceAndLocalName(null, .id) orelse return false;
     const mode: Case = if (element.node.node_doc.mode == .DM_Quirks) .ignore_ascii else .exact;
-    return value.eqlUtf8(attr.value.slice(), mode);
+    return value.eqlUtf8WithCase(attr.value.slice(), mode);
 }
 
 pub fn matchClass(value: String, element: *const Element) bool {
@@ -103,7 +103,7 @@ pub fn matchClass(value: String, element: *const Element) bool {
 fn containsWord(expected: String, actual: []const u8, mode: Case) bool {
     if (expected.len() == 0) return false;
     var words = std.mem.tokenizeAny(u8, actual, "\t\n\x0C\r ");
-    while (words.next()) |word| if (expected.eqlUtf8(word, mode)) return true;
+    while (words.next()) |word| if (expected.eqlUtf8WithCase(word, mode)) return true;
     return false;
 }
 

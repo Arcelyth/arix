@@ -2,8 +2,11 @@
 //! See https://www.w3.org/TR/selectors-4/#structure
 const std = @import("std");
 const String = @import("../String.zig");
-const ComponentValue = @import("../syntax/parsing_results.zig").ComponentValue;
+const syntax = @import("../syntax/parsing_results.zig");
+const ComponentValue = syntax.ComponentValue;
+const QualifiedRule = syntax.QualifiedRule;
 const namespace = @import("../namespace.zig");
+const Specificity = @import("Specificity.zig");
 
 /// Represents `[attr]` or `[attr operator value modifier]`.
 pub const AttributeSelector = struct {
@@ -97,4 +100,9 @@ pub const Mode = struct {
     real: bool = false,
     relative: bool = false,
     forgiving: bool = false,
+};
+
+pub const MatchedRule = struct {
+    rule: QualifiedRule, 
+    specificity: Specificity, 
 };

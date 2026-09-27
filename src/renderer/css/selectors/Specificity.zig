@@ -8,6 +8,8 @@ const Parser = @import("Parser.zig");
 const Stream = @import("../syntax/ComponentValueStream.zig");
 const ComponentValue = @import("../syntax/parsing_results.zig").ComponentValue;
 
+pub const Error = std.mem.Allocator.Error || error{InvalidSelector};
+
 /// Count of ID selectors.
 a: u32 = 0,
 /// Count of class selectors, attribute selectors, and pseudo-classes.
@@ -32,7 +34,7 @@ pub fn add(self: *Specificity, other: Specificity) void {
 /// Calculate a valid selector's specificity, independently of which element matches.
 /// Selector validity is the caller's responsibility. The allocator is used only
 /// to parse selector arguments still stored as component values in the AST.
-pub fn calculate(allocator: std.mem.Allocator, selector: types.ComplexSelector) !Specificity {
+pub fn calculate(allocator: std.mem.Allocator, selector: types.ComplexSelector) Error!Specificity {
     var result: Specificity = .{};
     for (selector.components) |component| switch (component) {
         .combinator => {},
@@ -48,7 +50,7 @@ pub fn calculate(allocator: std.mem.Allocator, selector: types.ComplexSelector) 
     return result;
 }
 
-fn pseudoClass(allocator: std.mem.Allocator, pseudo: types.PseudoClassSelector) !Specificity {
+pub fn pseudoClass(allocator: std.mem.Allocator, pseudo: types.PseudoClassSelector) !Specificity {
     const arguments = pseudo.arguments orelse return .{ .b = 1 };
     if (pseudo.name.eqlAscii("where")) return .{};
     if (pseudo.name.eqlAscii("is") or pseudo.name.eqlAscii("not") or pseudo.name.eqlAscii("has"))
@@ -71,7 +73,7 @@ fn pseudoClass(allocator: std.mem.Allocator, pseudo: types.PseudoClassSelector) 
 }
 
 /// Return the maximum specificity among the selector arguments.
-fn maxArgument(allocator: std.mem.Allocator, values: []const ComponentValue, relative: bool) !Specificity {
+fn maxArgument(allocator: std.mem.Allocator, values: []const ComponentValue, relative: bool) Error!Specificity {
     var input = Stream.init(values);
     var parser = Parser.init(allocator, &input);
     defer parser.deinit();
@@ -94,6 +96,42 @@ fn maxArgument(allocator: std.mem.Allocator, values: []const ComponentValue, rel
         if (!input.isToken(.comma)) return error.InvalidSelector;
         input.advance();
         input.discardWhitespace();
+    }
+}
+
+test "CSS specificity: section 15 examples" {
+    const Buffer = @import("../syntax/Buffer.zig");
+    const SyntaxParser = @import("../syntax/Parser.zig");
+    const parse = @import("parse.zig");
+    // These cases from spec.
+    const cases = .{
+        .{ "*", Specificity{} },
+        .{ "LI", Specificity{ .c = 1 } },
+        .{ "UL LI", Specificity{ .c = 2 } },
+        .{ "UL OL+LI", Specificity{ .c = 3 } },
+        .{ "H1 + *[REL=up]", Specificity{ .b = 1, .c = 1 } },
+        .{ "UL OL LI.red", Specificity{ .b = 1, .c = 3 } },
+        .{ "LI.red.level", Specificity{ .b = 2, .c = 1 } },
+        .{ "#x34y", Specificity{ .a = 1 } },
+        .{ "#s12:not(FOO)", Specificity{ .a = 1, .c = 1 } },
+        .{ ".foo :is(.bar, #baz)", Specificity{ .a = 1, .b = 1 } },
+        .{ ":is(em, #foo)", Specificity{ .a = 1 } },
+        .{ ".qux:where(em, #foo#bar#baz)", Specificity{ .b = 1 } },
+        .{ ":nth-child(even of li, .item)", Specificity{ .b = 2 } },
+        .{ ":not(em, strong#foo)", Specificity{ .a = 1, .c = 1 } },
+    };
+    inline for (cases) |case| {
+        var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+        defer arena.deinit();
+        const allocator = arena.allocator();
+        var buffer = try Buffer.init(allocator, case[0]);
+        defer buffer.deinit();
+        var token_stream = buffer.stream(allocator);
+        defer token_stream.deinit();
+        var syntax = SyntaxParser.init(allocator, &token_stream);
+        var input = Stream.init(try syntax.parseListOfComponentValues());
+        const list = (try parse.parseSelectorList(allocator, &input, .{})).?;
+        try std.testing.expectEqual(case[1], try calculate(allocator, list.selectors[0]));
     }
 }
 

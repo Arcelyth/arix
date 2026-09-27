@@ -412,3 +412,7 @@ pub fn previousElement(self: *const Element) ?*const Element {
     }
     return null;
 }
+
+pub inline fn isHtml(self: *const Element) bool {
+    return self.ns == .NS_Html and self.node.node_doc.ty == .DT_Html;
+}

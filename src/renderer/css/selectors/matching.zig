@@ -1,6 +1,7 @@
 const std = @import("std");
 const types = @import("types.zig");
 const String = @import("../String.zig");
+const Case = String.Case;
 const namespace = @import("../namespace.zig");
 const Element = @import("../../dom/Element.zig");
 const Node = @import("../../dom/Node.zig");
@@ -67,9 +68,50 @@ pub fn matchCompound(components: []const Component, element: *const Element, con
 }
 
 pub fn matchSimple(selector: types.SimpleSelector, element: *const Element, context: Context) bool {
+    return switch (selector) {
+        .type_selector => |name| matchNamespace(name.namespace, element.ns, context.defaultNamespace(), context) and
+            name.name.eqlUtf8(element.local_name.slice(), if (element.isHtml()) .selector_lower else .exact),
+        .universal => |prefix| matchNamespace(prefix, element.ns, context.defaultNamespace(), context),
+        else => matchSubclass(selector, element, context),
+    };
+}
+
+pub fn matchSubclass(selector: types.SimpleSelector, element: *const Element, context: Context) bool {
+    return switch (selector) {
+        .id => |value| matchId(value, element),
+        .class => |value| matchClass(value, element),
+        .attribute => |attr| matchAttribute(attr, element, context),
+        .pseudo_class => @panic("TODO: pseudo-class matching"),
+        else => unreachable,
+    };
+}
+
+pub fn matchId(value: String, element: *const Element) bool {
+    if (value.len() == 0) return false;
+    const attr = element.attrs.getFromNamespaceAndLocalName(null, .id) orelse return false;
+    const mode: Case = if (element.node.node_doc.mode == .DM_Quirks) .ignore_ascii else .exact;
+    return value.eqlUtf8(attr.value.slice(), mode);
+}
+
+pub fn matchClass(value: String, element: *const Element) bool {
+    const attr = element.attrs.getFromNamespaceAndLocalName(null, .class) orelse return false;
+    const mode: Case = if (element.node.node_doc.mode == .DM_Quirks) .ignore_ascii else .exact;
+    return containsWord(value, attr.value.slice(), mode);
+}
+
+/// Check if attribute value like "a b c" contains b.
+fn containsWord(expected: String, actual: []const u8, mode: Case) bool {
+    if (expected.len() == 0) return false;
+    var words = std.mem.tokenizeAny(u8, actual, "\t\n\x0C\r ");
+    while (words.next()) |word| if (expected.eqlUtf8(word, mode)) return true;
+    return false;
+}
+
+fn matchAttribute(selector: types.AttributeSelector, element: *const Element, context: Context) bool {
     _ = selector;
     _ = element;
     _ = context;
+    @panic("TODO");
 }
 
 pub fn matchNamespace(prefix: namespace.Prefix, actual: ?Namespace, unprefixed: namespace.Resolved, context: Context) bool {

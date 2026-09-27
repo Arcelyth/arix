@@ -5,6 +5,7 @@ const std = @import("std");
 const ln = @import("local_name");
 const LocalName = ln.LocalName;
 const LocalTag = ln.LocalTag;
+const Namespace = @import("namespace.zig").Namespace;
 
 allocator: std.mem.Allocator,
 data: std.ArrayList(Attr),
@@ -31,6 +32,14 @@ pub inline fn isEmpty(self: *const Attrs) bool {
 pub fn getFromLocalName(self: *const Attrs, target: LocalTag) ?*Attr {
     for (self.data.items) |*attr| {
         if (attr.local_name.is(target)) return attr;
+    }
+    return null;
+}
+
+/// Passing `ns` null means match only attributes with no namespace.
+pub fn getFromNamespaceAndLocalName(self: *const Attrs, ns: ?Namespace, target: LocalTag) ?*Attr {
+    for (self.data.items) |*attr| {
+        if (attr.ns == ns and attr.local_name.is(target)) return attr;
     }
     return null;
 }

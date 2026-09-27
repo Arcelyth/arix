@@ -7,6 +7,13 @@ const String = @This();
 
 const std = @import("std");
 
+pub const Case = enum {
+    exact,
+    ignore_ascii,
+    /// Lowercase this string's ASCII letters, but leave the other string intact.
+    lower_self,
+};
+
 value: union(enum) {
     borrowed: []const u8,
     owned: []const u21,
@@ -54,6 +61,13 @@ pub fn eqlAscii(self: String, expected: []const u8) bool {
             break :blk true;
         },
     };
+}
+
+pub fn eqlUtf8(self: String, bytes: []const u8, mode: Case) bool {
+    _ = self;
+    _ = bytes;
+    _ = mode;
+    @panic("TODO");
 }
 
 pub fn startsWith(self: String, prefix: []const u8) bool {

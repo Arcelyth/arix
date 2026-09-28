@@ -89,8 +89,8 @@ fn serializeNode(out: *std.ArrayList(u8), allocator: std.mem.Allocator, node: *N
                     try out.append(allocator, '\n');
                     try appendIndent(out, allocator, depth + 1);
                     try out.appendSlice(allocator, "content");
-                    var content_child = contents.node.first_child;
-                    while (content_child) |item| : (content_child = item.next_sibling)
+                    var content_child = contents.node.first_child();
+                    while (content_child) |item| : (content_child = item.next_sibling())
                         try serializeNode(out, allocator, item, depth + 2);
                 }
             }
@@ -122,16 +122,16 @@ fn serializeNode(out: *std.ArrayList(u8), allocator: std.mem.Allocator, node: *N
         else => return,
     }
 
-    var child = node.first_child;
-    while (child) |item| : (child = item.next_sibling)
+    var child = node.first_child();
+    while (child) |item| : (child = item.next_sibling())
         try serializeNode(out, allocator, item, depth + 1);
 }
 
 fn serializeDocument(allocator: std.mem.Allocator, document: *Node) ![]u8 {
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(allocator);
-    var child = document.first_child;
-    while (child) |item| : (child = item.next_sibling)
+    var child = document.first_child();
+    while (child) |item| : (child = item.next_sibling())
         try serializeNode(&out, allocator, item, 0);
     return try out.toOwnedSlice(allocator);
 }

@@ -120,7 +120,7 @@ pub fn parseFragment(
     parser.tree_builder.resetInsertionModeAppropriately();
 
     var ancestor: ?*Node = context.asNode();
-    while (ancestor) |node| : (ancestor = node.parent) {
+    while (ancestor) |node| : (ancestor = node.parent()) {
         if (node.type_id != .DOM_Element) continue;
         const element = node.downcast(Element);
         if (element.ns == .NS_Html and element.local_name.is(.form)) {

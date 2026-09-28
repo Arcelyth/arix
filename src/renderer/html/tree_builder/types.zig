@@ -47,19 +47,19 @@ pub const InsertionLocation = union(enum) {
     pub fn getParent(self: *const InsertionLocation) *Node {
         return switch (self.*) {
             .last_child => |parent| parent,
-            .before_child => |before| before.parent orelse @panic("before_child has no parent"),
+            .before_child => |before| before.parent() orelse @panic("before_child has no parent"),
             .parent_before_child => |loc| loc.parent,
         };
     }
 
     pub fn beforeNode(self: *const InsertionLocation) ?*Node {
         const before = switch (self.*) {
-            .last_child => |parent| return parent.last_child,
+            .last_child => |parent| return parent.last_child(),
             .before_child => |node| node,
             .parent_before_child => |loc| loc.before_child,
         };
 
-        return before.prev_sibling;
+        return before.prev_sibling();
     }
 };
 

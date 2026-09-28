@@ -405,7 +405,7 @@ pub fn appropriatePlaceForInsertion(self: *TreeBuilder, override_target: ?*Node)
 
         if (last_table) |table| {
             const table_nd = table.asNode();
-            if (table_nd.parent) |p|
+            if (table_nd.parent()) |p|
                 return .{ .parent_before_child = .{
                     .parent = p,
                     .before_child = table_nd,
@@ -681,7 +681,7 @@ fn insertNodeAt(
         },
 
         .before_child => |before| {
-            const parent = before.parent orelse return;
+            const parent = before.parent() orelse return;
             parent.insertBefore(node, before);
         },
 
@@ -1131,7 +1131,7 @@ pub fn adoptionAgencyAlgorithm(self: *TreeBuilder, tk: token_.Tag) void {
         self.insertNodeAt(last_node.asNode(), insertion_location);
 
         const new_element = self.cloneElementForAdoption(fmt_el);
-        while (fur_block.asNode().first_child) |child| {
+        while (fur_block.asNode().first_child()) |child| {
             fur_block.asNode().removeChild(child);
             new_element.asNode().appendChild(child);
         }
@@ -1653,7 +1653,7 @@ pub fn step_E(self: *TreeBuilder, tk: PendingToken, mode: ?InsertionMode) !Proce
                                 }
                                 if (self.open_elements.len() >= 2) {
                                     const second = self.open_elements.at(1);
-                                    if (second.asNode().parent) |parent|
+                                    if (second.asNode().parent()) |parent|
                                         parent.removeChild(second.asNode());
                                 }
                                 self.popUntil(.html);

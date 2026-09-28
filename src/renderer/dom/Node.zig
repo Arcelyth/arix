@@ -14,6 +14,7 @@ const CustomElementRegistry = @import("CustomElementRegistry.zig");
 const ln = @import("local_name");
 const LocalName = ln.LocalName;
 const LocalTag = ln.LocalTag;
+const Tree = @import("../utils/tree.zig").Tree;
 
 /// For interface.
 pub const NodeType = enum(u4) {
@@ -34,11 +35,7 @@ pub const NodeType = enum(u4) {
 event_target: EventTarget,
 /// The runtime type identifier of this DOM object.
 type_id: DomTypeId,
-parent: ?*Node,
-first_child: ?*Node,
-last_child: ?*Node,
-next_sibling: ?*Node,
-prev_sibling: ?*Node,
+tree: Tree(Node) = .{},
 // Associated node document.
 // Maybe need to remove '?'.
 node_doc: *Document,
@@ -51,11 +48,6 @@ pub fn init(type_id: DomTypeId, document: *Document) Node {
     return .{
         .event_target = EventTarget.init(),
         .type_id = type_id,
-        .parent = null,
-        .first_child = null,
-        .last_child = null,
-        .next_sibling = null,
-        .prev_sibling = null,
         .node_doc = document,
     };
 }
@@ -66,9 +58,9 @@ pub fn create(document: *Document) Node {
 }
 
 pub fn destroy(self: *Node, alloc: std.mem.Allocator) void {
-    var child = self.first_child;
+    var child = self.first_child();
     while (child) |item| {
-        const next = item.next_sibling;
+        const next = item.next_sibling();
         item.destroy(alloc);
         child = next;
     }
@@ -131,19 +123,11 @@ pub inline fn isA(self: *Node, type_id: DomTypeId) bool {
     return false;
 }
 
+// ----- Tree implementation -----
+
 /// The child must not already have a parent.
 pub fn appendChild(self: *Node, child: *Node) void {
-    child.parent = self;
-    child.prev_sibling = self.last_child;
-    child.next_sibling = null;
-
-    if (self.last_child) |last|
-        last.next_sibling = child
-    else
-        // The node had no children.
-        self.first_child = child;
-
-    self.last_child = child;
+    self.tree.appendChild(child);
     if (child.type_id == .DOM_Element) child.downcast(Element).insertedIntoParent();
 }
 
@@ -154,18 +138,7 @@ pub fn insertBefore(
     child: *Node,
     reference: *Node,
 ) void {
-    std.debug.assert(reference.parent == self);
-
-    child.parent = self;
-    child.next_sibling = reference;
-    child.prev_sibling = reference.prev_sibling;
-
-    if (reference.prev_sibling) |prev|
-        prev.next_sibling = child
-    else
-        self.first_child = child;
-
-    reference.prev_sibling = child;
+    self.tree.insertBefore(child, reference);
     if (child.type_id == .DOM_Element) child.downcast(Element).insertedIntoParent();
 }
 
@@ -174,41 +147,48 @@ pub fn removeChild(
     self: *Node,
     child: *Node,
 ) void {
-    std.debug.assert(child.parent == self);
-
-    if (child.prev_sibling) |prev|
-        prev.next_sibling = child.next_sibling
-    else
-        self.first_child = child.next_sibling;
-
-    if (child.next_sibling) |next|
-        next.prev_sibling = child.prev_sibling
-    else
-        self.last_child = child.prev_sibling;
-
-    child.parent = null;
-    child.prev_sibling = null;
-    child.next_sibling = null;
+    self.tree.removeChild(child);
 }
 
 /// Remove this node from its parent.
 pub fn remove(self: *Node) void {
-    const parent = self.parent orelse return;
-    parent.removeChild(self);
+    self.tree.remove();
 }
 
+pub inline fn parent(self: *const Node) ?*Node {
+    return self.tree.parent;
+}
+
+pub inline fn first_child(self: *const Node) ?*Node {
+    return self.tree.first_child;
+}
+
+pub inline fn last_child(self: *const Node) ?*Node {
+    return self.tree.last_child;
+}
+
+pub inline fn next_sibling(self: *const Node) ?*Node {
+    return self.tree.next_sibling;
+}
+
+pub inline fn prev_sibling(self: *const Node) ?*Node {
+    return self.tree.prev_sibling;
+}
+
+// ----- -----
+
 // https://dom.spec.whatwg.org/#concept-node-ensure-pre-insertion-validity
-pub fn ensurePreInsertValidity(node: *Node, parent: *Node, child: ?*Node, exclude_children: []*Node) void {
+pub fn ensurePreInsertValidity(node: *Node, parent_node: *Node, child: ?*Node, exclude_children: []*Node) void {
     _ = node;
-    _ = parent;
+    _ = parent_node;
     _ = child;
     _ = exclude_children;
 }
 
 pub fn hasChild(self: *const Node, type_id: DomTypeId) bool {
-    var child = self.first_child;
+    var child = self.first_child();
 
-    while (child) |node| : (child = node.next_sibling)
+    while (child) |node| : (child = node.next_sibling())
         if (node.type_id == type_id) return true;
 
     return false;
@@ -232,11 +212,11 @@ pub fn clone(self: *Node, options: CloneOptions) *Node {
     if (self.type_id == .DOM_Element)
         self.downcast(Element).runCloningSteps(copy.downcast(Element), options.subtree);
 
-    if (options.parent) |parent| parent.appendChild(copy);
+    if (options.parent) |parent_node| parent_node.appendChild(copy);
 
     if (options.subtree) {
-        var child = self.first_child;
-        while (child) |node| : (child = node.next_sibling) {
+        var child = self.first_child();
+        while (child) |node| : (child = node.next_sibling()) {
             _ = node.clone(.{
                 .document = document,
                 .subtree = true,
@@ -263,8 +243,8 @@ pub fn clone(self: *Node, options: CloneOptions) *Node {
                 target_shadow.declarative = sd.declarative;
                 target_shadow.keep_cer_null = sd.keep_cer_null;
 
-                var child = sd.doc_frag.node.first_child;
-                while (child) |node| : (child = node.next_sibling)
+                var child = sd.doc_frag.node.first_child();
+                while (child) |node| : (child = node.next_sibling())
                     _ = node.clone(.{ .document = document, .subtree = true, .parent = &target_shadow.doc_frag.node });
             }
         }
@@ -338,57 +318,57 @@ fn cloneSingleNode(self: *Node, document: *Document, fallback_registry: ?*Custom
 }
 
 // https://dom.spec.whatwg.org/#concept-node-replace-all
-pub fn replaceAll(node: ?*Node, parent: *Node) void {
+pub fn replaceAll(node: ?*Node, parent_node: *Node) void {
     var removed_nodes: std.ArrayList(*Node) = .empty;
-    defer removed_nodes.deinit(parent.node_doc.allocator);
-    var child = parent.first_child;
-    while (child) |item| : (child = item.next_sibling)
-        removed_nodes.append(parent.node_doc.allocator, item) catch @panic("OutOfMemory");
+    defer removed_nodes.deinit(parent_node.node_doc.allocator);
+    var child = parent_node.first_child();
+    while (child) |item| : (child = item.next_sibling())
+        removed_nodes.append(parent_node.node_doc.allocator, item) catch @panic("OutOfMemory");
 
     var added_nodes: std.ArrayList(*Node) = .empty;
-    defer added_nodes.deinit(parent.node_doc.allocator);
+    defer added_nodes.deinit(parent_node.node_doc.allocator);
     if (node) |replacement| {
         if (replacement.type_id == .DOM_DocumentFragment) {
-            child = replacement.first_child;
-            while (child) |item| : (child = item.next_sibling)
-                added_nodes.append(parent.node_doc.allocator, item) catch @panic("OutOfMemory");
+            child = replacement.first_child();
+            while (child) |item| : (child = item.next_sibling())
+                added_nodes.append(parent_node.node_doc.allocator, item) catch @panic("OutOfMemory");
         } else {
-            added_nodes.append(parent.node_doc.allocator, replacement) catch @panic("OutOfMemory");
+            added_nodes.append(parent_node.node_doc.allocator, replacement) catch @panic("OutOfMemory");
         }
     }
 
-    while (parent.first_child) |item| {
-        parent.removeChild(item);
+    while (parent_node.first_child()) |item| {
+        parent_node.removeChild(item);
     }
 
     if (node) |replacement| {
         if (replacement.type_id == .DOM_DocumentFragment) {
-            while (replacement.first_child) |item| {
+            while (replacement.first_child()) |item| {
                 replacement.removeChild(item);
-                parent.appendChild(item);
+                parent_node.appendChild(item);
             }
         } else {
             replacement.remove();
-            parent.appendChild(replacement);
+            parent_node.appendChild(replacement);
         }
     }
 
     if (added_nodes.items.len != 0 or removed_nodes.items.len != 0)
-        parent.queueTreeMutationRecord(added_nodes.items, removed_nodes.items, null, null);
+        parent_node.queueTreeMutationRecord(added_nodes.items, removed_nodes.items, null, null);
 }
 
 // https://dom.spec.whatwg.org/#queue-a-tree-mutation-record
-fn queueTreeMutationRecord(self: *Node, added_nodes: []const *Node, removed_nodes: []const *Node, previous_sibling: ?*Node, next_sibling: ?*Node) void {
+fn queueTreeMutationRecord(self: *Node, added_nodes: []const *Node, removed_nodes: []const *Node, previous_sibling: ?*Node, next_node: ?*Node) void {
     _ = self;
     _ = added_nodes;
     _ = removed_nodes;
     _ = previous_sibling;
-    _ = next_sibling;
+    _ = next_node;
 }
 
 pub fn findDescendant(self: *Node, name: LocalTag) ?*Element {
-    var child = self.first_child;
-    while (child) |node| : (child = node.next_sibling) {
+    var child = self.first_child();
+    while (child) |node| : (child = node.next_sibling()) {
         if (node.type_id == .DOM_Element) {
             const element = node.downcast(Element);
             if (element.ns == .NS_Html and element.local_name.is(name)) return element;
@@ -397,3 +377,4 @@ pub fn findDescendant(self: *Node, name: LocalTag) ?*Element {
     }
     return null;
 }
+

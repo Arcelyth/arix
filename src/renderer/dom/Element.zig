@@ -369,9 +369,9 @@ pub fn enabledSelectedContent(self: *Element) ?*Element {
 // https://html.spec.whatwg.org/multipage/form-elements.html#option-element-nearest-ancestor-select
 pub fn nearestAncestorSelect(self: *Element) ?*Element {
     var ancestor_optgroup: ?*Element = null;
-    var ancestor = self.node.parent;
+    var ancestor = self.node.parent();
 
-    while (ancestor) |node| : (ancestor = node.parent) {
+    while (ancestor) |node| : (ancestor = node.parent()) {
         if (node.type_id != .DOM_Element) continue;
         const element = node.downcast(Element);
         if (element.ns != .NS_Html) continue;
@@ -392,8 +392,8 @@ pub fn cloneIntoSelectedContent(self: *Element, selected_content: *Element) void
     const document_fragment = document.allocator.create(DocumentFragment) catch @panic("OutOfMemory");
     document_fragment.* = DocumentFragment.init(document);
 
-    var child = self.node.first_child;
-    while (child) |node| : (child = node.next_sibling)
+    var child = self.node.first_child();
+    while (child) |node| : (child = node.next_sibling())
         _ = node.clone(.{ .subtree = true, .parent = &document_fragment.node });
 
     Node.replaceAll(&document_fragment.node, selected_content.asNode());
@@ -401,13 +401,13 @@ pub fn cloneIntoSelectedContent(self: *Element, selected_content: *Element) void
 }
 
 pub fn parentElement(self: *const Element) ?*const Element {
-    const parent = self.node.parent orelse return null;
+    const parent = self.node.parent() orelse return null;
     return if (parent.type_id == .DOM_Element) parent.downcast(Element) else null;
 }
 
 pub fn previousElement(self: *const Element) ?*const Element {
-    var sibling = self.node.prev_sibling;
-    while (sibling) |node| : (sibling = node.prev_sibling) {
+    var sibling = self.node.prev_sibling();
+    while (sibling) |node| : (sibling = node.prev_sibling()) {
         if (node.type_id == .DOM_Element) return node.downcast(Element);
     }
     return null;

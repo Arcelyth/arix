@@ -65,9 +65,9 @@ pub fn init(alloc: std.mem.Allocator) *Document {
 }
 
 pub fn destroy(self: *Document, alloc: std.mem.Allocator) void {
-    var child = self.node.first_child;
+    var child = self.node.first_child();
     while (child) |node| {
-        const next = node.next_sibling;
+        const next = node.next_sibling();
         node.destroy(alloc);
         child = next;
     }

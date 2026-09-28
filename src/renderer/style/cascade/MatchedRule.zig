@@ -5,6 +5,6 @@ const namespace = @import("../../css/namespace.zig");
 const Specificity = @import("../../css/selectors/Specificity.zig");
 
 pub const MatchedRule = struct {
-    rule: QualifiedRule, 
-    specificity: Specificity, 
+    rule: QualifiedRule,
+    specificity: Specificity,
 };

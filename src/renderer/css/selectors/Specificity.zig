@@ -134,4 +134,3 @@ test "CSS specificity: section 15 examples" {
         try std.testing.expectEqual(case[1], try calculate(allocator, list.selectors[0]));
     }
 }
-

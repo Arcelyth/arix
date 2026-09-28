@@ -377,4 +377,3 @@ pub fn findDescendant(self: *Node, name: LocalTag) ?*Element {
     }
     return null;
 }
-

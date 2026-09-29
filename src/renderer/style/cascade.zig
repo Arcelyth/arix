@@ -54,3 +54,55 @@ const Priority = struct {
         return self.specificity.order(previous.specificity) != .lt;
     }
 };
+
+test "style cascade: source order" {
+    const testing = std.testing;
+    const first = [_]properties.Declaration{
+        .{
+            .property = .width,
+            .value = .{ .size = .{ .percentage = 10 } },
+        },
+        .{
+            .property = .height,
+            .value = .{ .size = .auto },
+            .important = true,
+        },
+    };
+    const second = [_]properties.Declaration{
+        .{
+            .property = .width,
+            .value = .{ .size = .{ .percentage = 20 } },
+        },
+        .{
+            .property = .width,
+            .value = .{ .size = .{ .percentage = 30 } },
+        },
+        .{
+            .property = .height,
+            .value = .{ .size = .{ .percentage = 50 } },
+        },
+    };
+    var rules = [_]MatchedRule{
+        .{
+            .declarations = &first,
+            .specificity = .{ .c = 1 },
+            .origin = .author,
+        },
+        .{
+            .declarations = &second,
+            .specificity = .{ .c = 1 },
+            .origin = .author,
+        },
+    };
+
+    // Equal priority: later rule wins, then its last width declaration wins.
+    const winners = cascade(&rules);
+    try testing.expect(winners.get(.width).? == &second[1]);
+
+    // A later normal declaration does not override an important declaration.
+    try testing.expect(winners.get(.height).? == &first[1]);
+
+    // Lower specificity cannot win merely by appearing later.
+    rules[1].specificity = .{};
+    try testing.expect(cascade(&rules).get(.width).? == &first[0]);
+}

@@ -1,7 +1,6 @@
 const Size = @import("../values/specified/size.zig").Size;
 
-// TODO: need more property.
-pub const PropertyId = enum { width, height };
+pub const PropertyId = @import("registry.zig").PropertyId;
 
 // https://www.w3.org/TR/css-cascade-5/#defaulting-keywords
 pub const CSSWideKeyword = enum {

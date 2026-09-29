@@ -53,3 +53,52 @@ pub fn parseDeclarations(allocator: std.mem.Allocator, declarations: []const syn
     }
     return result.toOwnedSlice(allocator);
 }
+
+test "properties parse: typed values and invalid declarations" {
+    const testing = std.testing;
+    const Buffer = @import("../syntax/Buffer.zig");
+    const Parser = @import("../syntax/Parser.zig");
+    const alloc = testing.allocator;
+
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    var buffer = try Buffer.init(alloc,
+        \\div {
+        \\    WIDTH: 100px !important;
+        \\    height: inherit;
+        \\    width: red;
+        \\    unknown: 1px;
+        \\    width: auto;
+        \\}
+    );
+    defer buffer.deinit();
+
+    var tokens = buffer.stream(alloc);
+    defer tokens.deinit();
+
+    var parser = Parser.init(arena.allocator(), &tokens);
+    const rule = try parser.parseRule();
+    const declarations = try parseDeclarations(alloc, rule.qualified_rule.declarations);
+    defer alloc.free(declarations);
+
+    const expected = [_]Declaration{
+        .{
+            .property = .width,
+            .value = .{
+                .size = .{
+                    .length = .{ .value = 100, .unit = .px },
+                },
+            },
+            .important = true,
+        },
+        .{
+            .property = .height,
+            .value = .{ .css_wide = .inherit },
+        },
+        .{
+            .property = .width,
+            .value = .{ .size = .auto },
+        },
+    };
+    try testing.expectEqualDeep(&expected, declarations);
+}

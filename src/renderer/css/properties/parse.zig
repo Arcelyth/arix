@@ -1,9 +1,55 @@
 const std = @import("std");
 const syntax = @import("../syntax/parsing_results.zig");
+const Stream = @import("../syntax/ComponentValueStream.zig");
+const String = @import("../String.zig");
+const registry = @import("registry.zig");
 const types = @import("types.zig");
 const Declaration = types.Declaration;
+const Value = types.Value;
+const CSSWideKeyword = types.CSSWideKeyword;
 
-pub fn parseDeclaration(declaration: *const syntax.Declaration) Declaration {
-    _ = declaration;
-    @panic("TODO");
+/// Parse a syntax-parsed declaration to one use specified value.
+/// Unknown properties and invalid values return null.
+/// Value functions require math/substitution support and panic until implemented.
+pub fn parseDeclaration(declaration: *const syntax.Declaration) ?Declaration {
+    const id = registry.fromName(declaration.name) orelse return null;
+    for (declaration.value) |value| {
+        if (value == .function) @panic("TODO: CSS property value functions (math and substitution)");
+    }
+
+    var input = Stream.init(declaration.value);
+    input.discardWhitespace();
+    const value: Value = value: {
+        if (input.peekToken()) |token| {
+            if (token.* == .ident) {
+                if (parseCSSWideKeyword(token.ident)) |keyword| {
+                    input.advance();
+                    break :value .{ .css_wide = keyword };
+                }
+            }
+        }
+        break :value registry.parseValue(id, &input) orelse return null;
+    };
+    input.discardWhitespace();
+    if (!input.empty()) return null;
+    return .{ .property = id, .value = value, .important = declaration.important };
+}
+
+fn parseCSSWideKeyword(name: String) ?CSSWideKeyword {
+    if (name.eqlAscii("initial")) return .initial;
+    if (name.eqlAscii("inherit")) return .inherit;
+    if (name.eqlAscii("unset")) return .unset;
+    if (name.eqlAscii("revert")) return .revert;
+    if (name.eqlAscii("revert-layer")) return .revert_layer;
+    return null;
+}
+
+pub fn parseDeclarations(allocator: std.mem.Allocator, declarations: []const syntax.Declaration) ![]Declaration {
+    var result: std.ArrayList(Declaration) = .empty;
+    errdefer result.deinit(allocator);
+
+    for (declarations) |*declaration| {
+        if (parseDeclaration(declaration)) |value| try result.append(allocator, value);
+    }
+    return result.toOwnedSlice(allocator);
 }

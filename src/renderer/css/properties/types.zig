@@ -1,0 +1,25 @@
+const Size = @import("../values/specified/size.zig").Size;
+
+// TODO: need more property.
+pub const PropertyId = enum { width, height };
+
+// https://www.w3.org/TR/css-cascade-5/#defaulting-keywords
+pub const CSSWideKeyword = enum {
+    initial,
+    inherit,
+    unset,
+    revert,
+    revert_layer,
+};
+
+/// Parsed specified values, not yet selected by the cascade or computed.
+pub const Value = union(enum) {
+    size: Size,
+    css_wide: CSSWideKeyword,
+};
+
+pub const Declaration = struct {
+    property: PropertyId,
+    value: Value,
+    important: bool = false,
+};

@@ -7,15 +7,17 @@ const selectors = @import("../css/selectors/parse.zig");
 const namespace = @import("../css/namespace.zig");
 const Specificity = @import("../css/selectors/Specificity.zig");
 const PreparedRule = @import("matching.zig").PreparedRule;
+const Origin = @import("cascade/MatchedRule.zig").Origin;
+const properties = @import("../css/properties/parse.zig");
 
 rules: []const PreparedRule,
 namespaces: *namespace.Context,
 
-/// Parse selector preludes and cache specificity once per stylesheet.
-/// Owns selector storage and namespace bindings, but borrows the syntax rules
+/// Parse selectors and typed declarations once per stylesheet.
+/// Owns selectors, typed declarations and namespace bindings, but borrows syntax rules
 /// and their strings. Keep the syntax stylesheet and its backing storage alive.
 /// Invalid selector lists are discarded by the selector parser.
-pub fn init(allocator: std.mem.Allocator, stylesheet: *const syntax.Stylesheet) !PreparedStylesheet {
+pub fn init(allocator: std.mem.Allocator, stylesheet: *const syntax.Stylesheet, origin: Origin) !PreparedStylesheet {
     const namespaces = try allocator.create(namespace.Context);
     namespaces.* = .{};
     errdefer {
@@ -35,7 +37,7 @@ pub fn init(allocator: std.mem.Allocator, stylesheet: *const syntax.Stylesheet) 
             _ = try namespaces.consumeRule(allocator, rule, false);
         },
         .qualified_rule => |*qualified| {
-            const prepared = (try prepareRule(allocator, qualified, namespaces)) orelse continue;
+            const prepared = (try prepareRule(allocator, qualified, namespaces, origin)) orelse continue;
             errdefer prepared.deinit(allocator);
             if (qualified.child_rules.len != 0) @panic("TODO: nested style rule preparation");
             try rules.append(allocator, prepared);
@@ -57,6 +59,7 @@ fn prepareRule(
     allocator: std.mem.Allocator,
     rule: *const syntax.QualifiedRule,
     namespaces: *const namespace.Context,
+    origin: Origin,
 ) !?PreparedRule {
     var input = Stream.init(rule.prelude);
     const list = (try selectors.parseSelectorList(allocator, &input, .{ .namespaces = namespaces })) orelse return null;
@@ -70,7 +73,13 @@ fn prepareRule(
         .selector = selector,
         .specificity = try Specificity.calculate(allocator, selector),
     };
-    return .{ .rule = rule, .selectors = prepared, .context = .{ .namespaces = namespaces } };
+    return .{
+        .rule = rule,
+        .declarations = try properties.parseDeclarations(allocator, rule.declarations),
+        .origin = origin,
+        .selectors = prepared,
+        .context = .{ .namespaces = namespaces },
+    };
 }
 
 test "style PreparedStylesheet: parse selectors and cache specificity" {
@@ -87,7 +96,7 @@ test "style PreparedStylesheet: parse selectors and cache specificity" {
     defer tokens.deinit();
     var parser = Parser.init(arena.allocator(), &tokens);
     const stylesheet = try parser.parseStylesheet();
-    var prepared = try PreparedStylesheet.init(alloc, &stylesheet);
+    var prepared = try PreparedStylesheet.init(alloc, &stylesheet, .author);
     defer prepared.deinit(alloc);
 
     try testing.expectEqual(1, prepared.rules.len);
@@ -99,4 +108,6 @@ test "style PreparedStylesheet: parse selectors and cache specificity" {
     try testing.expectEqual(Specificity{ .b = 1 }, rule.selectors[0].specificity);
     try testing.expectEqual(Specificity{ .a = 1 }, rule.selectors[1].specificity);
     try testing.expect(rule.rule.declarations[0].name.eqlAscii("width"));
+    try testing.expectEqual(Origin.author, rule.origin);
+    try testing.expectEqual(@as(f64, 100), rule.declarations[0].value.size.length.value);
 }

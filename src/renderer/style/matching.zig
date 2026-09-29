@@ -5,11 +5,16 @@ const ComplexSelector = @import("../css/selectors/types.zig").ComplexSelector;
 const Specificity = @import("../css/selectors/Specificity.zig");
 const matching = @import("../css/selectors/matching.zig");
 const MatchedRule = @import("cascade/MatchedRule.zig").MatchedRule;
+const Origin = @import("cascade/MatchedRule.zig").Origin;
+const Declaration = @import("../css/properties/types.zig").Declaration;
 
+/// Prepared for matching.
 /// Borrowed stylesheet data, prepared once rather than for each element.
 pub const PreparedRule = struct {
-    /// Need for cascade.
+    /// Original syntax rule.
     rule: *const QualifiedRule,
+    declarations: []const Declaration,
+    origin: Origin,
     selectors: []const Selector,
     context: matching.Context = .{},
 
@@ -18,14 +23,15 @@ pub const PreparedRule = struct {
         specificity: Specificity,
     };
 
-    /// Release selector storage allocated by stylesheet preparation, not rule data.
+    /// Release prepared selectors and typed declarations, not syntax rule data.
     pub fn deinit(self: PreparedRule, allocator: std.mem.Allocator) void {
         for (self.selectors) |entry| entry.selector.deinit(allocator);
         allocator.free(self.selectors);
+        allocator.free(self.declarations);
     }
 };
 
-/// Append matches from multiple stylesheets into one list.
+/// Append matches in source order. Call in stylesheet order within each origin.
 pub fn collectMatchedRules(
     allocator: std.mem.Allocator,
     rules: []const PreparedRule,
@@ -41,8 +47,9 @@ pub fn collectMatchedRules(
         }
         if (specificity) |value| {
             try matched_rules.append(allocator, .{
-                .rule = rule.rule.*,
+                .declarations = rule.declarations,
                 .specificity = value,
+                .origin = rule.origin,
             });
         }
     }
@@ -53,7 +60,6 @@ test "style matching: matching specificity and source order" {
     const Document = @import("../dom/Document.zig");
     const LocalName = @import("local_name").LocalName;
     const String = @import("../css/String.zig");
-    const Declaration = @import("../css/syntax/parsing_results.zig").Declaration;
 
     const alloc = testing.allocator;
     const document = Document.init(alloc);
@@ -77,14 +83,29 @@ test "style matching: matching specificity and source order" {
         .selector = .{ .components = &.{.{ .simple = .{ .id = String.fromSource("missing") } }} },
         .specificity = .{ .a = 1 },
     };
-    var first_declarations = [_]Declaration{.{ .name = String.fromSource("width") }};
-    var second_declarations = [_]Declaration{.{ .name = String.fromSource("height") }};
-    const first: QualifiedRule = .{ .declarations = &first_declarations };
-    const second: QualifiedRule = .{ .declarations = &second_declarations };
+    const first_declarations = [_]Declaration{.{ .property = .width, .value = .{ .size = .auto } }};
+    const second_declarations = [_]Declaration{.{ .property = .height, .value = .{ .size = .auto } }};
+    const first: QualifiedRule = .{};
+    const second: QualifiedRule = .{};
     const rules = [_]PreparedRule{
-        .{ .rule = &first, .selectors = &.{ universal, div, missing } },
-        .{ .rule = &first, .selectors = &.{missing} },
-        .{ .rule = &second, .selectors = &.{universal} },
+        .{
+            .rule = &first,
+            .declarations = &first_declarations,
+            .origin = .author,
+            .selectors = &.{ universal, div, missing },
+        },
+        .{
+            .rule = &first,
+            .declarations = &first_declarations,
+            .origin = .author,
+            .selectors = &.{missing},
+        },
+        .{
+            .rule = &second,
+            .declarations = &second_declarations,
+            .origin = .user,
+            .selectors = &.{universal},
+        },
     };
     var result: std.ArrayList(MatchedRule) = .empty;
     defer result.deinit(alloc);
@@ -94,8 +115,10 @@ test "style matching: matching specificity and source order" {
     try testing.expectEqual(2, result.items.len);
     try testing.expectEqual(Specificity{ .c = 1 }, result.items[0].specificity);
     try testing.expectEqual(Specificity{}, result.items[1].specificity);
-    try testing.expectEqual(first.declarations.ptr, result.items[0].rule.declarations.ptr);
-    try testing.expectEqual(second.declarations.ptr, result.items[1].rule.declarations.ptr);
+    try testing.expectEqual(&first_declarations[0], &result.items[0].declarations[0]);
+    try testing.expectEqual(&second_declarations[0], &result.items[1].declarations[0]);
+    try testing.expectEqual(Origin.author, result.items[0].origin);
+    try testing.expectEqual(Origin.user, result.items[1].origin);
 
     // A reusable output buffer can collect further rules without clearing earlier matches.
     try collectMatchedRules(alloc, rules[2..], element, &result);

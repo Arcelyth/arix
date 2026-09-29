@@ -31,13 +31,13 @@ pub fn init(allocator: std.mem.Allocator, stylesheet: *const syntax.Stylesheet) 
 
     for (stylesheet.rules) |*rule| switch (rule.*) {
         .at_rule => |*at_rule| {
-            if (!at_rule.name.eqlAscii("namespace")) return error.UnsupportedAtRule;
+            if (!at_rule.name.eqlAscii("namespace")) @panic("TODO: stylesheet preparation for at-rules other than @namespace");
             _ = try namespaces.consumeRule(allocator, rule, false);
         },
         .qualified_rule => |*qualified| {
             const prepared = (try prepareRule(allocator, qualified, namespaces)) orelse continue;
             errdefer prepared.deinit(allocator);
-            if (qualified.child_rules.len != 0) return error.UnsupportedNesting;
+            if (qualified.child_rules.len != 0) @panic("TODO: nested style rule preparation");
             try rules.append(allocator, prepared);
             _ = try namespaces.consumeRule(allocator, rule, false);
         },

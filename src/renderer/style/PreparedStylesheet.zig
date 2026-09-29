@@ -72,3 +72,31 @@ fn prepareRule(
     };
     return .{ .rule = rule, .selectors = prepared, .context = .{ .namespaces = namespaces } };
 }
+
+test "style PreparedStylesheet: parse selectors and cache specificity" {
+    const testing = std.testing;
+    const Buffer = @import("../css/syntax/Buffer.zig");
+    const Parser = @import("../css/syntax/Parser.zig");
+
+    const alloc = testing.allocator;
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    var buffer = try Buffer.init(alloc, ".box, #target { width: 100px; }");
+    defer buffer.deinit();
+    var tokens = buffer.stream(alloc);
+    defer tokens.deinit();
+    var parser = Parser.init(arena.allocator(), &tokens);
+    const stylesheet = try parser.parseStylesheet();
+    var prepared = try PreparedStylesheet.init(alloc, &stylesheet);
+    defer prepared.deinit(alloc);
+
+    try testing.expectEqual(1, prepared.rules.len);
+    const rule = prepared.rules[0];
+    try testing.expect(rule.rule == &stylesheet.rules[0].qualified_rule);
+    try testing.expectEqual(2, rule.selectors.len);
+    try testing.expect(rule.selectors[0].selector.components[0].simple.class.eqlAscii("box"));
+    try testing.expect(rule.selectors[1].selector.components[0].simple.id.eqlAscii("target"));
+    try testing.expectEqual(Specificity{ .b = 1 }, rule.selectors[0].specificity);
+    try testing.expectEqual(Specificity{ .a = 1 }, rule.selectors[1].specificity);
+    try testing.expect(rule.rule.declarations[0].name.eqlAscii("width"));
+}

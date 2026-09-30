@@ -59,3 +59,44 @@ const computers = blk: {
     }
     break :blk entries;
 };
+
+test "style computed ComputedStyle: lengths, percentages and defaults" {
+    const testing = std.testing;
+    const context: Context = .{
+        .font_size = 20,
+        .root_font_size = 16,
+        .x_height = 9,
+        .zero_advance = 11,
+        .viewport_width = 800,
+        .viewport_height = 600,
+    };
+    const declarations = [_]properties.Declaration{
+        .{
+            .property = .width,
+            .value = .{
+                .size = .{ .length = .{ .value = 2, .unit = .em } },
+            },
+        },
+        .{
+            .property = .height,
+            .value = .{ .size = .{ .percentage = 50 } },
+        },
+    };
+    var winners = cascade.CascadedDeclarations.initFill(null);
+    winners.set(.width, &declarations[0]);
+    winners.set(.height, &declarations[1]);
+
+    const style = compute(&winners, null, &context);
+    // 2em becomes 40 CSS pixels; 50% remains a percentage until layout.
+    try testing.expectEqualDeep(registry.ComputedValues{
+        .width = .{ .length = 40 },
+        .height = .{ .percentage = 50 },
+    }, style.values);
+
+    // Width and height default to auto, not the parent's values.
+    const empty = cascade.CascadedDeclarations.initFill(null);
+    try testing.expectEqualDeep(
+        registry.ComputedValues{ .width = .auto, .height = .auto },
+        compute(&empty, &style, &context).values,
+    );
+}

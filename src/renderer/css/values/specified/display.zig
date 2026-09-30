@@ -112,7 +112,7 @@ pub fn parse(input: *Stream) ?Display {
         // More than 3 keywords is not allowed.
         // display: block flow list-item;
         if (standalone != null or count == 3) return null;
-        
+
         const name = cursor.consumeIdent() orelse return null;
         var lower: [keywords.max_len]u8 = undefined;
         const keyword = keywords.get(name.toAsciiLower(&lower) orelse return null) orelse return null;
@@ -154,4 +154,45 @@ pub fn parse(input: *Stream) ?Display {
     } };
     input.* = cursor;
     return result;
+}
+
+test "values specified display: grammar and defaults" {
+    const Buffer = @import("../../syntax/Buffer.zig");
+    const Parser = @import("../../syntax/Parser.zig");
+    const alloc = std.testing.allocator;
+
+    const cases = [_]struct { []const u8, ?Display }{
+        .{ "inline", .{ .box = .{} } },
+        .{ "block", .{ .box = .{ .outside = .block } } },
+        .{ "INLINE/**/flow-root", .{ .box = .{ .inside = .flow_root } } },
+        .{ "flow-root inline", .{ .box = .{ .inside = .flow_root } } },
+        .{ "list-item", .{ .list_item = .{} } },
+        .{ "inline list-item", .{ .list_item = .{ .outside = .@"inline" } } },
+        .{ "flow-root list-item", .{ .list_item = .{ .inside = .flow_root } } },
+        .{ "list-item flow-root inline", .{ .list_item = .{ .outside = .@"inline", .inside = .flow_root } } },
+        .{ "run-in flow list-item", .{ .list_item = .{ .outside = .run_in } } },
+        .{ "table-cell", .{ .internal = .table_cell } },
+        .{ "ruby-text-container", .{ .internal = .ruby_text_container } },
+        .{ "n\\6f ne", .none },
+        .{ " contents ", .contents },
+        .{ "", null },
+        .{ "10px", null },
+        .{ "unknown", null },
+    };
+    for (cases) |case| {
+        var arena = std.heap.ArenaAllocator.init(alloc);
+        defer arena.deinit();
+        var buffer = try Buffer.init(alloc, case[0]);
+        defer buffer.deinit();
+        var tokens = buffer.stream(alloc);
+        defer tokens.deinit();
+        var parser = Parser.init(arena.allocator(), &tokens);
+        var input = Stream.init(try parser.parseListOfComponentValues());
+        try std.testing.expectEqualDeep(case[1], parse(&input));
+        if (case[1] == null) {
+            try std.testing.expectEqual(0, input.index);
+        } else {
+            try std.testing.expect(input.empty());
+        }
+    }
 }

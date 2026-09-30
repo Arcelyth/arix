@@ -77,6 +77,22 @@ pub fn build(
     }
 }
 
+/// Destroy the styled subtree without destroying its borrowed DOM nodes.
+pub fn destroy(self: *StyledNode, allocator: std.mem.Allocator) void {
+    self.remove();
+    var current = self;
+    while (true) {
+        if (current.first_child()) |child| {
+            current = child;
+            continue;
+        }
+        const parent_node = current.parent();
+        current.remove();
+        allocator.destroy(current);
+        current = parent_node orelse return;
+    }
+}
+
 // ----- Tree implementation -----
 
 /// The child must not already have a parent.

@@ -109,5 +109,5 @@ test "style PreparedStylesheet: parse selectors and cache specificity" {
     try testing.expectEqual(Specificity{ .a = 1 }, rule.selectors[1].specificity);
     try testing.expect(rule.rule.declarations[0].name.eqlAscii("width"));
     try testing.expectEqual(Origin.author, rule.origin);
-    try testing.expectEqual(@as(f64, 100), rule.declarations[0].value.size.length.value);
+    try testing.expectEqual(@as(f64, 100), rule.declarations[0].value.size.length_percentage.length.value);
 }

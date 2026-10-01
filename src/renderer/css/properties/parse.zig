@@ -86,7 +86,9 @@ test "properties parse: typed values and invalid declarations" {
             .property = .width,
             .value = .{
                 .size = .{
-                    .length = .{ .value = 100, .unit = .px },
+                    .length_percentage = .{
+                        .length = .{ .value = 100, .unit = .px },
+                    },
                 },
             },
             .important = true,

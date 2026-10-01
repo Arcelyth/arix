@@ -1,6 +1,7 @@
 const std = @import("std");
 const Stream = @import("../../syntax/ComponentValueStream.zig");
 const Length = @import("Length.zig");
+const length_percentage = @import("length_percentage.zig");
 
 // https://www.w3.org/TR/css-sizing-3/#preferred-size-properties
 pub const Size = union(enum) {
@@ -9,9 +10,7 @@ pub const Size = union(enum) {
     max_content,
     fit_content,
     stretch,
-    length: Length,
-    /// Percentage points: 50 represents 50%, not 0.5.
-    percentage: f64,
+    length_percentage: length_percentage.LengthPercentage,
 };
 
 /// Consume a non-negative literal size, leaving input unchanged on mismatch.
@@ -26,25 +25,7 @@ pub fn parse(input: *Stream) ?Size {
             if (name.eqlAscii("stretch")) break :blk .stretch;
             return null;
         },
-        // Numbers without units can only be 0.
-        .number => |number| if (number.value == 0)
-            .{ .length = .{ .value = 0, .unit = .px } }
-        else
-            return null,
-        .percentage => |percentage| if (percentage.value >= 0)
-            .{ .percentage = percentage.value }
-        else
-            return null,
-        .dimension => |dimension| blk: {
-            if (!(dimension.value >= 0)) return null;
-            inline for (std.meta.fields(Length.Unit)) |unit| {
-                if (dimension.unit.eqlAscii(unit.name)) break :blk .{
-                    .length = .{ .value = dimension.value, .unit = @enumFromInt(unit.value) },
-                };
-            }
-            return null;
-        },
-        else => return null,
+        else => return .{ .length_percentage = length_percentage.parse(input, .non_negative) orelse return null },
     };
     input.advance();
     return size;
@@ -60,8 +41,8 @@ test "values specified size: check all length units" {
         } } }};
         var input = Stream.init(&values);
         const value = parse(&input).?;
-        try std.testing.expectEqual(@as(f64, 2.5), value.length.value);
-        try std.testing.expectEqual(@as(Length.Unit, @enumFromInt(unit.value)), value.length.unit);
+        try std.testing.expectEqual(@as(f64, 2.5), value.length_percentage.length.value);
+        try std.testing.expectEqual(@as(Length.Unit, @enumFromInt(unit.value)), value.length_percentage.length.unit);
         try std.testing.expect(input.empty());
     }
 }

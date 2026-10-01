@@ -74,12 +74,18 @@ test "style computed ComputedStyle: lengths, percentages and defaults" {
         .{
             .property = .width,
             .value = .{
-                .size = .{ .length = .{ .value = 2, .unit = .em } },
+                .size = .{
+                    .length_percentage = .{
+                        .length = .{ .value = 2, .unit = .em },
+                    },
+                },
             },
         },
         .{
             .property = .height,
-            .value = .{ .size = .{ .percentage = 50 } },
+            .value = .{
+                .size = .{ .length_percentage = .{ .percentage = 50 } },
+            },
         },
     };
     var winners = cascade.CascadedDeclarations.initFill(null);
@@ -89,8 +95,8 @@ test "style computed ComputedStyle: lengths, percentages and defaults" {
     const style = compute(&winners, null, &context);
     // 2em becomes 40 CSS pixels; 50% remains a percentage until layout.
     try testing.expectEqualDeep(registry.ComputedValues{
-        .width = .{ .length = 40 },
-        .height = .{ .percentage = 50 },
+        .width = .{ .length_percentage = .{ .length = 40 } },
+        .height = .{ .length_percentage = .{ .percentage = 50 } },
     }, style.values);
 
     // Width and height default to auto, not the parent's values.

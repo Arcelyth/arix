@@ -60,7 +60,9 @@ test "style cascade: source order" {
     const first = [_]properties.Declaration{
         .{
             .property = .width,
-            .value = .{ .size = .{ .percentage = 10 } },
+            .value = .{
+                .size = .{ .length_percentage = .{ .percentage = 10 } },
+            },
         },
         .{
             .property = .height,
@@ -71,15 +73,21 @@ test "style cascade: source order" {
     const second = [_]properties.Declaration{
         .{
             .property = .width,
-            .value = .{ .size = .{ .percentage = 20 } },
+            .value = .{
+                .size = .{ .length_percentage = .{ .percentage = 20 } },
+            },
         },
         .{
             .property = .width,
-            .value = .{ .size = .{ .percentage = 30 } },
+            .value = .{
+                .size = .{ .length_percentage = .{ .percentage = 30 } },
+            },
         },
         .{
             .property = .height,
-            .value = .{ .size = .{ .percentage = 50 } },
+            .value = .{
+                .size = .{ .length_percentage = .{ .percentage = 50 } },
+            },
         },
     };
     var rules = [_]MatchedRule{

@@ -14,7 +14,12 @@ pub fn parse(input: *Stream, comptime range: Range) ?LengthPercentage {
     const token = input.peekToken() orelse return null;
     const value: LengthPercentage = switch (token.*) {
         .number => |number| if (number.value == 0)
-            .{ .length = .{ .value = 0, .unit = .px, }, }
+            .{
+                .length = .{
+                    .value = 0,
+                    .unit = .px,
+                },
+            }
         else
             return null,
         .percentage => |percentage| blk: {

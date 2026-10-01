@@ -4,10 +4,21 @@ const Stream = @import("../syntax/ComponentValueStream.zig");
 const size = @import("../values/specified/size.zig");
 const computed = @import("../values/computed.zig");
 const Value = @import("types.zig").Value;
+const margin = @import("../values/specified/margin.zig");
+const length_percentage = @import("../values/specified/length_percentage.zig");
 
 pub const definitions = .{
     .width = preferred_size,
     .height = preferred_size,
+
+    .margin_top = margin_side,
+    .margin_right = margin_side,
+    .margin_bottom = margin_side,
+    .margin_left = margin_side,
+    .padding_top = padding_side,
+    .padding_right = padding_side,
+    .padding_bottom = padding_side,
+    .padding_left = padding_side,
 };
 
 // https://www.w3.org/TR/css-sizing-3/#preferred-size-properties
@@ -17,6 +28,26 @@ const preferred_size = .{
     .initial = @as(computed.Size, .auto),
     .inherited = false,
     .compute = &computed.Size.fromSpecified,
+};
+
+// https://www.w3.org/TR/css-box-3/#margin-physical
+const margin_side = .{
+    .parse = &parseMargin,
+    .value_tag = @as(std.meta.Tag(Value), .margin),
+    .initial = @as(computed.Margin, .{
+        .length_percentage = .{ .length = 0 },
+    }),
+    .inherited = false,
+    .compute = &computed.Margin.fromSpecified,
+};
+
+// https://www.w3.org/TR/css-box-3/#padding-physical
+const padding_side = .{
+    .parse = &parsePadding,
+    .value_tag = @as(std.meta.Tag(Value), .padding),
+    .initial = @as(computed.LengthPercentage, .{ .length = 0 }),
+    .inherited = false,
+    .compute = &computed.LengthPercentage.fromSpecified,
 };
 
 pub const PropertyId = std.meta.FieldEnum(@TypeOf(definitions));
@@ -48,6 +79,14 @@ pub fn parseValue(id: PropertyId, input: *Stream) ?Value {
 
 fn parseSize(input: *Stream) ?Value {
     return .{ .size = size.parse(input) orelse return null };
+}
+
+fn parseMargin(input: *Stream) ?Value {
+    return .{ .margin = margin.parse(input) orelse return null };
+}
+
+fn parsePadding(input: *Stream) ?Value {
+    return .{ .padding = length_percentage.parse(input, .non_negative) orelse return null };
 }
 
 /// One field per property, with its concrete computed type and initial default.

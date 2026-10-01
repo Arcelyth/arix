@@ -15,5 +15,5 @@ pub fn parse(input: *Stream) ?Margin {
             return .auto;
         }
     }
-    return length_percentage.parse(input, .any) orelse return null;
+    return .{ .length_percentage = length_percentage.parse(input, .any) orelse return null };
 }

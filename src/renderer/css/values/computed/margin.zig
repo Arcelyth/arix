@@ -9,7 +9,7 @@ pub const Margin = union(enum) {
     pub fn fromSpecified(value: SpecifiedMargin, context: *const Context) Margin {
         return switch (value) {
             .auto => .auto,
-            .length_percentage => |length| LengthPercentage.fromSpecified(length, context),
+            .length_percentage => |length| .{ .length_percentage = LengthPercentage.fromSpecified(length, context) },
         };
     }
 

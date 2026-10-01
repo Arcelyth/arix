@@ -1,4 +1,6 @@
 const Size = @import("../values/specified/size.zig").Size;
+const Margin = @import("../values/specified/margin.zig").Margin;
+const LengthPercentage = @import("../values/specified/length_percentage.zig").LengthPercentage;
 
 pub const PropertyId = @import("registry.zig").PropertyId;
 
@@ -14,6 +16,8 @@ pub const CSSWideKeyword = enum {
 /// Parsed specified values, not yet selected by the cascade or computed.
 pub const Value = union(enum) {
     size: Size,
+    margin: Margin,
+    padding: LengthPercentage,
     css_wide: CSSWideKeyword,
 };
 

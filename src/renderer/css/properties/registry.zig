@@ -5,12 +5,14 @@ const size = @import("../values/specified/size.zig");
 const computed = @import("../values/computed.zig");
 const Value = @import("types.zig").Value;
 const margin = @import("../values/specified/margin.zig");
+const display = @import("../values/specified/display.zig");
 const length_percentage = @import("../values/specified/length_percentage.zig");
 
 pub const definitions = .{
     .width = preferred_size,
     .height = preferred_size,
 
+    .display = display_entry,
     .margin_top = margin_side,
     .margin_right = margin_side,
     .margin_bottom = margin_side,
@@ -28,6 +30,15 @@ const preferred_size = .{
     .initial = @as(computed.Size, .auto),
     .inherited = false,
     .compute = &computed.Size.fromSpecified,
+};
+
+// https://www.w3.org/TR/css-display-3/#the-display-properties
+const display_entry = .{
+    .parse = &parseDisplay,
+    .value_tag = @as(std.meta.Tag(Value), .display),
+    .initial = @as(computed.Display, .{ .box = .{} }),
+    .inherited = false,
+    .compute = &computed.Display.fromSpecified,
 };
 
 // https://www.w3.org/TR/css-box-3/#margin-physical
@@ -87,6 +98,10 @@ fn parseMargin(input: *Stream) ?Value {
 
 fn parsePadding(input: *Stream) ?Value {
     return .{ .padding = length_percentage.parse(input, .non_negative) orelse return null };
+}
+
+fn parseDisplay(input: *Stream) ?Value {
+    return .{ .display = display.parse(input) orelse return null };
 }
 
 /// One field per property, with its concrete computed type and initial default.

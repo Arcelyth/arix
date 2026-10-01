@@ -37,7 +37,7 @@ pub const Display = union(enum) {
         };
     }
 
-    // A simplify implementation of blockification.
+    // A simplified implementation of blockification.
     // FIXME: See https://www.w3.org/TR/css-display-3/#transformations
     pub fn blockify(self: Display) Display {
         return switch (self) {

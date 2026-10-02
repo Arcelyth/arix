@@ -5,6 +5,7 @@ const LayoutBoxBase = @import("../LayoutBoxBase.zig");
 const Fragment = @import("../fragment.zig").Fragment;
 const FragmentTree = @import("../fragment.zig").FragmentTree;
 const ComputedValues = @import("../../css/properties/registry.zig").ComputedValues;
+const EdgeSizes = @import("../../geometry/EdgeSizes.zig");
 const Size = @import("../../css/values/computed/size.zig").Size;
 
 pub const ContainingBlock = struct {
@@ -94,10 +95,40 @@ fn layoutBlock(allocator: std.mem.Allocator, box: *const LayoutBox, containing: 
 }
 
 fn createBlockFragment(allocator: std.mem.Allocator, base: *const LayoutBoxBase, containing: ContainingBlock) !*Fragment {
-    _ = allocator;
-    _ = base;
-    _ = containing;
-    @panic("TODO");
+    const style = &base.style.values;
+    const padding: EdgeSizes = .{
+        .top = style.padding_top.resolve(containing.width),
+        .right = style.padding_right.resolve(containing.width),
+        .bottom = style.padding_bottom.resolve(containing.width),
+        .left = style.padding_left.resolve(containing.width),
+    };
+    const horizontal = usedWidth(
+        style,
+        containing.width,
+        padding.left + padding.right,
+    );
+
+    const fragment = try allocator.create(Fragment);
+    fragment.* = Fragment.init(.{ .box = .{
+        .base = .{
+            .rect = .{
+                .x = horizontal.left + padding.left,
+                .y = 0,
+                .width = horizontal.width,
+                .height = 0,
+            },
+        },
+        .source = base.source,
+        .style = base.style,
+        .padding = padding,
+        .margin = .{
+            .top = style.margin_top.resolve(containing.width) orelse 0,
+            .right = horizontal.right,
+            .bottom = style.margin_bottom.resolve(containing.width) orelse 0,
+            .left = horizontal.left,
+        },
+    } });
+    return fragment;
 }
 
 const ChildLayout = struct {
@@ -122,5 +153,21 @@ fn finishBlock(fragment: *Fragment, independent: bool, height: ?f64, children: C
     _ = independent;
     _ = height;
     _ = children;
+    @panic("TODO");
+}
+
+const Horizontal = struct {
+    width: f64,
+    left: f64,
+    right: f64,
+};
+
+/// Solve the width constraint. With the initial direction:ltr, over-constraint
+/// changes the used right margin, not the computed value.
+/// https://www.w3.org/TR/CSS2/visudet.html#blockwidth
+fn usedWidth(style: *const ComputedValues, containing_width: f64, padding: f64) Horizontal {
+    _ = style;
+    _ = containing_width;
+    _ = padding;
     @panic("TODO");
 }

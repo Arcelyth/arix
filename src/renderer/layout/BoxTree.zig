@@ -5,6 +5,8 @@ const BlockFormattingContext = @import("flow.zig").BlockFormattingContext;
 const LayoutBox = @import("LayoutBox.zig");
 const LayoutBoxBase = @import("LayoutBoxBase.zig");
 const flow = @import("flow.zig");
+const inline_ = @import("inline.zig");
+const InlineFormattingContext = inline_.InlineFormattingContext;
 const StyledNode = @import("../style/StyledNode.zig");
 const ComputedStyle = @import("../style/computed/ComputedStyle.zig");
 const Element = @import("../dom/Element.zig");
@@ -136,6 +138,67 @@ fn appendChildren(allocator: std.mem.Allocator, parent: *LayoutBox, node: *const
 
 /// Finish the parent’s formatting structure after its children have been built.
 fn finishContainer(allocator: std.mem.Allocator, parent: *LayoutBox) !void {
+    var has_block = false;
+    var child = parent.first_child();
+    while (child) |box| : (child = box.next_sibling()) 
+        has_block = has_block or box.isBlockLevel();
+
+    const container = parent.container() orelse {
+        if (has_block) @panic("TODO: block-in-inline splitting");
+        return;
+    };
+    if (!has_block) {
+        if (parent.first_child()) |first| container.* = .{
+            .inline_formatting_context = InlineFormattingContext.init(
+                &parent.base().?.style,
+                first,
+            ),
+        };
+        return;
+    }
+    child = parent.first_child();
+    while (child) |first| {
+        if (first.isBlockLevel()) {
+            child = first.next_sibling();
+            continue;
+        }
+        var end = first.next_sibling();
+        while (end) |box| {
+            if (box.isBlockLevel()) break;
+            end = box.next_sibling();
+        }
+        if (isWhitespaceRun(first, end)) {
+            // FIXME: Only white-space:normal is available in the current property registry.
+            // Need to implement whitespace value. 
+            while (child != end) {
+                const current = child.?;
+                child = current.next_sibling();
+                current.destroy(allocator);
+            }
+        } else {
+            try wrapInlineRun(allocator, parent, first, end);
+        }
+        child = end;
+    }
+    container.* = .{ .block_level_boxes = parent.first_child() };
+}
+
+fn isWhitespaceRun(first: *LayoutBox, end: ?*LayoutBox) bool {
+    var child: ?*LayoutBox = first;
+    while (child != end) {
+        const current = child.?;
+        switch (current.content) {
+            .block_level, .inline_level => return false,
+            .text => |text| if (!text.isWhitespace()) return false,
+        }
+        child = current.next_sibling();
+    }
+    return true;
+}
+
+fn wrapInlineRun(allocator: std.mem.Allocator, parent: *LayoutBox, first: *LayoutBox, end: ?*LayoutBox) !void {
     _ = allocator;
     _ = parent;
+    _ = first;
+    _ = end;
 }

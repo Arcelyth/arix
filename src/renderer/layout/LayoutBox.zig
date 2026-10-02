@@ -4,6 +4,7 @@ const std = @import("std");
 const Tree = @import("../utils/tree.zig").Tree;
 const LayoutBoxBase = @import("LayoutBoxBase.zig");
 const flow = @import("flow.zig");
+const BlockContainer = flow.BlockContainer;
 const BlockLevelBox = flow.BlockLevelBox;
 const inline_ = @import("inline.zig");
 const InlineLevelBox = inline_.InlineLevelBox;
@@ -31,6 +32,23 @@ pub fn base(self: *const LayoutBox) ?*const LayoutBoxBase {
         .inline_level => |*box| box.base(),
         .text => null,
     };
+}
+
+/// Normal inline boxes and text participate in an existing IFC; they do not
+/// have their own block-container contents.
+pub fn container(self: *LayoutBox) ?*BlockContainer {
+    return switch (self.content) {
+        .block_level => |*box| box.container(),
+        .inline_level => |*box| switch (box.*) {
+            .inline_box => null,
+            .atomic => |*context| &context.contents.flow.contents,
+        },
+        .text => null,
+    };
+}
+
+pub inline fn isBlockLevel(self: *const LayoutBox) bool {
+    return self.content == .block_level;
 }
 
 /// Destroy owned tree entries and fragments without touching borrowed DOM or

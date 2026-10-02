@@ -21,4 +21,15 @@ pub const Size = union(enum) {
             .length_percentage => |numeric| .{ .length_percentage = LengthPercentage.fromSpecified(numeric, context) },
         };
     }
+
+    pub fn resolve(size: Size, basis: ?f64) ?f64 {
+        return switch (size) {
+            .auto => null,
+            .length_percentage => |value| switch (value) {
+                .length => |length| length,
+                .percentage => value.resolve(basis orelse return null),
+            },
+            else => @panic("TODO: intrinsic and stretch sizing"),
+        };
+    }
 };

@@ -1,10 +1,11 @@
 const std = @import("std");
-const Stream = @import("../syntax/TokenStream.zig");
+const TokenStream = @import("../syntax/TokenStream.zig");
 const Token = @import("../syntax/token.zig").Token;
 const String = @import("../String.zig");
 const names = @import("names.zig");
 const ascii = @import("../../utils/ascii.zig");
 const color = @import("../values/specified/color.zig");
+const ComponentStream = @import("../syntax/ComponentValueStream.zig");
 pub const Color = color.Color;
 pub const Space = color.Space;
 pub const Absolute = color.Absolute;
@@ -14,32 +15,11 @@ pub const LightDark = color.LightDark;
 
 pub const ParseError = std.mem.Allocator.Error || error{NestingLimit};
 
-pub fn parse(input: *Stream) ParseError!?Color {
+pub fn parse(input: *TokenStream) ParseError!?Color {
     input.discardWhitespace();
     return switch (input.consume()) {
-        .hash => |hash| if (parseHex(hash.value)) |rgba| .{ .absolute = .{
-            .space = .srgb,
-            .channels = .{ @as(f64, @floatFromInt(rgba[0])) / 255, @as(f64, @floatFromInt(rgba[1])) / 255, @as(f64, @floatFromInt(rgba[2])) / 255 },
-            .alpha = @as(f64, @floatFromInt(rgba[3])) / 255,
-        } } else null,
-
-        .ident => |name| blk: {
-            if (name.eqlAscii("currentcolor"))
-                break :blk .current_color;
-            if (name.eqlAscii("transparent"))
-                break :blk .{ .absolute = .{ .space = .srgb, .channels = .{ 0, 0, 0 }, .alpha = 0 } };
-
-            var lower: [32]u8 = undefined;
-            const key = name.toAsciiLower(&lower) orelse break :blk null;
-
-            if (names.colors.get(key)) |rgb| break :blk .{ .absolute = .{ .space = .srgb, .channels = .{
-                @as(f64, @floatFromInt(rgb >> 16)) / 255,
-                @as(f64, @floatFromInt((rgb >> 8) & 255)) / 255,
-                @as(f64, @floatFromInt(rgb & 255)) / 255,
-            } } };
-            if (names.system_colors.getIndex(key)) |index| break :blk .{ .system = index };
-            break :blk null;
-        },
+        .hash => |hash| parseHexColor(hash.value),
+        .ident => |name| parseKeyword(name),
 
         .function => |name| blk: {
             input.index -= 1;
@@ -48,6 +28,58 @@ pub fn parse(input: *Stream) ParseError!?Color {
         },
         else => null,
     };
+}
+
+pub fn parseComponent(input: *ComponentStream) ?Color {
+    input.discardWhitespace();
+    const value = input.consume() orelse return null;
+    return switch (value.*) {
+        .preserved_token => |tk| switch (tk) {
+            .hash => |hash| parseHexColor(hash.value),
+            .ident => |name| parseKeyword(name),
+            else => null,
+        },
+        .function => |function| blk: {
+            var args = ComponentStream.init(function.value);
+            if (function.name.eqlAscii("color")) {
+                args.discardWhitespace();
+                const name = args.consumeIdent() orelse break :blk null;
+                if (name.startsWith("--")) @panic("TODO: custom-profile color property values");
+                break :blk .{ .absolute = parsePredefined(ComponentStream, &args, name) orelse break :blk null };
+            }
+            if (function.name.eqlAscii("light-dark") or function.name.eqlAscii("device-cmyk"))
+                @panic("TODO: light-dark and device-cmyk color property values");
+            if (function.name.eqlAscii("var")) @panic("TODO: CSS custom property substitution");
+            break :blk .{ .absolute = parseAbsoluteFunction(ComponentStream, function.name, &args) orelse break :blk null };
+        },
+        .simple_block => null,
+    };
+}
+
+fn parseHexColor(value: String) ?Color {
+    const rgba = parseHex(value) orelse return null;
+    return .{ .absolute = .{
+        .space = .srgb,
+        .channels = .{ @as(f64, @floatFromInt(rgba[0])) / 255, @as(f64, @floatFromInt(rgba[1])) / 255, @as(f64, @floatFromInt(rgba[2])) / 255 },
+        .alpha = @as(f64, @floatFromInt(rgba[3])) / 255,
+    } };
+}
+
+// https://www.w3.org/TR/css-color-4/#color-keywords
+fn parseKeyword(name: String) ?Color {
+    if (name.eqlAscii("currentcolor")) return .current_color;
+    if (name.eqlAscii("transparent"))
+        return .{ .absolute = .{ .space = .srgb, .channels = .{ 0, 0, 0 }, .alpha = 0 } };
+
+    var lower: [32]u8 = undefined;
+    const key = name.toAsciiLower(&lower) orelse return null;
+    if (names.colors.get(key)) |rgb| return .{ .absolute = .{ .space = .srgb, .channels = .{
+        @as(f64, @floatFromInt(rgb >> 16)) / 255,
+        @as(f64, @floatFromInt((rgb >> 8) & 255)) / 255,
+        @as(f64, @floatFromInt(rgb & 255)) / 255,
+    } } };
+    if (names.system_colors.getIndex(key)) |index| return .{ .system = index };
+    return null;
 }
 
 // https://drafts.csswg.org/css-color-4/#hex-notation
@@ -65,73 +97,78 @@ pub fn parseHex(value: String) ?[4]u8 {
     return rgba;
 }
 
-fn parseFunction(name: String, args: *Stream) ParseError!?Color {
+fn parseFunction(name: String, args: *TokenStream) ParseError!?Color {
     if (name.eqlAscii("color")) return parseColorFunction(args);
     if (name.eqlAscii("light-dark")) return parseLightDark(args);
     if (name.eqlAscii("device-cmyk"))
         return .{ .device_cmyk = parseDeviceCmyk(args) orelse return null };
 
-    const value = if (name.eqlAscii("rgb") or name.eqlAscii("rgba"))
-        parseRgb(args)
-    else if (name.eqlAscii("hsl") or name.eqlAscii("hsla"))
-        parseHsl(args)
-    else if (name.eqlAscii("hwb"))
-        parseHwb(args)
-    else if (name.eqlAscii("lab"))
-        parseLab(args, .lab)
-    else if (name.eqlAscii("oklab"))
-        parseLab(args, .oklab)
-    else if (name.eqlAscii("lch"))
-        parseLch(args, .lch)
-    else if (name.eqlAscii("oklch"))
-        parseLch(args, .oklch)
-    else
-        null;
-    return .{ .absolute = value orelse return null };
+    return .{ .absolute = parseAbsoluteFunction(TokenStream, name, args) orelse return null };
 }
 
-fn parseRgb(args: *Stream) ?Absolute {
+// Compile-time specialization keeps the two concrete streams separate; there
+// is no allocation or runtime dispatch in the shared numeric grammar.
+fn parseAbsoluteFunction(comptime Input: type, name: String, args: *Input) ?Absolute {
+    return if (name.eqlAscii("rgb") or name.eqlAscii("rgba"))
+        parseRgb(Input, args)
+    else if (name.eqlAscii("hsl") or name.eqlAscii("hsla"))
+        parseHsl(Input, args)
+    else if (name.eqlAscii("hwb"))
+        parseHwb(Input, args)
+    else if (name.eqlAscii("lab"))
+        parseLab(Input, args, .lab)
+    else if (name.eqlAscii("oklab"))
+        parseLab(Input, args, .oklab)
+    else if (name.eqlAscii("lch"))
+        parseLch(Input, args, .lch)
+    else if (name.eqlAscii("oklch"))
+        parseLch(Input, args, .oklch)
+    else
+        null;
+}
+
+fn parseRgb(comptime Input: type, args: *Input) ?Absolute {
     args.discardWhitespace();
-    const first = args.consume();
+    const first = consumeColorToken(Input, args);
     const index = args.index;
     args.discardWhitespace();
-    return switch (args.peek()) {
-        .comma => parseLegacyRgb(args, first),
-        else => if (args.index != index) parseModernRgb(args, first) else null,
+    return switch (peekColorToken(Input, args)) {
+        .comma => parseLegacyRgb(Input, args, first),
+        else => if (args.index != index) parseModernRgb(Input, args, first) else null,
     };
 }
 
-fn parseLegacyRgb(args: *Stream, first: Token) ?Absolute {
+fn parseLegacyRgb(comptime Input: type, args: *Input, first: Token) ?Absolute {
     const red = rgbChannel(first) orelse return null;
 
-    if (args.consume() != .comma) return null;
+    if (consumeColorToken(Input, args) != .comma) return null;
     args.discardWhitespace();
-    const second = args.consume();
+    const second = consumeColorToken(Input, args);
     if (std.meta.activeTag(second) != std.meta.activeTag(first)) return null;
     const green = rgbChannel(second) orelse return null;
 
     args.discardWhitespace();
-    if (args.consume() != .comma) return null;
+    if (consumeColorToken(Input, args) != .comma) return null;
     args.discardWhitespace();
-    const third = args.consume();
+    const third = consumeColorToken(Input, args);
     if (std.meta.activeTag(third) != std.meta.activeTag(first)) return null;
     const blue = rgbChannel(third) orelse return null;
 
-    return finish(args, .{ .space = .srgb, .channels = .{ red, green, blue } }, true);
+    return finish(Input, args, .{ .space = .srgb, .channels = .{ red, green, blue } }, true);
 }
 
-fn parseModernRgb(args: *Stream, first: Token) ?Absolute {
+fn parseModernRgb(comptime Input: type, args: *Input, first: Token) ?Absolute {
     const red: ?f64 = if (isNone(first)) null else rgbChannel(first) orelse return null;
-    const second = args.consume();
+    const second = consumeColorToken(Input, args);
     const green: ?f64 = if (isNone(second)) null else rgbChannel(second) orelse return null;
 
     const index = args.index;
     args.discardWhitespace();
     if (args.index == index) return null;
-    const third = args.consume();
+    const third = consumeColorToken(Input, args);
     const blue: ?f64 = if (isNone(third)) null else rgbChannel(third) orelse return null;
 
-    return finish(args, .{ .space = .srgb, .channels = .{ red, green, blue } }, false);
+    return finish(Input, args, .{ .space = .srgb, .channels = .{ red, green, blue } }, false);
 }
 
 // Shared numeric conversion and parse-time clamping for both RGB syntaxes.
@@ -141,53 +178,53 @@ fn rgbChannel(tk: Token) ?f64 {
 }
 
 // https://drafts.csswg.org/css-color-4/#the-hsl-notation
-fn parseHsl(args: *Stream) ?Absolute {
+fn parseHsl(comptime Input: type, args: *Input) ?Absolute {
     args.discardWhitespace();
-    const first = args.consume();
+    const first = consumeColorToken(Input, args);
     args.discardWhitespace();
-    return switch (args.peek()) {
-        .comma => parseLegacyHsl(args, first),
-        else => parseModernHsl(args, first),
+    return switch (peekColorToken(Input, args)) {
+        .comma => parseLegacyHsl(Input, args, first),
+        else => parseModernHsl(Input, args, first),
     };
 }
 
 // https://drafts.csswg.org/css-color-4/#legacy-hsl-syntax
-fn parseLegacyHsl(args: *Stream, first: Token) ?Absolute {
+fn parseLegacyHsl(comptime Input: type, args: *Input, first: Token) ?Absolute {
     const hue = parseHue(first) orelse return null;
 
-    if (args.consume() != .comma) return null;
+    if (consumeColorToken(Input, args) != .comma) return null;
     args.discardWhitespace();
-    const saturation = switch (args.consume()) {
+    const saturation = switch (consumeColorToken(Input, args)) {
         .percentage => |p| p.value,
         else => return null,
     };
 
     args.discardWhitespace();
-    if (args.consume() != .comma) return null;
+    if (consumeColorToken(Input, args) != .comma) return null;
     args.discardWhitespace();
-    const lightness = switch (args.consume()) {
+    const lightness = switch (consumeColorToken(Input, args)) {
         .percentage => |p| p.value,
         else => return null,
     };
     if (!std.math.isFinite(saturation) or !std.math.isFinite(lightness)) return null;
 
-    return finish(args, .{
+    return finish(Input, args, .{
         .space = .hsl,
         .channels = .{ hue, @max(0, saturation), lightness },
     }, true);
 }
 
 // https://drafts.csswg.org/css-color-4/#modern-hsl-syntax
-fn parseModernHsl(args: *Stream, first: Token) ?Absolute {
+fn parseModernHsl(comptime Input: type, args: *Input, first: Token) ?Absolute {
     const hue: ?f64 = if (isNone(first)) null else parseHue(first) orelse return null;
-    const second = args.consume();
+    const second = consumeColorToken(Input, args);
     const saturation: ?f64 = if (isNone(second)) null else @max(0, number(second, 1) orelse return null);
 
     args.discardWhitespace();
-    const third = args.consume();
+    const third = consumeColorToken(Input, args);
     const lightness: ?f64 = if (isNone(third)) null else number(third, 1) orelse return null;
 
-    return finish(args, .{
+    return finish(Input, args, .{
         .space = .hsl,
         .channels = .{ hue, saturation, lightness },
     }, false);
@@ -213,21 +250,21 @@ fn parseHue(tk: Token) ?f64 {
 }
 
 // https://drafts.csswg.org/css-color-4/#the-hwb-notation
-fn parseHwb(args: *Stream) ?Absolute {
+fn parseHwb(comptime Input: type, args: *Input) ?Absolute {
     args.discardWhitespace();
-    const first = args.consume();
+    const first = consumeColorToken(Input, args);
     const hue: ?f64 = if (isNone(first)) null else parseHue(first) orelse return null;
 
     args.discardWhitespace();
-    const second = args.consume();
+    const second = consumeColorToken(Input, args);
     const whiteness: ?f64 = if (isNone(second)) null else number(second, 1) orelse return null;
 
     args.discardWhitespace();
-    const third = args.consume();
+    const third = consumeColorToken(Input, args);
     const blackness: ?f64 = if (isNone(third)) null else number(third, 1) orelse return null;
 
     // Preserve W and B here; achromatic normalization belongs to conversion to sRGB.
-    return finish(args, .{
+    return finish(Input, args, .{
         .space = .hwb,
         .channels = .{ hue, whiteness, blackness },
     }, false);
@@ -235,23 +272,23 @@ fn parseHwb(args: *Stream) ?Absolute {
 
 // https://drafts.csswg.org/css-color-4/#funcdef-lab
 // https://drafts.csswg.org/css-color-4/#funcdef-oklab
-fn parseLab(args: *Stream, comptime space: Space) ?Absolute {
+fn parseLab(comptime Input: type, args: *Input, comptime space: Space) ?Absolute {
     const max_lightness: f64 = if (space == .lab) 100 else 1;
     const axis_scale: f64 = if (space == .lab) 1.25 else 0.004;
 
     args.discardWhitespace();
-    const first = args.consume();
+    const first = consumeColorToken(Input, args);
     const lightness: ?f64 = if (isNone(first)) null else std.math.clamp(number(first, max_lightness / 100) orelse return null, 0, max_lightness);
 
     args.discardWhitespace();
-    const second = args.consume();
+    const second = consumeColorToken(Input, args);
     const a: ?f64 = if (isNone(second)) null else number(second, axis_scale) orelse return null;
 
     args.discardWhitespace();
-    const third = args.consume();
+    const third = consumeColorToken(Input, args);
     const b: ?f64 = if (isNone(third)) null else number(third, axis_scale) orelse return null;
 
-    return finish(args, .{
+    return finish(Input, args, .{
         .space = space,
         .channels = .{ lightness, a, b },
     }, false);
@@ -259,30 +296,30 @@ fn parseLab(args: *Stream, comptime space: Space) ?Absolute {
 
 // https://drafts.csswg.org/css-color-4/#funcdef-lch
 // https://drafts.csswg.org/css-color-4/#funcdef-oklch
-fn parseLch(args: *Stream, comptime space: Space) ?Absolute {
+fn parseLch(comptime Input: type, args: *Input, comptime space: Space) ?Absolute {
     const max_lightness: f64 = if (space == .lch) 100 else 1;
     const chroma_scale: f64 = if (space == .lch) 1.5 else 0.004;
 
     args.discardWhitespace();
-    const first = args.consume();
+    const first = consumeColorToken(Input, args);
     const lightness: ?f64 = if (isNone(first)) null else std.math.clamp(number(first, max_lightness / 100) orelse return null, 0, max_lightness);
 
     args.discardWhitespace();
-    const second = args.consume();
+    const second = consumeColorToken(Input, args);
     const chroma: ?f64 = if (isNone(second)) null else @max(0, number(second, chroma_scale) orelse return null);
 
     args.discardWhitespace();
-    const third = args.consume();
+    const third = consumeColorToken(Input, args);
     const hue: ?f64 = if (isNone(third)) null else parseHue(third) orelse return null;
 
-    return finish(args, .{
+    return finish(Input, args, .{
         .space = space,
         .channels = .{ lightness, chroma, hue },
     }, false);
 }
 
 // https://drafts.csswg.org/css-color-4/#predefined
-fn parsePredefined(args: *Stream, name: String) ?Absolute {
+fn parsePredefined(comptime Input: type, args: *Input, name: String) ?Absolute {
     const space: Space = blk: {
         if (name.eqlAscii("srgb")) break :blk .srgb;
         if (name.eqlAscii("srgb-linear")) break :blk .srgb_linear;
@@ -297,36 +334,36 @@ fn parsePredefined(args: *Stream, name: String) ?Absolute {
     };
 
     args.discardWhitespace();
-    const first = args.consume();
+    const first = consumeColorToken(Input, args);
     const x: ?f64 = if (isNone(first)) null else number(first, 0.01) orelse return null;
 
     args.discardWhitespace();
-    const second = args.consume();
+    const second = consumeColorToken(Input, args);
     const y: ?f64 = if (isNone(second)) null else number(second, 0.01) orelse return null;
 
     args.discardWhitespace();
-    const third = args.consume();
+    const third = consumeColorToken(Input, args);
     const z: ?f64 = if (isNone(third)) null else number(third, 0.01) orelse return null;
 
-    return finish(args, .{
+    return finish(Input, args, .{
         .space = space,
         .channels = .{ x, y, z },
     }, false);
 }
 
 // https://drafts.csswg.org/css-color-5/#color-function
-fn parseColorFunction(args: *Stream) ParseError!?Color {
+fn parseColorFunction(args: *TokenStream) ParseError!?Color {
     args.discardWhitespace();
     const name = switch (args.consume()) {
         .ident => |value| value,
         else => return null,
     };
     if (name.startsWith("--")) return parseCustom(args, name);
-    return .{ .absolute = parsePredefined(args, name) orelse return null };
+    return .{ .absolute = parsePredefined(TokenStream, args, name) orelse return null };
 }
 
 // https://drafts.csswg.org/css-color-5/#device-cmyk
-fn parseDeviceCmyk(args: *Stream) ?DeviceCmyk {
+fn parseDeviceCmyk(args: *TokenStream) ?DeviceCmyk {
     args.discardWhitespace();
     const first = args.consume();
     const index = args.index;
@@ -338,7 +375,7 @@ fn parseDeviceCmyk(args: *Stream) ?DeviceCmyk {
 }
 
 // https://drafts.csswg.org/css-color-5/#typedef-legacy-device-cmyk-syntax
-fn parseLegacyDeviceCmyk(args: *Stream, first: Token) ?DeviceCmyk {
+fn parseLegacyDeviceCmyk(args: *TokenStream, first: Token) ?DeviceCmyk {
     if (first != .number) return null;
     var value: DeviceCmyk = .{ .channels = .{ number(first, 1) orelse return null, null, null, null } };
     for (value.channels[1..]) |*channel| {
@@ -353,7 +390,7 @@ fn parseLegacyDeviceCmyk(args: *Stream, first: Token) ?DeviceCmyk {
 }
 
 // https://drafts.csswg.org/css-color-5/#typedef-modern-device-cmyk-syntax
-fn parseModernDeviceCmyk(args: *Stream, first: Token) ?DeviceCmyk {
+fn parseModernDeviceCmyk(args: *TokenStream, first: Token) ?DeviceCmyk {
     var value: DeviceCmyk = .{ .channels = .{ null, null, null, null } };
     if (!isNone(first)) value.channels[0] = number(first, 0.01) orelse return null;
     for (value.channels[1..], 0..) |*channel, i| {
@@ -365,11 +402,11 @@ fn parseModernDeviceCmyk(args: *Stream, first: Token) ?DeviceCmyk {
         const tk = args.consume();
         channel.* = if (isNone(tk)) null else number(tk, 0.01) orelse return null;
     }
-    return if (finishAlpha(args, &value.alpha, false)) value else null;
+    return if (finishAlpha(TokenStream, args, &value.alpha, false)) value else null;
 }
 
 // https://drafts.csswg.org/css-color-5/#typedef-custom-params
-fn parseCustom(args: *Stream, name: String) ParseError!?Color {
+fn parseCustom(args: *TokenStream, name: String) ParseError!?Color {
     var channels: std.ArrayList(?f64) = .empty;
     defer channels.deinit(args.allocator);
 
@@ -384,7 +421,7 @@ fn parseCustom(args: *Stream, name: String) ParseError!?Color {
     }
     if (channels.items.len == 0) return null;
     var alpha: ?f64 = 1;
-    if (!finishAlpha(args, &alpha, false)) return null;
+    if (!finishAlpha(TokenStream, args, &alpha, false)) return null;
     return .{ .custom = .{
         .name = name,
         .channels = try channels.toOwnedSlice(args.allocator),
@@ -393,7 +430,7 @@ fn parseCustom(args: *Stream, name: String) ParseError!?Color {
 }
 
 // https://drafts.csswg.org/css-color-5/#light-dark
-fn parseLightDark(args: *Stream) ParseError!?Color {
+fn parseLightDark(args: *TokenStream) ParseError!?Color {
     var transferred = false;
     const light = try parse(args) orelse return null;
     defer if (!transferred) light.deinit(args.allocator);
@@ -425,35 +462,100 @@ inline fn isNone(tk: Token) bool {
     return tk == .ident and tk.ident.eqlAscii("none");
 }
 
-fn finish(args: *Stream, value: Absolute, comma: bool) ?Absolute {
+fn finish(
+    comptime Input: type,
+    args: *Input,
+    value: Absolute,
+    comma: bool,
+) ?Absolute {
     var result = value;
-    return if (finishAlpha(args, &result.alpha, comma)) result else null;
+    return if (finishAlpha(Input, args, &result.alpha, comma)) result else null;
 }
 
 // Shared optional-alpha tail and exhaustion check. Legacy syntax uses a comma
 // and forbids missing alpha; modern syntax uses '/' and permits none.
-fn finishAlpha(args: *Stream, alpha: *?f64, comma: bool) bool {
+fn finishAlpha(
+    comptime Input: type,
+    args: *Input,
+    alpha: *?f64,
+    comma: bool,
+) bool {
     args.discardWhitespace();
-    if (comma and args.peek() == .comma) {
-        _ = args.consume();
-        alpha.* = parseAlpha(args) orelse return false;
-    } else if (!comma and args.peek() == .delim and args.peek().delim == '/') {
-        _ = args.consume();
+    if (comma and peekColorToken(Input, args) == .comma) {
+        _ = consumeColorToken(Input, args);
+        alpha.* = parseAlpha(Input, args) orelse return false;
+    } else if (!comma and peekColorToken(Input, args) == .delim and peekColorToken(Input, args).delim == '/') {
+        _ = consumeColorToken(Input, args);
         args.discardWhitespace();
-        if (isNone(args.peek())) {
-            _ = args.consume();
+        if (isNone(peekColorToken(Input, args))) {
+            _ = consumeColorToken(Input, args);
             alpha.* = null;
-        } else alpha.* = parseAlpha(args) orelse return false;
+        } else alpha.* = parseAlpha(Input, args) orelse return false;
     }
     args.discardWhitespace();
     return args.empty();
 }
 
 // Numeric/percentage alpha only; the caller handles the none keyword.
-fn parseAlpha(args: *Stream) ?f64 {
+fn parseAlpha(comptime Input: type, args: *Input) ?f64 {
     args.discardWhitespace();
-    const value = number(args.consume(), 0.01) orelse return null;
+    const value = number(consumeColorToken(Input, args), 0.01) orelse return null;
     return std.math.clamp(value, 0, 1);
+}
+
+fn peekColorToken(comptime Input: type, args: *const Input) Token {
+    if (Input == TokenStream) return args.peek();
+    const value = args.peek() orelse return .eof;
+    if (value.* == .function) @panic("TODO: math and substitution in color coordinates");
+    if (value.* == .simple_block) return switch (value.simple_block.associated_token) {
+        .left_paren => .left_paren,
+        .left_bracket => .left_bracket,
+        .left_brace => .left_brace,
+    };
+    const tk = &value.preserved_token;
+    return switch (tk.*) {
+        .hash => |hash| .{
+            .hash = .{
+                .value = hash.value,
+                .type_flag = hash.type_flag,
+            },
+        },
+        .number => |n| .{
+            .number = .{
+                .value = n.value,
+                .sign = n.sign,
+                .type_flag = n.type_flag,
+            },
+        },
+        .percentage => |p| .{
+            .percentage = .{
+                .value = p.value,
+                .sign = p.sign,
+            },
+        },
+        .dimension => |d| .{
+            .dimension = .{
+                .value = d.value,
+                .sign = d.sign,
+                .type_flag = d.type_flag,
+                .unit = d.unit,
+            },
+        },
+        .unicode_range => |range| .{
+            .unicode_range = .{
+                .start = range.start,
+                .end = range.end,
+            },
+        },
+        inline else => |payload, tag| @unionInit(Token, @tagName(tag), payload),
+    };
+}
+
+fn consumeColorToken(comptime Input: type, args: *Input) Token {
+    if (Input == TokenStream) return args.consume();
+    const tk = peekColorToken(Input, args);
+    args.advance();
+    return tk;
 }
 
 // https://drafts.csswg.org/css-color-4/#hsl-to-rgb

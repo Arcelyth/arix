@@ -166,8 +166,25 @@ const Horizontal = struct {
 /// changes the used right margin, not the computed value.
 /// https://www.w3.org/TR/CSS2/visudet.html#blockwidth
 fn usedWidth(style: *const ComputedValues, containing_width: f64, padding: f64) Horizontal {
-    _ = style;
-    _ = containing_width;
-    _ = padding;
-    @panic("TODO");
+    const left = style.margin_left.resolve(containing_width);
+    const right = style.margin_right.resolve(containing_width);
+    var result: Horizontal = .{
+        .width = style.width.resolve(containing_width) orelse @max(0, containing_width - padding - (left orelse 0) - (right orelse 0)),
+        .left = left orelse 0,
+        .right = right orelse 0,
+    };
+
+    const remaining = containing_width - padding - result.width - result.left - result.right;
+    if (style.width == .auto or remaining < 0) {
+        result.right += remaining;
+    } else if (left == null and right == null) {
+        result.left = remaining / 2;
+        result.right = result.left;
+    } else if (left == null) {
+        result.left = remaining;
+    } else {
+        result.right += remaining;
+    }
+
+    return result;
 }

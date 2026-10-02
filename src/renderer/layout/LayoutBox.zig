@@ -4,6 +4,7 @@ const std = @import("std");
 const Tree = @import("../utils/tree.zig").Tree;
 const Fragment = @import("fragment.zig").Fragment;
 const StyledNode = @import("../style/StyledNode.zig");
+const TextSequence = @import("TextSequence.zig");
 
 /// Formatting roles.
 pub const Kind = enum {

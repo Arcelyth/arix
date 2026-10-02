@@ -91,6 +91,7 @@ fn layoutBlock(allocator: std.mem.Allocator, box: *const LayoutBox, containing: 
         .width = fragment.content.box.base.rect.width,
         .height = height,
     }, !independent and fragment.content.box.padding.top == 0);
+
     return finishBlock(fragment, independent, height, children);
 }
 
@@ -140,12 +141,35 @@ const ChildLayout = struct {
 
 /// Lay out each child in the parent's content box, then place it in normal flow.
 fn layoutChildren(allocator: std.mem.Allocator, fragment: *Fragment, first: ?*LayoutBox, containing: ContainingBlock, collapse_start: bool) !ChildLayout {
-    _ = allocator;
-    _ = fragment;
-    _ = first;
-    _ = containing;
-    _ = collapse_start;
-    @panic("TODO");
+    var result: ChildLayout = .{};
+    var child = first;
+    while (child) |current| : (child = current.next_sibling()) {
+        const placed = try layoutBlock(allocator, current, containing);
+        fragment.appendChild(placed.fragment);
+        placeChild(&result, placed, collapse_start);
+    }
+    if (result.at_start and collapse_start) result.start.adjoin(result.pending);
+    return result;
+}
+
+fn placeChild(state: *ChildLayout, child: BlockResult, collapse_start: bool) void {
+    state.pending.adjoin(child.start);
+    const border_top = if (state.at_start and collapse_start) 
+        state.cursor 
+    else 
+        state.cursor + state.pending.value();
+
+    child.fragment.content.box.base.rect.y = border_top + child.fragment.content.box.padding.top;
+    if (child.through) {
+        state.pending.adjoin(child.end);
+    } else {
+        if (state.at_start and collapse_start) 
+            state.start.adjoin(state.pending);
+
+        state.cursor = border_top + child.border_height;
+        state.pending = child.end;
+        state.at_start = false;
+    }
 }
 
 fn finishBlock(fragment: *Fragment, independent: bool, height: ?f64, children: ChildLayout) BlockResult {

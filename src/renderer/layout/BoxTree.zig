@@ -216,3 +216,40 @@ fn wrapInlineRun(allocator: std.mem.Allocator, parent: *LayoutBox, first: *Layou
         wrapper.appendChild(current);
     }
 }
+
+test "layout BoxTree: document element and display:none" {
+    const testing = std.testing;
+    const Document = @import("../dom/Document.zig");
+    const LocalName = @import("local_name").LocalName;
+    const allocator = testing.allocator;
+
+    const document = Document.init(allocator);
+    defer document.destroy(allocator);
+    const element = try allocator.create(Element);
+    element.* = Element.init(allocator, .NS_Html, LocalName.fromTag(.html), document);
+    document.asNode().appendChild(element.asNode());
+
+    // display: block;
+    var styled = StyledNode.init(element.asNode(), .{
+        .values = .{
+            .display = .{
+                .box = .{ .outside = .block },
+            },
+        },
+    });
+    const tree = try BoxTree.build(allocator, &styled);
+    try testing.expect(tree.root.contents == .block_level_boxes);
+    const box = tree.root.contents.block_level_boxes.?;
+    defer box.destroy(allocator);
+
+    try testing.expect(box.content.block_level == .independent);
+    try testing.expect(box.base().?.source.principal == element);
+    try testing.expectEqualDeep(styled.style, box.base().?.style);
+    try testing.expect(box.parent() == null and box.first_child() == null);
+
+    // display: none;
+    styled.style.values.display = .none;
+    const hidden = try BoxTree.build(allocator, &styled);
+    try testing.expect(hidden.root.contents == .block_level_boxes);
+    try testing.expect(hidden.root.contents.block_level_boxes == null);
+}

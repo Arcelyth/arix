@@ -45,7 +45,12 @@ pub const BlockResult = struct {
     border_height: f64,
 };
 
-pub fn layout(allocator: std.mem.Allocator, context: *const BlockFormattingContext, viewport_width: f64, viewport_height: f64) !FragmentTree {
+pub fn layout(
+    allocator: std.mem.Allocator,
+    context: *const BlockFormattingContext,
+    viewport_width: f64,
+    viewport_height: f64,
+) !FragmentTree {
     var result: FragmentTree = .{
         .initial_containing_block = .{
             .x = 0,
@@ -68,7 +73,11 @@ pub fn layout(allocator: std.mem.Allocator, context: *const BlockFormattingConte
     return result;
 }
 
-fn layoutBlock(allocator: std.mem.Allocator, box: *const LayoutBox, containing: ContainingBlock) !BlockResult {
+fn layoutBlock(
+    allocator: std.mem.Allocator,
+    box: *const LayoutBox,
+    containing: ContainingBlock,
+) !BlockResult {
     const block = switch (box.content) {
         .block_level => |*block| block,
         else => @panic("TODO: inline layout"),
@@ -95,7 +104,11 @@ fn layoutBlock(allocator: std.mem.Allocator, box: *const LayoutBox, containing: 
     return finishBlock(fragment, independent, height, children);
 }
 
-fn createBlockFragment(allocator: std.mem.Allocator, base: *const LayoutBoxBase, containing: ContainingBlock) !*Fragment {
+fn createBlockFragment(
+    allocator: std.mem.Allocator,
+    base: *const LayoutBoxBase,
+    containing: ContainingBlock,
+) !*Fragment {
     const style = &base.style.values;
     const padding: EdgeSizes = .{
         .top = style.padding_top.resolve(containing.width),
@@ -140,7 +153,13 @@ const ChildLayout = struct {
 };
 
 /// Lay out each child in the parent's content box, then place it in normal flow.
-fn layoutChildren(allocator: std.mem.Allocator, fragment: *Fragment, first: ?*LayoutBox, containing: ContainingBlock, collapse_start: bool) !ChildLayout {
+fn layoutChildren(
+    allocator: std.mem.Allocator,
+    fragment: *Fragment,
+    first: ?*LayoutBox,
+    containing: ContainingBlock,
+    collapse_start: bool,
+) !ChildLayout {
     var result: ChildLayout = .{};
     var child = first;
     while (child) |current| : (child = current.next_sibling()) {
@@ -154,16 +173,16 @@ fn layoutChildren(allocator: std.mem.Allocator, fragment: *Fragment, first: ?*La
 
 fn placeChild(state: *ChildLayout, child: BlockResult, collapse_start: bool) void {
     state.pending.adjoin(child.start);
-    const border_top = if (state.at_start and collapse_start) 
-        state.cursor 
-    else 
+    const border_top = if (state.at_start and collapse_start)
+        state.cursor
+    else
         state.cursor + state.pending.value();
 
     child.fragment.content.box.base.rect.y = border_top + child.fragment.content.box.padding.top;
     if (child.through) {
         state.pending.adjoin(child.end);
     } else {
-        if (state.at_start and collapse_start) 
+        if (state.at_start and collapse_start)
             state.start.adjoin(state.pending);
 
         state.cursor = border_top + child.border_height;
@@ -172,12 +191,42 @@ fn placeChild(state: *ChildLayout, child: BlockResult, collapse_start: bool) voi
     }
 }
 
-fn finishBlock(fragment: *Fragment, independent: bool, height: ?f64, children: ChildLayout) BlockResult {
-    _ = fragment;
-    _ = independent;
-    _ = height;
-    _ = children;
-    @panic("TODO");
+/// Resolve auto height and return the margins that adjoining boxes can collapse.
+fn finishBlock(
+    fragment: *Fragment,
+    independent: bool,
+    height: ?f64,
+    children: ChildLayout,
+) BlockResult {
+    const padding = fragment.content.box.padding;
+    var start = CollapsedMargin.init(fragment.content.box.margin.top);
+    start.adjoin(children.start);
+
+    var end = CollapsedMargin.init(fragment.content.box.margin.bottom);
+    const collapse_start = !independent and padding.top == 0;
+    const collapse_end = !independent and padding.bottom == 0 and height == null;
+    const through = !independent and padding.top == 0 and padding.bottom == 0 and
+        (height == null or height.? == 0) and children.at_start;
+
+    var cursor = children.cursor;
+    if (through)
+        // `start` only keeps the margin needed to determine the block's position;
+        // `end` keeps the full collapsed margin for the next sibling.
+        end.adjoin(start)
+    else if (collapse_end)
+        end.adjoin(children.pending)
+    else if (!(children.at_start and collapse_start))
+        cursor += children.pending.value();
+
+    const content_height = height orelse @max(0, cursor);
+    fragment.content.box.base.rect.height = content_height;
+    return .{
+        .fragment = fragment,
+        .start = start,
+        .end = end,
+        .through = through,
+        .border_height = padding.top + content_height + padding.bottom,
+    };
 }
 
 const Horizontal = struct {

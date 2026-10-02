@@ -66,7 +66,15 @@ pub const PropertyId = std.meta.FieldEnum(@TypeOf(definitions));
 const names = blk: {
     const fields = std.meta.fields(PropertyId);
     var entries: [fields.len]struct { []const u8, PropertyId } = undefined;
-    for (fields, 0..) |field, i| entries[i] = .{ field.name, @enumFromInt(field.value) };
+    for (fields, 0..) |field, i| {
+        // Zig field names use underscores; CSS property names use hyphens.
+        const name = name: {
+            var bytes: [field.name.len]u8 = undefined;
+            for (field.name, 0..) |byte, index| bytes[index] = if (byte == '_') '-' else byte;
+            break :name bytes;
+        };
+        entries[i] = .{ &name, @enumFromInt(field.value) };
+    }
     break :blk std.StaticStringMap(PropertyId).initComptime(entries);
 };
 
@@ -126,13 +134,14 @@ pub const ComputedValues = blk: {
 };
 
 test "properties registry: lookup" {
-    inline for (std.meta.fields(PropertyId)) |field| {
-        const expected: ?PropertyId = @enumFromInt(field.value);
-        try std.testing.expectEqual(expected, fromName(String.fromSource(field.name)));
+    for (names.keys(), names.values()) |name, id| {
+        try std.testing.expectEqual(@as(?PropertyId, id), fromName(String.fromSource(name)));
     }
     try std.testing.expectEqual(PropertyId.width, fromName(String.fromSource("WiDtH")).?);
     try std.testing.expectEqual(PropertyId.height, fromName(String.fromSource("HEIGHT")).?);
-    for ([_][]const u8{ "", "widt", "widths", "unknown", "--width", "wídth" }) |name| {
+    try std.testing.expectEqual(PropertyId.padding_left, fromName(String.fromSource("PaDdInG-LeFt")).?);
+    try std.testing.expectEqual(PropertyId.margin_top, fromName(String.fromSource("margin-top")).?);
+    for ([_][]const u8{ "", "widt", "widths", "unknown", "--width", "wídth", "padding_left" }) |name| {
         try std.testing.expectEqual(null, fromName(String.fromSource(name)));
     }
 }

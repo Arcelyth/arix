@@ -2,43 +2,35 @@ const LayoutBox = @This();
 
 const std = @import("std");
 const Tree = @import("../utils/tree.zig").Tree;
-const Fragment = @import("fragment.zig").Fragment;
-const Element = @import("../dom/Element.zig");
-const ComputedStyle = @import("../style/computed/ComputedStyle.zig");
-const Display = @import("../css/values/computed/display.zig").Display;
-const registry = @import("../css/properties/registry.zig");
+const LayoutBoxBase = @import("LayoutBoxBase.zig");
+const flow = @import("flow.zig");
+const BlockLevelBox = flow.BlockLevelBox;
+const inline_ = @import("inline.zig");
+const InlineLevelBox = inline_.InlineLevelBox;
 const TextSequence = @import("TextSequence.zig");
 
-/// A box tree contains boxes and text sequences. Text sequences have no display
-/// type; a box's formatting behavior comes from its computed display value.
+/// An intrusive entry in the formatting structure. Specialized box payloads
+/// own their base data and contexts. Text sequences are content, not CSS boxes.
 pub const Content = union(enum) {
-    box: Box,
+    block_level: BlockLevelBox,
+    inline_level: InlineLevelBox,
     text: TextSequence,
 };
 
-pub const Box = struct {
-    /// Box origin, not its formatting model. Elements are borrowed; anonymous
-    /// boxes have no originating element. Marker generation is still TODO.
-    /// https://www.w3.org/TR/css-display-3/#intro
-    pub const Source = union(enum) {
-        principal: *const Element,
-        anonymous,
-        // FIXME:
-        marker: *const Element,
-    };
-
-    source: Source,
-    style: ComputedStyle,
-};
-
 content: Content,
-/// Layout output. Empty until a formatting pass runs.
-/// One source box can produce several fragments when fragmentation is supported.
-fragments: std.ArrayList(Fragment) = .empty,
 tree: Tree(LayoutBox) = .{},
 
 pub fn init(content: Content) LayoutBox {
     return .{ .content = content };
+}
+
+/// Text has no box base or computed display type.
+pub fn base(self: *const LayoutBox) ?*const LayoutBoxBase {
+    return switch (self.content) {
+        .block_level => |*box| box.base(),
+        .inline_level => |*box| box.base(),
+        .text => null,
+    };
 }
 
 /// Destroy owned tree entries and fragments without touching borrowed DOM or
@@ -53,7 +45,11 @@ pub fn destroy(self: *LayoutBox, allocator: std.mem.Allocator) void {
         }
         const parent_node = current.parent();
         current.remove();
-        current.fragments.deinit(allocator);
+        switch (current.content) {
+            .block_level => |*box| box.deinit(allocator),
+            .inline_level => |*box| box.deinit(allocator),
+            .text => {},
+        }
         allocator.destroy(current);
         current = parent_node orelse return;
     }
@@ -95,5 +91,3 @@ pub inline fn next_sibling(self: *const LayoutBox) ?*LayoutBox {
 pub inline fn prev_sibling(self: *const LayoutBox) ?*LayoutBox {
     return self.tree.prev_sibling;
 }
-
-

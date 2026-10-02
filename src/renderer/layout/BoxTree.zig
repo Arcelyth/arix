@@ -12,6 +12,7 @@ const ComputedStyle = @import("../style/computed/ComputedStyle.zig");
 const Element = @import("../dom/Element.zig");
 const Text = @import("../dom/Text.zig");
 const LocalTag = @import("local_name").LocalTag;
+const FragmentTree = @import("fragment.zig").FragmentTree;
 
 /// The initial containing block's BFC. Contains the document element's
 /// principal box, or no box when the document element has display:none.
@@ -36,6 +37,25 @@ pub fn create(allocator: std.mem.Allocator, content: LayoutBox.Content) !*Layout
     const box = try allocator.create(LayoutBox);
     box.* = LayoutBox.init(content);
     return box;
+}
+
+pub fn layout(self: *const BoxTree, allocator: std.mem.Allocator, viewport_width: f64, viewport_height: f64) !FragmentTree {
+    return flow.layout(allocator, &self.root, viewport_width, viewport_height);
+}
+
+pub fn destroy(self: *BoxTree, allocator: std.mem.Allocator) void {
+    switch (self.root.contents) {
+        .block_level_boxes => |first| {
+            var child = first;
+            while (child) |box| {
+                child = box.next_sibling();
+                box.destroy(allocator);
+            }
+        },
+        .inline_formatting_context => @panic("BoxTree root must contain block-level boxes"),
+    }
+    self.root.deinit(allocator);
+    self.root = .{};
 }
 
 /// A principal box receives the generating element's computed style.

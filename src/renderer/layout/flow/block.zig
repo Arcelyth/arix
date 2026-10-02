@@ -77,7 +77,7 @@ fn layoutBlock(
     allocator: std.mem.Allocator,
     box: *const LayoutBox,
     containing: ContainingBlock,
-) !BlockResult {
+) std.mem.Allocator.Error!BlockResult {
     const block = switch (box.content) {
         .block_level => |*block| block,
         else => @panic("TODO: inline layout"),

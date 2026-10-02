@@ -273,3 +273,87 @@ test "layout BoxTree: document element and display:none" {
     try testing.expect(hidden.root.contents == .block_level_boxes);
     try testing.expect(hidden.root.contents.block_level_boxes == null);
 }
+
+test "layout BoxTree: layout a padded root and a centered block" {
+    const testing = std.testing;
+    const Rect = @import("../geometry/Rect.zig");
+    const allocator = testing.allocator;
+    const root_style: ComputedStyle = .{ .values = .{
+        .display = .{ .box = .{ .outside = .block } },
+        .padding_top = .{ .length = 10 },
+        .padding_right = .{ .length = 10 },
+        .padding_bottom = .{ .length = 10 },
+        .padding_left = .{ .length = 10 },
+    } };
+    const root = try create(allocator, .{
+        .block_level = .{
+            .independent = .{
+                .base = .{
+                    .source = .anonymous,
+                    .style = root_style,
+                },
+            },
+        },
+    });
+    var tree: BoxTree = .{
+        .root = .{
+            .contents = .{ .block_level_boxes = root },
+        },
+    };
+    defer tree.destroy(allocator);
+
+    const child_style: ComputedStyle = .{ .values = .{
+        .display = .{ .box = .{ .outside = .block } },
+        .width = .{ .length_percentage = .{ .percentage = 50 } },
+        .height = .{ .length_percentage = .{ .length = 50 } },
+        .margin_left = .auto,
+        .margin_right = .auto,
+        .margin_top = .{ .length_percentage = .{ .length = 5 } },
+        .margin_bottom = .{ .length_percentage = .{ .length = 5 } },
+    } };
+    const child = try create(allocator, .{
+        .block_level = .{
+            .same_formatting_context = .{
+                .base = .{
+                    .source = .anonymous,
+                    .style = child_style,
+                },
+            },
+        },
+    });
+    root.appendChild(child);
+    root.container().?.* = .{ .block_level_boxes = child };
+
+    var fragments = try tree.layout(allocator, 200, 100);
+    defer fragments.destroy(allocator);
+
+    const root_fragment = fragments.root.?;
+    const child_fragment = root_fragment.first_child().?;
+
+    try testing.expectEqualDeep(Rect{
+        .x = 0,
+        .y = 0,
+        .width = 200,
+        .height = 100,
+    }, fragments.initial_containing_block);
+
+    // width: 200 - 10 - 10 = 180px.
+    // height: See its child's content and margin: 50 + 5 + 5 = 60.
+    try testing.expectEqualDeep(Rect{
+        .x = 10,
+        .y = 10,
+        .width = 180,
+        .height = 60,
+    }, root_fragment.content.box.base.rect);
+
+    // witdth: 50% of 180px is 90px.
+    // height: because of auto so it is 50px.
+    try testing.expectEqualDeep(Rect{
+        .x = 45,
+        .y = 5,
+        .width = 90,
+        .height = 50,
+    }, child_fragment.content.box.base.rect);
+    try testing.expect(child_fragment.parent() == root_fragment and child_fragment.next_sibling() == null);
+    try testing.expectEqualDeep(child_style, child.base().?.style);
+}

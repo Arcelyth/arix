@@ -140,7 +140,7 @@ fn appendChildren(allocator: std.mem.Allocator, parent: *LayoutBox, node: *const
 fn finishContainer(allocator: std.mem.Allocator, parent: *LayoutBox) !void {
     var has_block = false;
     var child = parent.first_child();
-    while (child) |box| : (child = box.next_sibling()) 
+    while (child) |box| : (child = box.next_sibling())
         has_block = has_block or box.isBlockLevel();
 
     const container = parent.container() orelse {
@@ -169,7 +169,7 @@ fn finishContainer(allocator: std.mem.Allocator, parent: *LayoutBox) !void {
         }
         if (isWhitespaceRun(first, end)) {
             // FIXME: Only white-space:normal is available in the current property registry.
-            // Need to implement whitespace value. 
+            // Need to implement whitespace value.
             while (child != end) {
                 const current = child.?;
                 child = current.next_sibling();
@@ -196,9 +196,23 @@ fn isWhitespaceRun(first: *LayoutBox, end: ?*LayoutBox) bool {
     return true;
 }
 
-fn wrapInlineRun(allocator: std.mem.Allocator, parent: *LayoutBox, first: *LayoutBox, end: ?*LayoutBox) !void {
-    _ = allocator;
-    _ = parent;
-    _ = first;
-    _ = end;
+fn wrapInlineRun(allocator: std.mem.Allocator, parent: *LayoutBox, first: *LayoutBox, end: ?*LayoutBox) std.mem.Allocator.Error!void {
+    const base = LayoutBoxBase.anonymous(&parent.base().?.style, .{ .outside = .block });
+    const wrapper = try create(allocator, .{
+        .block_level = .{
+            .same_formatting_context = .{
+                .base = base,
+                .contents = .{ .inline_formatting_context = InlineFormattingContext.init(&base.style, first) },
+            },
+        },
+    });
+
+    parent.insertBefore(wrapper, first);
+    var child: ?*LayoutBox = first;
+    while (child != end) {
+        const current = child.?;
+        child = current.next_sibling();
+        current.remove();
+        wrapper.appendChild(current);
+    }
 }

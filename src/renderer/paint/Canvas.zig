@@ -27,7 +27,7 @@ pub fn deinit(self: *Canvas, allocator: std.mem.Allocator) void {
 
 pub fn draw(self: *Canvas, list: *const DisplayList) void {
     for (list.items.items) |item| switch (item) {
-        .rectangle => |command| self.fillRect(command.rect, command.color),
+        .rect => |command| self.fillRect(command.rect, command.color),
     };
 }
 
@@ -37,22 +37,22 @@ pub fn fillRect(self: *Canvas, rect: Rect, rgba: [4]f64) void {
     const left = std.math.clamp(
         rect.x,
         0,
-        @floatFromInt(self.width),
+        @as(f64, @floatFromInt(self.width)),
     );
     const top = std.math.clamp(
         rect.y,
         0,
-        @floatFromInt(self.height),
+        @as(f64, @floatFromInt(self.height)),
     );
     const right = std.math.clamp(
         rect.x + rect.width,
         0,
-        @floatFromInt(self.width),
+        @as(f64, @floatFromInt(self.width)),
     );
     const bottom = std.math.clamp(
         rect.y + rect.height,
         0,
-        @floatFromInt(self.height),
+        @as(f64, @floatFromInt(self.height)),
     );
 
     if (left >= right or top >= bottom) return;

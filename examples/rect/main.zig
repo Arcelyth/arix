@@ -6,7 +6,7 @@ const image = utils.image;
 const BufferDeque = utils.buffer_deque.BufferDeque;
 const HtmlParser = renderer.html.Parser;
 const CssBuffer = renderer.css.syntax.Buffer;
-const CssParser = renderer.css.syntax.CssParser;
+const CssParser = renderer.css.syntax.Parser;
 const style = renderer.style;
 const layout = renderer.layout;
 const DisplayList = renderer.paint.display.DisplayList;
@@ -15,7 +15,7 @@ const Canvas = renderer.paint.Canvas;
 const html_path = "./index.html";
 const css_path = "./rect.css";
 
-const output_path = "./rect.ppm";
+const output_path = "./target/rect.ppm";
 const width = 320;
 const height = 200;
 
@@ -32,7 +32,7 @@ pub fn main(init: std.process.Init) !void {
     const html_parser = try HtmlParser.create(allocator, .{ .tokenizer = .{}, .tree_builder = .{} });
     defer html_parser.destroy();
 
-    var input = BufferDeque(.utf8, .not_atomic, true).init(allocator);
+    var input = try BufferDeque(.utf8, .not_atomic, true).init(allocator);
     defer input.deinit();
 
     try input.pushBackSlice(html);
@@ -78,6 +78,7 @@ pub fn main(init: std.process.Init) !void {
 
     canvas.draw(&list);
     const ppm = try image.ppm.encode(allocator, width, height, canvas.pixels);
+    try cwd.createDirPath(init.io, std.fs.path.dirname(output_path).?);
     try cwd.writeFile(init.io, .{ .sub_path = output_path, .data = ppm });
     std.debug.print("Wrote {s} ({d} x {d})\n", .{ output_path, width, height });
 }

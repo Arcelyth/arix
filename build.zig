@@ -83,6 +83,38 @@ pub fn build(b: *std.Build) !void {
     if (b.args) |args| run_bench.addArgs(args);
     bench_step.dependOn(&run_bench.step);
 
+    // example
+    const renderer_module = b.createModule(.{
+        .root_source_file = b.path("src/renderer.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    moduleAddCommon(renderer_module, anon_imports, depends, options);
+    const Example = @import("examples/main.zig").Example;
+    for (std.enums.values(Example)) |selection| {
+        const name = @tagName(selection);
+        const example_options = b.addOptions();
+        example_options.addOption(Example, "example", selection);
+        const example_module = b.createModule(.{
+            .root_source_file = b.path("examples/main.zig"),
+            .target = target,
+            .optimize = optimize,
+        });
+
+        example_module.addOptions("config", example_options);
+        example_module.addImport("renderer", renderer_module);
+        example_module.addImport("strale", strale.module("strale"));
+        const example = b.addExecutable(.{ .name = name, .root_module = example_module });
+        const run_example = b.addRunArtifact(example);
+
+        run_example.setCwd(b.path(b.fmt("examples/{s}", .{name})));
+        if (b.args) |args| run_example.addArgs(args);
+        b.step(
+            b.fmt("example:{s}", .{name}),
+            b.fmt("Run the {s} example", .{name}),
+        ).dependOn(&run_example.step);
+    }
+
     // test
     for (test_targets) |t| {
         const test_module = b.createModule(.{

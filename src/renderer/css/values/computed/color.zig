@@ -8,6 +8,30 @@ pub const Color = union(enum) {
     absolute: color.Absolute,
     current_color,
 
+    pub const black: Color = .{ .absolute = .{
+        .space = .srgb,
+        .channels = .{ 0, 0, 0 },
+    } };
+
+    /// Resolve a used color for the sRGB raster target.
+    pub fn toRgba(self: Color, foreground: Color) error{UnsupportedColorSpace}![4]f64 {
+        const absolute = switch (self) {
+            .absolute => |value| value,
+            .current_color => switch (foreground) {
+                .absolute => |value| value,
+                .current_color => black.absolute,
+            },
+        };
+        if (absolute.space != .srgb) return error.UnsupportedColorSpace;
+
+        return .{
+            std.math.clamp(absolute.channels[0] orelse 0, 0, 1),
+            std.math.clamp(absolute.channels[1] orelse 0, 0, 1),
+            std.math.clamp(absolute.channels[2] orelse 0, 0, 1),
+            std.math.clamp(absolute.alpha orelse 0, 0, 1),
+        };
+    }
+
     pub const transparent: Color = .{
         .absolute = .{
             .space = .srgb,

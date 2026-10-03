@@ -14,6 +14,8 @@ pub const definitions = .{
     .height = preferred_size,
 
     .display = display_entry,
+    .color = foreground_color,
+    .background_color = background_color,
     .margin_top = margin_side,
     .margin_right = margin_side,
     .margin_bottom = margin_side,
@@ -71,6 +73,14 @@ const background_color = .{
     .compute = &computed.Color.fromSpecified,
 };
 
+const foreground_color = .{
+    .parse = &parseColor,
+    .value_tag = @as(std.meta.Tag(Value), .color),
+    .initial = computed.Color.black,
+    .inherited = true,
+    .compute = &computed.Color.fromSpecified,
+};
+
 pub const PropertyId = std.meta.FieldEnum(@TypeOf(definitions));
 
 const names = blk: {
@@ -123,7 +133,7 @@ fn parseDisplay(input: *Stream) ?Value {
 }
 
 fn parseColor(input: *Stream) ?Value {
-    return .{ .color = color.parse(input) orelse return null };
+    return .{ .color = color.parseComponent(input) orelse return null };
 }
 
 /// One field per property, with its concrete computed type and initial default.

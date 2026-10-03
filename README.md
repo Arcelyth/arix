@@ -17,6 +17,8 @@ The project currently includes:
 zig build example:<name>
 ```
 
+See [examples](./examples).
+
 ## Testing
 Tests cover HTML and CSS parsing, text decoding, DOM, styles, and block layout.
 HTML parser's behavior is tested against the [html5lib test suite](https://github.com/html5lib/html5lib-tests).

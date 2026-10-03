@@ -1,0 +1,21 @@
+html,
+body,
+div {
+  display: block;
+}
+
+head {
+  display: none;
+}
+
+body {
+  background-color: #f0f0f0;
+  padding-left: 24px;
+  padding-top: 24px;
+}
+
+div {
+  width: 160px;
+  height: 100px;
+  background-color: #ef6548;
+}

@@ -14,8 +14,48 @@ body {
   padding-top: 24px;
 }
 
-div {
+.orange {
   width: 160px;
-  height: 100px;
+  height: 28px;
   background-color: #ef6548;
+}
+
+.blue {
+  width: 216px;
+  height: 32px;
+  margin-top: 10px;
+  margin-left: 32px;
+  background-color: #2878d0;
+}
+
+.green {
+  width: 240px;
+  height: 44px;
+  margin-top: 10px;
+  padding-top: 12px;
+  padding-right: 12px;
+  padding-bottom: 12px;
+  padding-left: 12px;
+  background-color: #269c72;
+}
+
+.yellow {
+  width: 96px;
+  height: 16px;
+  background-color: #f5cb54;
+}
+
+.purple {
+  width: 144px;
+  height: 16px;
+  margin-top: 8px;
+  margin-left: 72px;
+  background-color: #8056bd;
+}
+
+.red {
+  width: 112px;
+  height: 8px;
+  margin-top: 10px;
+  background-color: #ce4055;
 }

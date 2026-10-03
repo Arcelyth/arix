@@ -2,7 +2,6 @@ const Parser = @This();
 
 const std = @import("std");
 const strale = @import("strale");
-const BufferDeque = strale.BufferDeque;
 const DocumentFragment = @import("../dom/DocumentFragment.zig");
 const Element = @import("../dom/Element.zig");
 const Node = @import("../dom/Node.zig");

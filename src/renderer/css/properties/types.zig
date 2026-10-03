@@ -2,6 +2,7 @@ const Size = @import("../values/specified/size.zig").Size;
 const Margin = @import("../values/specified/margin.zig").Margin;
 const LengthPercentage = @import("../values/specified/length_percentage.zig").LengthPercentage;
 const Display = @import("../values/specified/display.zig").Display;
+const Color = @import("../values/specified/color.zig").Color;
 pub const PropertyId = @import("registry.zig").PropertyId;
 
 // https://www.w3.org/TR/css-cascade-5/#defaulting-keywords
@@ -19,6 +20,7 @@ pub const Value = union(enum) {
     margin: Margin,
     padding: LengthPercentage,
     display: Display,
+    color: Color,
     css_wide: CSSWideKeyword,
 };
 

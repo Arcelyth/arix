@@ -7,6 +7,7 @@ const Value = @import("types.zig").Value;
 const margin = @import("../values/specified/margin.zig");
 const display = @import("../values/specified/display.zig");
 const length_percentage = @import("../values/specified/length_percentage.zig");
+const color = @import("../color/parse.zig");
 
 pub const definitions = .{
     .width = preferred_size,
@@ -61,6 +62,15 @@ const padding_side = .{
     .compute = &computed.LengthPercentage.fromSpecified,
 };
 
+// https://www.w3.org/TR/css-backgrounds-3/#background-color
+const background_color = .{
+    .parse = &parseColor,
+    .value_tag = @as(std.meta.Tag(Value), .color),
+    .initial = computed.Color.transparent,
+    .inherited = false,
+    .compute = &computed.Color.fromSpecified,
+};
+
 pub const PropertyId = std.meta.FieldEnum(@TypeOf(definitions));
 
 const names = blk: {
@@ -110,6 +120,10 @@ fn parsePadding(input: *Stream) ?Value {
 
 fn parseDisplay(input: *Stream) ?Value {
     return .{ .display = display.parse(input) orelse return null };
+}
+
+fn parseColor(input: *Stream) ?Value {
+    return .{ .color = color.parse(input) orelse return null };
 }
 
 /// One field per property, with its concrete computed type and initial default.

@@ -1,4 +1,5 @@
 pub const decode = @import("syntax/decode.zig");
+pub const Buffer = @import("syntax/Buffer.zig");
 pub const InputStream = @import("syntax/InputStream.zig");
 pub const CSSTokenizer = @import("syntax/Tokenizer.zig");
 pub const TokenStream = @import("syntax/TokenStream.zig");

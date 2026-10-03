@@ -2,6 +2,7 @@ const Document = @This();
 
 const Namespace = @import("namespace.zig").Namespace;
 const Node = @import("Node.zig");
+const Element = @import("Element.zig");
 const CustomElementRegistry = @import("CustomElementRegistry.zig");
 const std = @import("std");
 const token = @import("../html/tokenizer/token.zig");
@@ -86,4 +87,12 @@ pub fn isIframeSrcdocDocument(self: *Document) bool {
     _ = self;
     // TODO;
     return false;
+}
+
+pub fn documentElement(self: *const Document) ?*Element {
+    var child = self.node.first_child();
+    while (child) |node| : (child = node.next_sibling()) {
+        if (node.type_id == .DOM_Element) return node.downcast(Element);
+    }
+    return null;
 }

@@ -10,11 +10,11 @@ const CSSWideKeyword = types.CSSWideKeyword;
 
 /// Parse a syntax-parsed declaration to one use specified value.
 /// Unknown properties and invalid values return null.
-/// Value functions require math/substitution support and panic until implemented.
 pub fn parseDeclaration(declaration: *const syntax.Declaration) ?Declaration {
     const id = registry.fromName(declaration.name) orelse return null;
     for (declaration.value) |value| {
-        if (value == .function) @panic("TODO: CSS property value functions (math and substitution)");
+        if (value == .function and value.function.name.eqlAscii("var"))
+            @panic("TODO: CSS custom property substitution");
     }
 
     var input = Stream.init(declaration.value);

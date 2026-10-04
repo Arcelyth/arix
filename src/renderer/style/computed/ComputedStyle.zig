@@ -19,31 +19,31 @@ pub fn compute(
     var result: ComputedStyle = .{};
 
     for (std.enums.values(properties.PropertyId)) |id| {
-        computers[@intFromEnum(id)](&result, winners.get(id), inherited, context);
+        computers[@backingInt(id)](&result, winners.get(id), inherited, context);
     }
     return result;
 }
 
 /// Generate separate handlers.
 const computers = blk: {
-    const fields = std.meta.fields(properties.PropertyId);
-    var entries: [fields.len]*const fn (
+    const fields = @typeInfo(properties.PropertyId).@"enum";
+    var entries: [fields.field_names.len]*const fn (
         *ComputedStyle,
         ?*const properties.Declaration,
         *const ComputedStyle,
         *const Context,
     ) void = undefined;
-    for (fields) |field| {
-        entries[field.value] = struct {
+    for (fields.field_names, fields.field_values) |name, value| {
+        entries[value] = struct {
             fn computeProperty(
                 style: *ComputedStyle,
                 winner: ?*const properties.Declaration,
                 parent: *const ComputedStyle,
                 context: *const Context,
             ) void {
-                const definition = @field(registry.definitions, field.name);
-                const dest = &@field(style.values, field.name);
-                const inherited = @field(parent.values, field.name);
+                const definition = @field(registry.definitions, name);
+                const dest = &@field(style.values, name);
+                const inherited = @field(parent.values, name);
 
                 dest.* = if (definition.inherited) inherited else definition.initial;
                 const declaration = winner orelse return;

@@ -28,9 +28,9 @@ pub fn parse(input: *Stream, comptime range: Range) ?LengthPercentage {
         },
         .dimension => |dimension| blk: {
             if (range == .non_negative and !(dimension.value >= 0)) return null;
-            inline for (std.meta.fields(Length.Unit)) |unit| {
-                if (dimension.unit.eqlAscii(unit.name)) break :blk .{
-                    .length = .{ .value = dimension.value, .unit = @enumFromInt(unit.value) },
+            inline for (std.enums.values(Length.Unit)) |unit| {
+                if (dimension.unit.eqlAscii(@tagName(unit))) break :blk .{
+                    .length = .{ .value = dimension.value, .unit = unit },
                 };
             }
             return null;

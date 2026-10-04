@@ -48,9 +48,9 @@ const Priority = struct {
     fn overrides(self: Priority, previous: Priority) bool {
         if (self.important != previous.important) return self.important;
         if (self.origin != previous.origin) return if (self.important)
-            @intFromEnum(self.origin) < @intFromEnum(previous.origin)
+            @backingInt(self.origin) < @backingInt(previous.origin)
         else
-            @intFromEnum(self.origin) > @intFromEnum(previous.origin);
+            @backingInt(self.origin) > @backingInt(previous.origin);
         return self.specificity.order(previous.specificity) != .lt;
     }
 };

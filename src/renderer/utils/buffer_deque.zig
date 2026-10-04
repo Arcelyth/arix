@@ -73,7 +73,7 @@ pub fn BufferDeque(comptime format: strale.Format, comptime atomicity: strale.At
         /// Using SIMD to scan multiple bytes at once.
         inline fn indexOfAny(bytes: []const u8, comptime set: []const u8, comptime input_errors: bool) usize {
             const table = comptime table: {
-                var value = std.StaticBitSet(256).initEmpty();
+                var value = std.bit_set.Static(256).empty;
                 for (set) |char| value.set(char);
                 break :table value;
             };
@@ -153,7 +153,7 @@ pub fn BufferDeque(comptime format: strale.Format, comptime atomicity: strale.At
         /// handling for case folding and exceptional code points.
         fn peekAsciiNameRunImpl(self: *Self, comptime set: []const u8, comptime input_errors: bool) ?FrontRun {
             const table = comptime table: {
-                var value = std.StaticBitSet(256).initEmpty();
+                var value = std.bit_set.Static(256).empty;
                 for (set) |char| value.set(char);
                 break :table value;
             };
@@ -214,7 +214,7 @@ pub fn BufferDeque(comptime format: strale.Format, comptime atomicity: strale.At
                 }
 
                 const table = comptime table: {
-                    var value = std.StaticBitSet(256).initEmpty();
+                    var value = std.bit_set.Static(256).empty;
                     for (set) |char| value.set(char);
                     break :table value;
                 };

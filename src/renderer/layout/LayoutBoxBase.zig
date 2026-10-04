@@ -27,9 +27,9 @@ pub fn deinit(self: *LayoutBoxBase, allocator: std.mem.Allocator) void {
 /// have their initial values. Construction supplies the anonymous display.
 pub fn anonymous(parent_style: *const ComputedStyle, display: Display.Box) LayoutBoxBase {
     var style: ComputedStyle = .{};
-    inline for (std.meta.fields(registry.PropertyId)) |field| {
-        if (@field(registry.definitions, field.name).inherited)
-            @field(style.values, field.name) = @field(parent_style.values, field.name);
+    inline for (@typeInfo(registry.PropertyId).@"enum".field_names) |name| {
+        if (@field(registry.definitions, name).inherited)
+            @field(style.values, name) = @field(parent_style.values, name);
     }
     style.values.display = .{ .box = display };
     return .{ .source = .anonymous, .style = style };

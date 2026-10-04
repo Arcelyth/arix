@@ -34,15 +34,15 @@ pub fn parse(input: *Stream) ?Size {
 test "values specified size: check all length units" {
     const ComponentValue = @import("../../syntax/parsing_results.zig").ComponentValue;
     const String = @import("../../String.zig");
-    inline for (std.meta.fields(Length.Unit)) |unit| {
+    inline for (std.enums.values(Length.Unit)) |unit| {
         const values = [_]ComponentValue{.{ .preserved_token = .{ .dimension = .{
             .value = 2.5,
-            .unit = String.fromSource(unit.name),
+            .unit = String.fromSource(@tagName(unit)),
         } } }};
         var input = Stream.init(&values);
         const value = parse(&input).?;
         try std.testing.expectEqual(@as(f64, 2.5), value.length_percentage.length.value);
-        try std.testing.expectEqual(@as(Length.Unit, @enumFromInt(unit.value)), value.length_percentage.length.unit);
+        try std.testing.expectEqual(unit, value.length_percentage.length.unit);
         try std.testing.expect(input.empty());
     }
 }

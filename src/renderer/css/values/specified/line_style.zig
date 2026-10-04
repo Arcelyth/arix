@@ -18,10 +18,10 @@ pub const LineStyle = enum {
 pub fn parse(input: *Stream) ?LineStyle {
     const token = input.peekToken() orelse return null;
     if (token.* != .ident) return null;
-    inline for (std.meta.fields(LineStyle)) |field| {
-        if (token.ident.eqlAscii(field.name)) {
+    inline for (std.enums.values(LineStyle)) |value| {
+        if (token.ident.eqlAscii(@tagName(value))) {
             input.advance();
-            return @enumFromInt(field.value);
+            return value;
         }
     }
     return null;

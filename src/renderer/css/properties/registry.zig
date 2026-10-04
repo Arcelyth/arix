@@ -84,25 +84,25 @@ const foreground_color = .{
 pub const PropertyId = std.meta.FieldEnum(@TypeOf(definitions));
 
 const names = blk: {
-    const fields = std.meta.fields(PropertyId);
-    var entries: [fields.len]struct { []const u8, PropertyId } = undefined;
-    for (fields, 0..) |field, i| {
+    const fields = @typeInfo(PropertyId).@"enum";
+    var entries: [fields.field_names.len]struct { []const u8, PropertyId } = undefined;
+    for (fields.field_names, fields.field_values, 0..) |field_name, field_value, i| {
         // Zig field names use underscores; CSS property names use hyphens.
         const name = name: {
-            var bytes: [field.name.len]u8 = undefined;
-            for (field.name, 0..) |byte, index| bytes[index] = if (byte == '_') '-' else byte;
+            var bytes: [field_name.len]u8 = undefined;
+            for (field_name, 0..) |byte, index| bytes[index] = if (byte == '_') '-' else byte;
             break :name bytes;
         };
-        entries[i] = .{ &name, @enumFromInt(field.value) };
+        entries[i] = .{ &name, @fromBackingInt(@intCast(field_value)) };
     }
     break :blk std.StaticStringMap(PropertyId).initComptime(entries);
 };
 
 // Indexed by the generated ID, not searched at runtime.
 const parsers = blk: {
-    const fields = std.meta.fields(PropertyId);
-    var entries: [fields.len]*const fn (*Stream) ?Value = undefined;
-    for (fields) |field| entries[field.value] = @field(definitions, field.name).parse;
+    const fields = @typeInfo(PropertyId).@"enum";
+    var entries: [fields.field_names.len]*const fn (*Stream) ?Value = undefined;
+    for (fields.field_names, fields.field_values) |name, value| entries[value] = @field(definitions, name).parse;
     break :blk entries;
 };
 
@@ -113,7 +113,7 @@ pub fn fromName(name: String) ?PropertyId {
 
 /// Parse the property's grammar; CSS-wide keywords are handled by the caller.
 pub fn parseValue(id: PropertyId, input: *Stream) ?Value {
-    return parsers[@intFromEnum(id)](input);
+    return parsers[@backingInt(id)](input);
 }
 
 fn parseSize(input: *Stream) ?Value {
@@ -139,19 +139,19 @@ fn parseColor(input: *Stream) ?Value {
 /// One field per property, with its concrete computed type and initial default.
 /// ComputedStyle uses this struct.
 pub const ComputedValues = blk: {
-    const properties = std.meta.fields(PropertyId);
+    const properties = @typeInfo(PropertyId).@"enum".field_names;
     var field_types: [properties.len]type = undefined;
-    var field_attrs: [properties.len]std.builtin.Type.StructField.Attributes = undefined;
+    var field_attrs: [properties.len]std.lang.Type.Struct.FieldAttributes = undefined;
 
     for (properties, 0..) |property, i| {
-        const initial = @field(definitions, property.name).initial;
+        const initial = @field(definitions, property).initial;
         field_types[i] = @TypeOf(initial);
         field_attrs[i] = .{ .default_value_ptr = &initial };
     }
     break :blk @Struct(
         .auto,
         null,
-        std.meta.fieldNames(PropertyId),
+        properties,
         &field_types,
         &field_attrs,
     );

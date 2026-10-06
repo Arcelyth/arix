@@ -1,5 +1,6 @@
 const Context = @This();
 const Length = @import("../specified/Length.zig");
+const ComputedValues = @import("../../properties/registry.zig").ComputedValues;
 
 font_size: f64,
 root_font_size: f64,
@@ -7,6 +8,7 @@ x_height: f64,
 zero_advance: f64,
 viewport_width: f64,
 viewport_height: f64,
+inherited_style: ?*const ComputedValues = null,
 
 // https://www.w3.org/TR/css-values-3/#relative-lengths
 // https://www.w3.org/TR/css-values-3/#absolute-lengths

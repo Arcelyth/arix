@@ -17,9 +17,11 @@ pub fn compute(
     const initial: ComputedStyle = .{};
     const inherited = parent orelse &initial;
     var result: ComputedStyle = .{};
+    var compute_context = context.*;
+    compute_context.inherited_style = &inherited.values;
 
     for (std.enums.values(properties.PropertyId)) |id| {
-        computers[@backingInt(id)](&result, winners.get(id), inherited, context);
+        computers[@backingInt(id)](&result, winners.get(id), inherited, &compute_context);
     }
     return result;
 }
@@ -46,14 +48,15 @@ const computers = blk: {
                 const inherited = @field(parent.values, name);
 
                 dest.* = if (definition.inherited) inherited else definition.initial;
-                const declaration = winner orelse return;
-                dest.* = if (declaration.value == .css_wide) switch (declaration.value.css_wide) {
-                    .initial => definition.initial,
-                    .inherit => inherited,
-                    .unset => dest.*,
-                    .revert => @panic("TODO: cascade origin rollback for revert"),
-                    .revert_layer => @panic("TODO: cascade layer rollback for revert-layer"),
-                } else definition.compute(@field(declaration.value, @tagName(definition.value_tag)), context);
+                if (winner) |declaration| {
+                    dest.* = if (declaration.value == .css_wide) switch (declaration.value.css_wide) {
+                        .initial => definition.initial,
+                        .inherit => inherited,
+                        .unset => dest.*,
+                        .revert => @panic("TODO: cascade origin rollback for revert"),
+                        .revert_layer => @panic("TODO: cascade layer rollback for revert-layer"),
+                    } else definition.compute(@field(declaration.value, @tagName(definition.value_tag)), context);
+                }
             }
         }.computeProperty;
     }

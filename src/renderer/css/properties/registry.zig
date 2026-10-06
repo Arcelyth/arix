@@ -108,8 +108,6 @@ const border_width = .{
     .parse = &parseBorderWidth,
     .value_tag = @as(std.meta.Tag(Value), .line_width),
     .initial = @as(f64, 3),
-    // The initial border style is none, so the initial computed width is zero.
-    .computed_initial = @as(f64, 0),
     .inherited = false,
     .compute = &computed.line_width.fromSpecified,
 };

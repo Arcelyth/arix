@@ -15,21 +15,25 @@ body {
 }
 
 .orange {
-  width: 160px;
-  height: 28px;
+  width: 152px;
+  height: 20px;
   background-color: #ef6548;
+  border: 4px solid #983721;
 }
 
 .blue {
-  width: 216px;
-  height: 32px;
+  width: 210px;
+  height: 26px;
   margin-top: 10px;
   margin-left: 32px;
   background-color: #2878d0;
+  border-style: solid;
+  border-width: 2px 4px 4px 2px;
+  border-color: #9dcfff #153e6c #153e6c #9dcfff;
 }
 
 .green {
-  width: 240px;
+  width: 234px;
   height: 44px;
   margin-top: 10px;
   padding-top: 12px;
@@ -37,20 +41,24 @@ body {
   padding-bottom: 12px;
   padding-left: 12px;
   background-color: #269c72;
+  border: 3px solid #14583f;
 }
 
 .yellow {
-  width: 96px;
-  height: 16px;
+  width: 92px;
+  height: 12px;
   background-color: #f5cb54;
+  color: #836000;
+  border: 2px solid currentcolor;
 }
 
 .purple {
-  width: 144px;
-  height: 16px;
+  width: 140px;
+  height: 12px;
   margin-top: 8px;
   margin-left: 72px;
   background-color: #8056bd;
+  border: 2px solid rgb(255 255 255 / 50%);
 }
 
 .red {
@@ -58,4 +66,5 @@ body {
   height: 8px;
   margin-top: 10px;
   background-color: #ce4055;
+  border-left: 6px solid #7b2432;
 }

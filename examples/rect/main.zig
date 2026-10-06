@@ -73,10 +73,10 @@ pub fn main(init: std.process.Init) !void {
     var list = try DisplayList.build(allocator, &fragments);
     defer list.deinit(allocator);
 
-    var canvas = try Canvas.init(allocator, width, height);
+    var canvas = try Canvas.init(allocator, width, height, .{ .clear_color = .{ 255, 255, 255 } });
     defer canvas.deinit(allocator);
 
-    canvas.draw(&list);
+    try canvas.draw(&list);
     const ppm = try image.ppm.encode(allocator, width, height, canvas.pixels);
     try cwd.createDirPath(init.io, std.fs.path.dirname(output_path).?);
     try cwd.writeFile(init.io, .{ .sub_path = output_path, .data = ppm });

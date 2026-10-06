@@ -11,6 +11,13 @@ const color = @import("../color/parse.zig");
 const line_width = @import("../values/specified/line_width.zig");
 const line_style = @import("../values/specified/line_style.zig");
 const shorthand = @import("shorthand.zig");
+const Shorthand = shorthand.Shorthand;
+const shorthands = shorthand.shorthands;
+
+pub const Property = union(enum) {
+    longhand: PropertyId,
+    shorthand: shorthand.Shorthand,
+};
 
 pub const definitions = .{
     .width = preferred_size,
@@ -127,18 +134,29 @@ pub const PropertyId = std.meta.FieldEnum(@TypeOf(definitions));
 
 const names = blk: {
     const fields = @typeInfo(PropertyId).@"enum";
-    var entries: [fields.field_names.len]struct { []const u8, PropertyId } = undefined;
+    const shorthand_fields = @typeInfo(std.meta.FieldEnum(@TypeOf(shorthands))).@"enum".field_names;
+    var entries: [fields.field_names.len + shorthand_fields.len]struct { []const u8, Property } = undefined;
+
     for (fields.field_names, fields.field_values, 0..) |field_name, field_value, i| {
-        // Zig field names use underscores; CSS property names use hyphens.
-        const name = name: {
-            var bytes: [field_name.len]u8 = undefined;
-            for (field_name, 0..) |byte, index| bytes[index] = if (byte == '_') '-' else byte;
-            break :name bytes;
-        };
-        entries[i] = .{ &name, @fromBackingInt(@intCast(field_value)) };
+        const name = cssName(field_name);
+        entries[i] = .{ &name, .{ .longhand = @fromBackingInt(@intCast(field_value)) } };
     }
-    break :blk std.StaticStringMap(PropertyId).initComptime(entries);
+
+    for (shorthand_fields, 0..) |field_name, i| {
+        const name = cssName(field_name);
+        entries[fields.field_names.len + i] = .{
+            &name,
+            .{ .shorthand = @field(shorthands, field_name) },
+        };
+    }
+    break :blk std.StaticStringMap(Property).initComptime(entries);
 };
+
+inline fn cssName(comptime field_name: []const u8) [field_name.len]u8 {
+    var bytes: [field_name.len]u8 = undefined;
+    for (field_name, 0..) |byte, i| bytes[i] = if (byte == '_') '-' else byte;
+    return bytes;
+}
 
 // Indexed by the generated ID, not searched at runtime.
 const parsers = blk: {
@@ -148,7 +166,7 @@ const parsers = blk: {
     break :blk entries;
 };
 
-pub fn fromName(name: String) ?PropertyId {
+pub fn fromName(name: String) ?Property {
     var lower: [names.max_len]u8 = undefined;
     return names.get(name.toAsciiLower(&lower) orelse return null);
 }
@@ -194,9 +212,11 @@ pub const ComputedValues = blk: {
     var field_attrs: [properties.len]std.lang.Type.Struct.FieldAttributes = undefined;
 
     for (properties, 0..) |property, i| {
-        const initial = @field(definitions, property).initial;
+        const definition = @field(definitions, property);
+        const initial = definition.initial;
         field_types[i] = @TypeOf(initial);
-        field_attrs[i] = .{ .default_value_ptr = &initial };
+        const default = if (@hasField(@TypeOf(definition), "computed_initial")) definition.computed_initial else initial;
+        field_attrs[i] = .{ .default_value_ptr = &default };
     }
     break :blk @Struct(
         .auto,
@@ -208,14 +228,15 @@ pub const ComputedValues = blk: {
 };
 
 test "properties registry: lookup" {
-    for (names.keys(), names.values()) |name, id| {
-        try std.testing.expectEqual(@as(?PropertyId, id), fromName(String.fromSource(name)));
+    for (names.keys(), names.values()) |name, property| {
+        try std.testing.expectEqualDeep(@as(?Property, property), fromName(String.fromSource(name)));
     }
-    try std.testing.expectEqual(PropertyId.width, fromName(String.fromSource("WiDtH")).?);
-    try std.testing.expectEqual(PropertyId.height, fromName(String.fromSource("HEIGHT")).?);
-    try std.testing.expectEqual(PropertyId.padding_left, fromName(String.fromSource("PaDdInG-LeFt")).?);
-    try std.testing.expectEqual(PropertyId.margin_top, fromName(String.fromSource("margin-top")).?);
-    for ([_][]const u8{ "", "widt", "widths", "unknown", "--width", "wídth", "padding_left" }) |name| {
+    try std.testing.expectEqual(PropertyId.width, fromName(String.fromSource("WiDtH")).?.longhand);
+    try std.testing.expectEqual(PropertyId.height, fromName(String.fromSource("HEIGHT")).?.longhand);
+    try std.testing.expectEqual(PropertyId.padding_left, fromName(String.fromSource("PaDdInG-LeFt")).?.longhand);
+    try std.testing.expectEqual(PropertyId.margin_top, fromName(String.fromSource("margin-top")).?.longhand);
+    try std.testing.expectEqualDeep(shorthands.border_width, fromName(String.fromSource("BoRdEr-WiDtH")).?.shorthand);
+    for ([_][]const u8{ "", "widt", "widths", "unknown", "--width", "wídth", "padding_left", "border_width" }) |name| {
         try std.testing.expectEqual(null, fromName(String.fromSource(name)));
     }
 }

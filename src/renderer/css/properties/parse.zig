@@ -8,10 +8,18 @@ const Declaration = types.Declaration;
 const Value = types.Value;
 const CSSWideKeyword = types.CSSWideKeyword;
 
-/// Parse a syntax-parsed declaration to one use specified value.
-/// Unknown properties and invalid values return null.
-pub fn parseDeclaration(declaration: *const syntax.Declaration) ?Declaration {
-    const id = registry.fromName(declaration.name) orelse return null;
+/// Append specified values, expanding shorthands into longhands.
+/// Unknown properties and invalid values are ignored.
+pub fn parseDeclaration(
+    allocator: std.mem.Allocator,
+    declaration: *const syntax.Declaration,
+    result: *std.ArrayList(Declaration),
+) !void {
+    const property = registry.fromName(declaration.name) orelse return;
+    const ids: []const registry.PropertyId = switch (property) {
+        .longhand => |id| &.{id},
+        .shorthand => |shorthand| shorthand.longhands,
+    };
     for (declaration.value) |value| {
         if (value == .function and value.function.name.eqlAscii("var"))
             @panic("TODO: CSS custom property substitution");
@@ -19,20 +27,30 @@ pub fn parseDeclaration(declaration: *const syntax.Declaration) ?Declaration {
 
     var input = Stream.init(declaration.value);
     input.discardWhitespace();
-    const value: Value = value: {
+    // A shorthand can expand to at most all registered longhands.
+    var storage: [std.enums.values(registry.PropertyId).len]Value = undefined;
+    const values = storage[0..ids.len];
+    parse: {
         if (input.peekToken()) |token| {
             if (token.* == .ident) {
                 if (parseCSSWideKeyword(token.ident)) |keyword| {
                     input.advance();
-                    break :value .{ .css_wide = keyword };
+                    @memset(values, .{ .css_wide = keyword });
+                    break :parse;
                 }
             }
         }
-        break :value registry.parseValue(id, &input) orelse return null;
-    };
+        switch (property) {
+            .longhand => |id| values[0] = registry.parseValue(id, &input) orelse return,
+            .shorthand => |shorthand| if (!shorthand.parse(&input, values)) return,
+        }
+    }
     input.discardWhitespace();
-    if (!input.empty()) return null;
-    return .{ .property = id, .value = value, .important = declaration.important };
+    if (!input.empty()) return;
+    try result.ensureUnusedCapacity(allocator, ids.len);
+    for (ids, values) |id, value| {
+        result.appendAssumeCapacity(.{ .property = id, .value = value, .important = declaration.important });
+    }
 }
 
 fn parseCSSWideKeyword(name: String) ?CSSWideKeyword {
@@ -49,12 +67,12 @@ pub fn parseDeclarations(allocator: std.mem.Allocator, declarations: []const syn
     errdefer result.deinit(allocator);
 
     for (declarations) |*declaration| {
-        if (parseDeclaration(declaration)) |value| try result.append(allocator, value);
+        try parseDeclaration(allocator, declaration, &result);
     }
     return result.toOwnedSlice(allocator);
 }
 
-test "properties parse: typed values and invalid declarations" {
+test "properties parse: longhands, shorthands and invalid declarations" {
     const testing = std.testing;
     const Buffer = @import("../syntax/Buffer.zig");
     const Parser = @import("../syntax/Parser.zig");
@@ -69,6 +87,10 @@ test "properties parse: typed values and invalid declarations" {
         \\    width: red;
         \\    unknown: 1px;
         \\    width: auto;
+        \\    BoRdEr-LeFt: ReVeRt-LaYeR !important;
+        \\    border: inherit red;
+        \\    border: 2px solid red blue;
+        \\    border-color:;
         \\}
     );
     defer buffer.deinit();
@@ -100,6 +122,21 @@ test "properties parse: typed values and invalid declarations" {
         .{
             .property = .width,
             .value = .{ .size = .auto },
+        },
+        .{
+            .property = .border_left_width,
+            .value = .{ .css_wide = .revert_layer },
+            .important = true,
+        },
+        .{
+            .property = .border_left_style,
+            .value = .{ .css_wide = .revert_layer },
+            .important = true,
+        },
+        .{
+            .property = .border_left_color,
+            .value = .{ .css_wide = .revert_layer },
+            .important = true,
         },
     };
     try testing.expectEqualDeep(&expected, declarations);

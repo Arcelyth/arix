@@ -7,6 +7,8 @@ const FragmentTree = @import("../fragment.zig").FragmentTree;
 const ComputedValues = @import("../../css/properties/registry.zig").ComputedValues;
 const EdgeSizes = @import("../../geometry/EdgeSizes.zig");
 const Size = @import("../../css/values/computed/size.zig").Size;
+const line_width = @import("../../css/values/computed/line_width.zig");
+const PropertyId = @import("../../css/properties/registry.zig").PropertyId;
 
 pub const ContainingBlock = struct {
     width: f64,
@@ -68,7 +70,7 @@ pub fn layout(
         .height = viewport_height,
     });
 
-    root.fragment.content.box.base.rect.y = root.start.value() + root.fragment.content.box.padding.top;
+    root.fragment.content.box.base.rect.y = root.start.value() + root.fragment.content.box.border.top + root.fragment.content.box.padding.top;
     result.root = root.fragment;
     return result;
 }
@@ -99,7 +101,7 @@ fn layoutBlock(
     const children = try layoutChildren(allocator, fragment, first, .{
         .width = fragment.content.box.base.rect.width,
         .height = height,
-    }, !independent and fragment.content.box.padding.top == 0);
+    }, !independent and fragment.content.box.padding.top == 0 and fragment.content.box.border.top == 0);
 
     return finishBlock(fragment, independent, height, children);
 }
@@ -110,6 +112,7 @@ fn createBlockFragment(
     containing: ContainingBlock,
 ) !*Fragment {
     const style = &base.style.values;
+    const border = borderWidths(style);
     const padding: EdgeSizes = .{
         .top = style.padding_top.resolve(containing.width),
         .right = style.padding_right.resolve(containing.width),
@@ -119,14 +122,14 @@ fn createBlockFragment(
     const horizontal = usedWidth(
         style,
         containing.width,
-        padding.left + padding.right,
+        padding.left + padding.right + border.left + border.right,
     );
 
     const fragment = try allocator.create(Fragment);
     fragment.* = Fragment.init(.{ .box = .{
         .base = .{
             .rect = .{
-                .x = horizontal.left + padding.left,
+                .x = horizontal.left + border.left + padding.left,
                 .y = 0,
                 .width = horizontal.width,
                 .height = 0,
@@ -135,6 +138,7 @@ fn createBlockFragment(
         .source = base.source,
         .style = base.style,
         .padding = padding,
+        .border = border,
         .margin = .{
             .top = style.margin_top.resolve(containing.width) orelse 0,
             .right = horizontal.right,
@@ -143,6 +147,18 @@ fn createBlockFragment(
         },
     } });
     return fragment;
+}
+
+fn borderWidths(style: *const ComputedValues) EdgeSizes {
+    var widths: EdgeSizes = .{};
+    inline for (.{ "top", "right", "bottom", "left" }) |side| {
+        const property = "border_" ++ side ++ "_width";
+        @field(widths, side) = line_width.toResolvedValue(@field(style, property), &.{
+            .style = style,
+            .current_longhand = @field(PropertyId, property),
+        });
+    }
+    return widths;
 }
 
 const ChildLayout = struct {
@@ -178,7 +194,7 @@ fn placeChild(state: *ChildLayout, child: BlockResult, collapse_start: bool) voi
     else
         state.cursor + state.pending.value();
 
-    child.fragment.content.box.base.rect.y = border_top + child.fragment.content.box.padding.top;
+    child.fragment.content.box.base.rect.y = border_top + child.fragment.content.box.border.top + child.fragment.content.box.padding.top;
     if (child.through) {
         state.pending.adjoin(child.end);
     } else {
@@ -199,13 +215,14 @@ fn finishBlock(
     children: ChildLayout,
 ) BlockResult {
     const padding = fragment.content.box.padding;
+    const border = fragment.content.box.border;
     var start = CollapsedMargin.init(fragment.content.box.margin.top);
     start.adjoin(children.start);
 
     var end = CollapsedMargin.init(fragment.content.box.margin.bottom);
-    const collapse_start = !independent and padding.top == 0;
-    const collapse_end = !independent and padding.bottom == 0 and height == null;
-    const through = !independent and padding.top == 0 and padding.bottom == 0 and
+    const collapse_start = !independent and padding.top == 0 and border.top == 0;
+    const collapse_end = !independent and padding.bottom == 0 and border.bottom == 0 and height == null;
+    const through = !independent and padding.top == 0 and padding.bottom == 0 and border.top == 0 and border.bottom == 0 and
         (height == null or height.? == 0) and children.at_start;
 
     var cursor = children.cursor;
@@ -225,7 +242,7 @@ fn finishBlock(
         .start = start,
         .end = end,
         .through = through,
-        .border_height = padding.top + content_height + padding.bottom,
+        .border_height = border.top + padding.top + content_height + padding.bottom + border.bottom,
     };
 }
 
@@ -238,16 +255,16 @@ const Horizontal = struct {
 /// Solve the width constraint. With the initial direction:ltr, over-constraint
 /// changes the used right margin, not the computed value.
 /// https://www.w3.org/TR/CSS2/visudet.html#blockwidth
-fn usedWidth(style: *const ComputedValues, containing_width: f64, padding: f64) Horizontal {
+fn usedWidth(style: *const ComputedValues, containing_width: f64, edges: f64) Horizontal {
     const left = style.margin_left.resolve(containing_width);
     const right = style.margin_right.resolve(containing_width);
     var result: Horizontal = .{
-        .width = style.width.resolve(containing_width) orelse @max(0, containing_width - padding - (left orelse 0) - (right orelse 0)),
+        .width = style.width.resolve(containing_width) orelse @max(0, containing_width - edges - (left orelse 0) - (right orelse 0)),
         .left = left orelse 0,
         .right = right orelse 0,
     };
 
-    const remaining = containing_width - padding - result.width - result.left - result.right;
+    const remaining = containing_width - edges - result.width - result.left - result.right;
     if (style.width == .auto or remaining < 0) {
         result.right += remaining;
     } else if (left == null and right == null) {

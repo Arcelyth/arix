@@ -1,13 +1,19 @@
 const DisplayList = @This();
 
 const std = @import("std");
-const DisplayItem = @import("display_item.zig").DisplayItem;
+const display_item = @import("display_item.zig");
+const DisplayItem = display_item.DisplayItem;
+const EdgeSizes = @import("../../geometry/EdgeSizes.zig");
+const LineStyle = @import("../../css/values/computed/line_style.zig").LineStyle;
 const fragment = @import("../../layout/fragment.zig");
 const Fragment = fragment.Fragment;
 const FragmentTree = fragment.FragmentTree;
 const Rect = @import("../../geometry/Rect.zig");
 const Element = @import("../../dom/Element.zig");
 const ComputedStyle = @import("../../style/computed/ComputedStyle.zig");
+const BoxFragment = fragment.BoxFragment;
+const BorderProperties = display_item.BorderProperties;
+const CommonItemProperties = display_item.CommonItemProperties;
 
 // Locates the fragment’s content-box origin on the canvas.
 const Offset = struct { x: f64, y: f64 };
@@ -25,7 +31,7 @@ pub fn build(allocator: std.mem.Allocator, tree: *const FragmentTree) !DisplayLi
     const root = tree.root orelse return result;
 
     // The root’s background covers the entire canvas and
-    // the root element does not paint this background again
+    // the root element does not paint this background again.
     const canvas_source = canvasBackground(root);
     try result.renderCanvasBackground(allocator, tree.initial_containing_block, canvas_source);
 
@@ -42,7 +48,7 @@ fn renderCanvasBackground(
     viewport: Rect,
     source: ?*const Fragment,
 ) !void {
-    // Paint the propagated background once, then skip its originating box.
+    // Paint the propagated background once, then skip it on its originating box.
     const node = source orelse return;
     try self.renderBackground(allocator, viewport, &node.content.box.style);
 }
@@ -65,8 +71,7 @@ fn renderFragments(
             .x = entry.offset.x + content.x,
             .y = entry.offset.y + content.y,
         };
-        if (entry.node != canvas_source)
-            try self.renderFragment(allocator, entry.node, offset);
+        try self.renderFragment(allocator, entry.node, offset, entry.node != canvas_source);
 
         // Normal-flow block backgrounds paint parent before children, with
         // later siblings on top. Child rectangles are parent-content-relative.
@@ -81,18 +86,41 @@ fn renderFragment(
     allocator: std.mem.Allocator,
     node: *const Fragment,
     offset: Offset,
+    paint_background: bool,
 ) !void {
     switch (node.content) {
         .box => |*box| {
             const content = box.base.rect;
-            try self.renderBackground(allocator, .{
+            const rect: Rect = .{
                 .x = offset.x - box.padding.left - box.border.left,
                 .y = offset.y - box.padding.top - box.border.top,
                 .width = content.width + box.padding.left + box.padding.right + box.border.left + box.border.right,
                 .height = content.height + box.padding.top + box.padding.bottom + box.border.top + box.border.bottom,
-            }, &box.style);
+            };
+            if (paint_background) try self.renderBackground(allocator, rect, &box.style);
+            try self.renderBorder(allocator, rect, box);
         },
     }
+}
+
+fn renderBorder(self: *DisplayList, allocator: std.mem.Allocator, rect: Rect, box: *const BoxFragment) !void {
+    if (rect.width <= 0 or rect.height <= 0) return;
+    var border: BorderProperties = .{};
+
+    inline for (.{ "top", "right", "bottom", "left" }) |side| {
+        const dest = &@field(border, side);
+        dest.style = @field(box.style.values, "border_" ++ side ++ "_style");
+        if (@field(box.border, side) > 0) {
+            dest.color = try @field(box.style.values, "border_" ++ side ++ "_color").toRgba(box.style.values.color);
+        }
+    }
+    try self.pushBorder(
+        allocator,
+        .{ .clip_rect = rect },
+        rect,
+        box.border,
+        border,
+    );
 }
 
 fn renderBackground(
@@ -102,19 +130,43 @@ fn renderBackground(
     style: *const ComputedStyle,
 ) !void {
     const color = try style.values.background_color.toRgba(style.values.color);
-    try self.appendRect(allocator, rect, color);
+    try self.pushRect(allocator, .{ .clip_rect = rect }, rect, color);
 }
 
-fn appendRect(
+pub fn pushRect(
     self: *DisplayList,
     allocator: std.mem.Allocator,
-    rect: Rect,
+    common: CommonItemProperties,
+    bounds: Rect,
     rgba: [4]f64,
 ) !void {
-    if (rgba[3] <= 0 or rect.width <= 0 or rect.height <= 0) return;
+    if (rgba[3] <= 0 or bounds.intersection(common.clip_rect) == null) return;
     try self.items.append(allocator, .{
-        .rect = .{ .rect = rect, .color = rgba },
+        .rect = .{ .common = common, .bounds = bounds, .color = rgba },
     });
+}
+
+pub fn pushBorder(
+    self: *DisplayList,
+    allocator: std.mem.Allocator,
+    common: CommonItemProperties,
+    bounds: Rect,
+    widths: EdgeSizes,
+    details: BorderProperties,
+) !void {
+    if (bounds.intersection(common.clip_rect) == null) return;
+    var visible = false;
+    inline for (.{ "top", "right", "bottom", "left" }) |side| {
+        visible = visible or (@field(widths, side) > 0 and @field(details, side).isVisible());
+    }
+
+    if (!visible) return;
+    try self.items.append(allocator, .{ .border = .{
+        .common = common,
+        .bounds = bounds,
+        .widths = widths,
+        .details = details,
+    } });
 }
 
 /// Find the fragment whose background should be propagated to the canvas.

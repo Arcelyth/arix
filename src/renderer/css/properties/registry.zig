@@ -10,6 +10,7 @@ const length_percentage = @import("../values/specified/length_percentage.zig");
 const color = @import("../color/parse.zig");
 const line_width = @import("../values/specified/line_width.zig");
 const line_style = @import("../values/specified/line_style.zig");
+const shorthand = @import("shorthand.zig");
 
 pub const definitions = .{
     .width = preferred_size,

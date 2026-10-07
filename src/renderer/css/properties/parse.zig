@@ -6,7 +6,7 @@ const registry = @import("registry.zig");
 const types = @import("types.zig");
 const Declaration = types.Declaration;
 const Value = types.Value;
-const CSSWideKeyword = types.CSSWideKeyword;
+const CSSWideKeyword = @import("../values/specified.zig").CSSWideKeyword;
 
 /// Append specified values, expanding shorthands into longhands.
 /// Unknown properties and invalid values are ignored.

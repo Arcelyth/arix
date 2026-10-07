@@ -55,6 +55,7 @@ const computers = blk: {
                         .unset => dest.*,
                         .revert => @panic("TODO: cascade origin rollback for revert"),
                         .revert_layer => @panic("TODO: cascade layer rollback for revert-layer"),
+                        .revert_rule => @panic("TODO: cascade rule rollback for revert-rule"),
                     } else definition.compute(@field(declaration.value, @tagName(definition.value_tag)), context);
                 }
             }

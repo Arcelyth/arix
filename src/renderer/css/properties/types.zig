@@ -5,16 +5,8 @@ const Display = @import("../values/specified/display.zig").Display;
 const Color = @import("../values/specified/color.zig").Color;
 const LineWidth = @import("../values/specified/line_width.zig").LineWidth;
 const LineStyle = @import("../values/specified/line_style.zig").LineStyle;
+const CSSWideKeyword = @import("../values/specified.zig").CSSWideKeyword;
 pub const PropertyId = @import("registry.zig").PropertyId;
-
-// https://www.w3.org/TR/css-cascade-5/#defaulting-keywords
-pub const CSSWideKeyword = enum {
-    initial,
-    inherit,
-    unset,
-    revert,
-    revert_layer,
-};
 
 /// Parsed specified values, not yet selected by the cascade or computed.
 pub const Value = union(enum) {

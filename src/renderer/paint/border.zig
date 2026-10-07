@@ -1,6 +1,7 @@
 const Canvas = @import("Canvas.zig");
 const Border = @import("display/display_item.zig").BorderDisplayItem;
 const Rect = @import("../geometry/Rect.zig");
+const Quad = @import("../geometry.zig").Quad;
 const rasterization = @import("rasterization.zig");
 const compositing = @import("compositing.zig");
 
@@ -53,10 +54,10 @@ fn innerBounds(border: Border) Rect {
 
 /// Use diagonal joins within the CSS corner transition area.
 /// https://www.w3.org/TR/css-backgrounds-3/#corner-transitions
-fn sideQuads(outer_bounds: Rect, inner_bounds: Rect) [4]rasterization.Quad {
-    const outer = corners(outer_bounds);
-    const inner = corners(inner_bounds);
-    var quads: [4]rasterization.Quad = undefined;
+fn sideQuads(outer_bounds: Rect, inner_bounds: Rect) [4]Quad {
+    const outer = outer_bounds.corners();
+    const inner = inner_bounds.corners();
+    var quads: [4]Quad = undefined;
     for (&quads, 0..) |*quad, i| {
         const next = (i + 1) % 4;
         quad.* = .{ outer[i], outer[next], inner[next], inner[i] };
@@ -68,7 +69,7 @@ fn drawPixels(
     canvas: *Canvas,
     clip: Rect,
     inner: Rect,
-    quads: [4]rasterization.Quad,
+    quads: [4]Quad,
     colors: [4][4]f64,
 ) void {
     const x0: usize = @intFromFloat(@floor(clip.x));
@@ -88,7 +89,7 @@ fn drawPixels(
 
 /// Combine disjoint side contributions before source-over compositing.
 fn pixelColor(
-    quads: [4]rasterization.Quad,
+    quads: [4]Quad,
     colors: [4][4]f64,
     x: f64,
     y: f64,
@@ -102,13 +103,4 @@ fn pixelColor(
         rgba[3] += alpha;
     }
     return rgba;
-}
-
-fn corners(rect: Rect) rasterization.Quad {
-    return .{
-        .{ rect.x, rect.y },
-        .{ rect.x + rect.width, rect.y },
-        .{ rect.x + rect.width, rect.y + rect.height },
-        .{ rect.x, rect.y + rect.height },
-    };
 }

@@ -7,6 +7,7 @@ pub const LineWidth = @import("specified/line_width.zig").LineWidth;
 pub const LineStyle = @import("specified/line_style.zig").LineStyle;
 pub const LengthPercentage = @import("specified/length_percentage.zig").LengthPercentage;
 pub const CSSWideKeyword = @import("specified/css_wide_keyword.zig").CSSWideKeyword;
+pub const FontSize = @import("specified/font_size.zig").FontSize;
 
 test {
     @import("std").testing.refAllDecls(@This());

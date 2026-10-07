@@ -8,6 +8,8 @@ pub const LineStyle = @import("specified/line_style.zig").LineStyle;
 pub const LengthPercentage = @import("specified/length_percentage.zig").LengthPercentage;
 pub const CSSWideKeyword = @import("specified/css_wide_keyword.zig").CSSWideKeyword;
 pub const FontSize = @import("specified/font_size.zig").FontSize;
+pub const FontStyle = @import("specified/font_style.zig").FontStyle;
+pub const Angle = @import("specified/angle.zig").Angle;
 
 test {
     @import("std").testing.refAllDecls(@This());

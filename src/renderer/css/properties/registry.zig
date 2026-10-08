@@ -15,6 +15,8 @@ const font_family = @import("../values/specified/font_family.zig");
 const font_size = @import("../values/specified/font_size.zig");
 const font_weight = @import("../values/specified/font_weight.zig");
 const font_style = @import("../values/specified/font_style.zig");
+const white_space = @import("../values/specified/white_space.zig");
+const line_height = @import("../values/specified/line_height.zig");
 const shorthand = @import("shorthand.zig");
 const Shorthand = shorthand.Shorthand;
 const shorthands = shorthand.shorthands;
@@ -58,6 +60,9 @@ pub const definitions = .{
     .font_family = font_family_entry,
     .font_weight = font_weight_entry,
     .font_style = font_style_entry,
+
+    .line_height = line_height_entry,
+    .white_space = white_space_entry,
 };
 
 // https://www.w3.org/TR/css-sizing-3/#preferred-size-properties
@@ -172,6 +177,22 @@ const font_style_entry = .{
     .compute = &computed.font_style.fromSpecified,
 };
 
+const line_height_entry = .{
+    .parse = &parseLineHeight,
+    .value_tag = @as(std.meta.Tag(Value), .line_height),
+    .initial = @as(computed.line_height.LineHeight, .normal),
+    .inherited = true,
+    .compute = &computed.line_height.fromSpecified,
+};
+
+const white_space_entry = .{
+    .parse = &parseWhiteSpace,
+    .value_tag = @as(std.meta.Tag(Value), .white_space),
+    .initial = @as(computed.white_space.WhiteSpace, .normal),
+    .inherited = true,
+    .compute = &computed.white_space.fromSpecified,
+};
+
 pub const PropertyId = std.meta.FieldEnum(@TypeOf(definitions));
 
 const names = blk: {
@@ -262,6 +283,14 @@ fn parseFontWeight(_: Allocator, input: *Stream) ParseResult {
 
 fn parseFontStyle(_: Allocator, input: *Stream) ParseResult {
     return .{ .font_style = font_style.parse(input) orelse return null };
+}
+
+fn parseLineHeight(_: Allocator, input: *Stream) ParseResult {
+    return .{ .line_height = line_height.parse(input) orelse return null };
+}
+
+fn parseWhiteSpace(_: Allocator, input: *Stream) ParseResult {
+    return .{ .white_space = white_space.parse(input) orelse return null };
 }
 
 fn InitialType(comptime initial: anytype) type {

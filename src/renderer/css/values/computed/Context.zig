@@ -9,6 +9,11 @@ zero_advance: f64,
 viewport_width: f64,
 viewport_height: f64,
 inherited_style: ?*const ComputedValues = null,
+/// UA preference for medium.
+default_font_size: f64 = 16,
+/// UA preference for larger/smaller. Spec recommends roughly 1.2–1.5.
+relative_font_size_ratio: f64 = 1.2,
+is_root: bool = false,
 
 // https://www.w3.org/TR/css-values-3/#relative-lengths
 // https://www.w3.org/TR/css-values-3/#absolute-lengths

@@ -41,8 +41,8 @@ pub fn parseDeclaration(
             }
         }
         switch (property) {
-            .longhand => |id| values[0] = registry.parseValue(id, &input) orelse return,
-            .shorthand => |shorthand| if (!shorthand.parse(&input, values)) return,
+            .longhand => |id| values[0] = registry.parseValue(allocator, id, &input) orelse return,
+            .shorthand => |shorthand| if (!shorthand.parse(allocator, &input, values)) return,
         }
     }
     input.discardWhitespace();

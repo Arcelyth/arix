@@ -6,10 +6,18 @@ const Color = @import("../values/specified/color.zig").Color;
 const LineWidth = @import("../values/specified/line_width.zig").LineWidth;
 const LineStyle = @import("../values/specified/line_style.zig").LineStyle;
 const CSSWideKeyword = @import("../values/specified.zig").CSSWideKeyword;
+const FontFamily = @import("../values/specified/font_family.zig").FontFamily;
+const FontSize = @import("../values/specified/font_size.zig").FontSize;
+const FontStyle = @import("../values/specified/font_style.zig").FontStyle;
+const FontWeight = @import("../values/specified/font_weight.zig").FontWeight;
 pub const PropertyId = @import("registry.zig").PropertyId;
 
 /// Parsed specified values, not yet selected by the cascade or computed.
 pub const Value = union(enum) {
+    font_family: FontFamily,
+    font_size: FontSize,
+    font_weight: FontWeight,
+    font_style: FontStyle,
     size: Size,
     margin: Margin,
     padding: LengthPercentage,

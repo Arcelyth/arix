@@ -1,30 +1,37 @@
+const std = @import("std");
+const Allocator = std.mem.Allocator;
 const Stream = @import("../syntax/ComponentValueStream.zig");
 const types = @import("types.zig");
 const registry = @import("registry.zig");
 
-pub fn parseAll(input: *Stream, values: []types.Value) bool {
-    if (!parseEdge(input, values[0..3])) return false;
+pub fn parseAll(allocator: Allocator, input: *Stream, values: []types.Value) bool {
+    if (!parseEdge(allocator, input, values[0..3])) return false;
     for (3..values.len) |i| values[i] = values[i % 3];
     return true;
 }
 
-pub fn parseWidths(input: *Stream, values: []types.Value) bool {
-    return parseSides(input, values, .border_top_width);
+pub fn parseWidths(allocator: Allocator, input: *Stream, values: []types.Value) bool {
+    return parseSides(allocator, input, values, .border_top_width);
 }
 
-pub fn parseStyles(input: *Stream, values: []types.Value) bool {
-    return parseSides(input, values, .border_top_style);
+pub fn parseStyles(allocator: Allocator, input: *Stream, values: []types.Value) bool {
+    return parseSides(allocator, input, values, .border_top_style);
 }
 
-pub fn parseColors(input: *Stream, values: []types.Value) bool {
-    return parseSides(input, values, .border_top_color);
+pub fn parseColors(allocator: Allocator, input: *Stream, values: []types.Value) bool {
+    return parseSides(allocator, input, values, .border_top_color);
 }
 
-fn parseSides(input: *Stream, values: []types.Value, property: types.PropertyId) bool {
+fn parseSides(
+    allocator: Allocator,
+    input: *Stream,
+    values: []types.Value,
+    property: types.PropertyId,
+) bool {
     var count: usize = 0;
     while (!input.empty()) {
         if (count == 4) return false;
-        values[count] = registry.parseValue(property, input) orelse return false;
+        values[count] = registry.parseValue(allocator, property, input) orelse return false;
         count += 1;
         input.discardWhitespace();
     }
@@ -35,7 +42,7 @@ fn parseSides(input: *Stream, values: []types.Value, property: types.PropertyId)
     return true;
 }
 
-pub fn parseEdge(input: *Stream, values: []types.Value) bool {
+pub fn parseEdge(allocator: Allocator, input: *Stream, values: []types.Value) bool {
     const properties = [_]types.PropertyId{
         .border_top_width,
         .border_top_style,
@@ -53,7 +60,7 @@ pub fn parseEdge(input: *Stream, values: []types.Value) bool {
             if (seen[component]) continue;
 
             const start = input.index;
-            if (registry.parseValue(property, input)) |value| {
+            if (registry.parseValue(allocator, property, input)) |value| {
                 values[component] = value;
                 seen[component] = true;
                 matched = true;

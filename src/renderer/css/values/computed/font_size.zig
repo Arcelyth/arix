@@ -4,14 +4,14 @@ const SpecifiedFontSize = specified.FontSize;
 
 pub const FontSize = f64;
 
-pub inline fn default(context: *const Context) FontSize {
+pub fn initial(context: *const Context) FontSize {
     return context.default_font_size;
 }
 
 pub fn fromSpecified(value: SpecifiedFontSize, context: *const Context) FontSize {
-    const parent_size = if (context.inherited_style) |style| style.font_size else default(context);
+    const parent_size = if (context.inherited_style) |style| style.font_size else initial(context);
     return switch (value) {
-        .absolute => |keyword| default(context) * absoluteScale(keyword),
+        .absolute => |keyword| initial(context) * absoluteScale(keyword),
         .relative => |keyword| switch (keyword) {
             .larger => parent_size * context.relative_font_size_ratio,
             .smaller => parent_size / context.relative_font_size_ratio,
@@ -22,7 +22,7 @@ pub fn fromSpecified(value: SpecifiedFontSize, context: *const Context) FontSize
                 var parent_context = context.*;
                 parent_context.font_size = parent_size;
                 // rem in the root's own font-size uses the default size.
-                if (context.is_root) parent_context.root_font_size = default(context);
+                if (context.is_root) parent_context.root_font_size = initial(context);
                 break :blk parent_context.computeLength(length);
             },
         },

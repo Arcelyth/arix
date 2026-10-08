@@ -1,6 +1,7 @@
 const Context = @This();
 const Length = @import("../specified/Length.zig");
 const ComputedValues = @import("../../properties/registry.zig").ComputedValues;
+const FontFamily = @import("../specified/font_family.zig").FontFamily;
 
 font_size: f64,
 root_font_size: f64,
@@ -13,6 +14,10 @@ inherited_style: ?*const ComputedValues = null,
 default_font_size: f64 = 16,
 /// UA preference for larger/smaller. Spec recommends roughly 1.2–1.5.
 relative_font_size_ratio: f64 = 1.2,
+/// UA preference for initial font family.
+default_font_family: FontFamily = .{
+    .families = &.{.{ .generic = .serif }},
+},
 is_root: bool = false,
 
 // https://www.w3.org/TR/css-values-3/#relative-lengths

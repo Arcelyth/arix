@@ -1,4 +1,5 @@
 const std = @import("std");
+const Allocator = std.mem.Allocator;
 const String = @import("../String.zig");
 const Stream = @import("../syntax/ComponentValueStream.zig");
 const size = @import("../values/specified/size.zig");
@@ -10,6 +11,10 @@ const length_percentage = @import("../values/specified/length_percentage.zig");
 const color = @import("../color/parse.zig");
 const line_width = @import("../values/specified/line_width.zig");
 const line_style = @import("../values/specified/line_style.zig");
+const font_family = @import("../values/specified/font_family.zig");
+const font_size = @import("../values/specified/font_size.zig");
+const font_weight = @import("../values/specified/font_weight.zig");
+const font_style = @import("../values/specified/font_style.zig");
 const shorthand = @import("shorthand.zig");
 const Shorthand = shorthand.Shorthand;
 const shorthands = shorthand.shorthands;
@@ -47,6 +52,11 @@ pub const definitions = .{
     .border_right_color = border_color,
     .border_bottom_color = border_color,
     .border_left_color = border_color,
+
+    .font_size = font_size_entry,
+    .font_family = font_family_entry,
+    .font_weight = font_weight_entry,
+    .font_style = font_style_entry,
 };
 
 // https://www.w3.org/TR/css-sizing-3/#preferred-size-properties
@@ -128,6 +138,39 @@ const border_color = .{
     .compute = &computed.Color.fromSpecified,
 };
 
+const font_family_entry = .{
+    .parse = &parseFontFamily,
+    .value_tag = @as(std.meta.Tag(Value), .font_family),
+    .initial = computed.font_family.FontFamily{ .families = &.{.{ .generic = .serif }} },
+    .inherited = true,
+    .compute = &computed.font_family.fromSpecified,
+};
+
+const font_size_entry = .{
+    .parse = &parseFontSize,
+    .value_tag = @as(std.meta.Tag(Value), .font_size),
+    .initial = @as(f64, 16),
+    .inherited = true,
+    .compute = &computed.font_size.fromSpecified,
+    .update_context = &computed.font_size.updateContext,
+};
+
+const font_weight_entry = .{
+    .parse = &parseFontWeight,
+    .value_tag = @as(std.meta.Tag(Value), .font_weight),
+    .initial = @as(f64, 400),
+    .inherited = true,
+    .compute = &computed.font_weight.fromSpecified,
+};
+
+const font_style_entry = .{
+    .parse = &parseFontStyle,
+    .value_tag = @as(std.meta.Tag(Value), .font_style),
+    .initial = @as(computed.font_style.FontStyle, .normal),
+    .inherited = true,
+    .compute = &computed.font_style.fromSpecified,
+};
+
 pub const PropertyId = std.meta.FieldEnum(@TypeOf(definitions));
 
 const names = blk: {
@@ -156,10 +199,12 @@ inline fn cssName(comptime field_name: []const u8) [field_name.len]u8 {
     return bytes;
 }
 
+const ParseResult = ?Value;
+
 // Indexed by the generated ID, not searched at runtime.
 const parsers = blk: {
     const fields = @typeInfo(PropertyId).@"enum";
-    var entries: [fields.field_names.len]*const fn (*Stream) ?Value = undefined;
+    var entries: [fields.field_names.len]*const fn (Allocator, *Stream) ParseResult = undefined;
     for (fields.field_names, fields.field_values) |name, value| entries[value] = @field(definitions, name).parse;
     break :blk entries;
 };
@@ -170,36 +215,52 @@ pub fn fromName(name: String) ?Property {
 }
 
 /// Parse the property's grammar; CSS-wide keywords are handled by the caller.
-pub fn parseValue(id: PropertyId, input: *Stream) ?Value {
-    return parsers[@backingInt(id)](input);
+pub fn parseValue(allocator: Allocator, id: PropertyId, input: *Stream) ParseResult {
+    return parsers[@backingInt(id)](allocator, input);
 }
 
-fn parseSize(input: *Stream) ?Value {
+fn parseSize(_: Allocator, input: *Stream) ParseResult {
     return .{ .size = size.parse(input) orelse return null };
 }
 
-fn parseMargin(input: *Stream) ?Value {
+fn parseMargin(_: Allocator, input: *Stream) ParseResult {
     return .{ .margin = margin.parse(input) orelse return null };
 }
 
-fn parsePadding(input: *Stream) ?Value {
+fn parsePadding(_: Allocator, input: *Stream) ParseResult {
     return .{ .padding = length_percentage.parse(input, .non_negative) orelse return null };
 }
 
-fn parseDisplay(input: *Stream) ?Value {
+fn parseDisplay(_: Allocator, input: *Stream) ParseResult {
     return .{ .display = display.parse(input) orelse return null };
 }
 
-fn parseColor(input: *Stream) ?Value {
+fn parseColor(_: Allocator, input: *Stream) ParseResult {
     return .{ .color = color.parseComponent(input) orelse return null };
 }
 
-fn parseBorderWidth(input: *Stream) ?Value {
+fn parseBorderWidth(_: Allocator, input: *Stream) ParseResult {
     return .{ .line_width = line_width.parse(input) orelse return null };
 }
 
-fn parseBorderStyle(input: *Stream) ?Value {
+fn parseBorderStyle(_: Allocator, input: *Stream) ParseResult {
     return .{ .line_style = line_style.parse(input) orelse return null };
+}
+
+fn parseFontFamily(allocator: Allocator, input: *Stream) ParseResult {
+    return .{ .font_family = (font_family.parse(allocator, input) catch @panic("OOM")) orelse return null };
+}
+
+fn parseFontSize(_: Allocator, input: *Stream) ParseResult {
+    return .{ .font_size = font_size.parse(input) orelse return null };
+}
+
+fn parseFontWeight(_: Allocator, input: *Stream) ParseResult {
+    return .{ .font_weight = font_weight.parse(input) orelse return null };
+}
+
+fn parseFontStyle(_: Allocator, input: *Stream) ParseResult {
+    return .{ .font_style = font_style.parse(input) orelse return null };
 }
 
 /// One field per property, with its concrete computed type and initial default.

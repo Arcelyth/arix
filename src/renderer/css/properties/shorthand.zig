@@ -6,7 +6,7 @@ const PropertyId = @import("registry.zig").PropertyId;
 
 pub const Shorthand = struct {
     longhands: []const PropertyId,
-    parse: *const fn (*Stream, []Value) bool,
+    parse: *const fn (std.mem.Allocator, *Stream, []Value) bool,
 };
 
 pub const shorthands = .{

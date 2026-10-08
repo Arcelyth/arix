@@ -12,6 +12,7 @@ pub const font_style = @import("computed/font_style.zig");
 pub const font_weight = @import("computed/font_weight.zig");
 pub const line_height = @import("computed/line_height.zig");
 pub const LineHeight = line_height.LineHeight;
+pub const text_wrap_mode = @import("computed/text_wrap_mode.zig");
 
 test {
     @import("std").testing.refAllDecls(@This());

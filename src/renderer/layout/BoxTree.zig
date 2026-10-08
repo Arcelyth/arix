@@ -252,6 +252,8 @@ test "layout BoxTree: document element and display:none" {
     // display: block;
     var styled = StyledNode.init(element.asNode(), .{
         .values = .{
+            .font_size = 16,
+            .font_family = .{ .families = &.{.{ .generic = .serif }} },
             .display = .{
                 .box = .{ .outside = .block },
             },
@@ -279,6 +281,8 @@ test "layout BoxTree: layout a padded root and a centered block" {
     const Rect = @import("../geometry/Rect.zig");
     const allocator = testing.allocator;
     const root_style: ComputedStyle = .{ .values = .{
+        .font_size = 16,
+        .font_family = .{ .families = &.{.{ .generic = .serif }} },
         .display = .{ .box = .{ .outside = .block } },
         .padding_top = .{ .length = 10 },
         .padding_right = .{ .length = 10 },
@@ -303,6 +307,8 @@ test "layout BoxTree: layout a padded root and a centered block" {
     defer tree.destroy(allocator);
 
     const child_style: ComputedStyle = .{ .values = .{
+        .font_size = 16,
+        .font_family = .{ .families = &.{.{ .generic = .serif }} },
         .display = .{ .box = .{ .outside = .block } },
         .width = .{ .length_percentage = .{ .percentage = 50 } },
         .height = .{ .length_percentage = .{ .length = 50 } },

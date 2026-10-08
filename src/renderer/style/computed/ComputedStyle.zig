@@ -6,7 +6,15 @@ const registry = @import("../../css/properties/registry.zig");
 const cascade = @import("../cascade.zig");
 pub const Context = computed.Context;
 
-values: registry.ComputedValues = .{},
+values: registry.ComputedValues,
+
+pub fn init(context: *const Context) ComputedStyle {
+    var result: ComputedStyle = .{ .values = undefined };
+    inline for (@typeInfo(properties.PropertyId).@"enum".field_names) |name| {
+        @field(result.values, name) = registry.initialValue(name, context);
+    }
+    return result;
+}
 
 // See https://www.w3.org/TR/css-cascade-5/#inheriting for inheriting rules.
 pub fn compute(
@@ -14,11 +22,12 @@ pub fn compute(
     parent: ?*const ComputedStyle,
     context: *const Context,
 ) ComputedStyle {
-    const initial: ComputedStyle = .{};
+    const initial = init(context);
     const inherited = parent orelse &initial;
-    var result: ComputedStyle = .{};
+    var result: ComputedStyle = .{ .values = undefined };
     var compute_context = context.*;
     compute_context.inherited_style = &inherited.values;
+    compute_context.is_root = parent == null;
 
     for (std.enums.values(properties.PropertyId)) |id| {
         computers[@backingInt(id)](&result, winners.get(id), inherited, &compute_context);
@@ -33,7 +42,7 @@ const computers = blk: {
         *ComputedStyle,
         ?*const properties.Declaration,
         *const ComputedStyle,
-        *const Context,
+        *Context,
     ) void = undefined;
     for (fields.field_names, fields.field_values) |name, value| {
         entries[value] = struct {
@@ -41,16 +50,17 @@ const computers = blk: {
                 style: *ComputedStyle,
                 winner: ?*const properties.Declaration,
                 parent: *const ComputedStyle,
-                context: *const Context,
+                context: *Context,
             ) void {
                 const definition = @field(registry.definitions, name);
                 const dest = &@field(style.values, name);
                 const inherited = @field(parent.values, name);
+                const initial = registry.initialValue(name, context);
 
-                dest.* = if (definition.inherited) inherited else definition.initial;
+                dest.* = if (definition.inherited) inherited else initial;
                 if (winner) |declaration| {
                     dest.* = if (declaration.value == .css_wide) switch (declaration.value.css_wide) {
-                        .initial => definition.initial,
+                        .initial => initial,
                         .inherit => inherited,
                         .unset => dest.*,
                         .revert => @panic("TODO: cascade origin rollback for revert"),
@@ -58,6 +68,7 @@ const computers = blk: {
                         .revert_rule => @panic("TODO: cascade rule rollback for revert-rule"),
                     } else definition.compute(@field(declaration.value, @tagName(definition.value_tag)), context);
                 }
+                if (@hasField(@TypeOf(definition), "update_context")) definition.update_context(dest.*, context);
             }
         }.computeProperty;
     }
@@ -68,6 +79,7 @@ test "style computed ComputedStyle: lengths, percentages and defaults" {
     const testing = std.testing;
     const context: Context = .{
         .font_size = 20,
+        .default_font_size = 20,
         .root_font_size = 16,
         .x_height = 9,
         .zero_advance = 11,
@@ -98,15 +110,15 @@ test "style computed ComputedStyle: lengths, percentages and defaults" {
 
     const style = compute(&winners, null, &context);
     // 2em becomes 40 CSS pixels; 50% remains a percentage until layout.
-    try testing.expectEqualDeep(registry.ComputedValues{
-        .width = .{ .length_percentage = .{ .length = 40 } },
-        .height = .{ .length_percentage = .{ .percentage = 50 } },
-    }, style.values);
+    var expected = init(&context);
+    expected.values.width = .{ .length_percentage = .{ .length = 40 } };
+    expected.values.height = .{ .length_percentage = .{ .percentage = 50 } };
+    try testing.expectEqualDeep(expected.values, style.values);
 
     // Width and height default to auto, not the parent's values.
     const empty = cascade.CascadedDeclarations.initFill(null);
     try testing.expectEqualDeep(
-        registry.ComputedValues{ .width = .auto, .height = .auto },
+        init(&context).values,
         compute(&empty, &style, &context).values,
     );
 }

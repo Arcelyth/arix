@@ -2,6 +2,10 @@ const Context = @import("Context.zig");
 const SpecifiedFontWeight = @import("../specified/font_weight.zig").FontWeight;
 pub const FontWeight = f64;
 
+pub fn initial(_: *const Context) FontWeight {
+    return 400;
+}
+
 /// https://drafts.csswg.org/css-fonts-4/#relative-weights
 pub fn fromSpecified(value: SpecifiedFontWeight, context: *const Context) FontWeight {
     const parent = if (context.inherited_style) |style| style.font_weight else 400;

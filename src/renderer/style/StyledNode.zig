@@ -33,10 +33,12 @@ pub fn build(
     var matched_rules: std.ArrayList(MatchedRule) = .empty;
     defer matched_rules.deinit(allocator);
 
+    const initial_style = ComputedStyle.init(context);
     const result = try allocator.create(StyledNode);
-    result.* = StyledNode.init(root.asNode(), .{});
+    result.* = StyledNode.init(root.asNode(), initial_style);
     errdefer result.destroy(allocator);
 
+    var compute_context = context.*;
     var current = result;
     walk: while (true) {
         matched_rules.clearRetainingCapacity();
@@ -56,7 +58,8 @@ pub fn build(
 
         const winners = cascade.cascade(matched_rules.items);
         const parent_node = if (current.parent()) |node| &node.style else null;
-        current.style = ComputedStyle.compute(&winners, parent_node, context);
+        current.style = ComputedStyle.compute(&winners, parent_node, &compute_context);
+        if (current == result) compute_context.root_font_size = current.style.values.font_size;
 
         // DFS.
         var next = current.node.first_child();
@@ -65,7 +68,7 @@ pub fn build(
                 if (node.type_id != .DOM_Element and node.type_id != .DOM_Text) continue;
 
                 const child = try allocator.create(StyledNode);
-                child.* = StyledNode.init(node, .{});
+                child.* = StyledNode.init(node, initial_style);
                 current.appendChild(child);
                 current = child;
                 continue :walk;

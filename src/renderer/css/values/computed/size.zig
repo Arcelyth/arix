@@ -11,6 +11,10 @@ pub const Size = union(enum) {
     stretch,
     length_percentage: LengthPercentage,
 
+    pub fn initial(_: *const Context) Size {
+        return .auto;
+    }
+
     pub fn fromSpecified(value: SpecifiedSize, context: *const Context) Size {
         return switch (value) {
             .auto => .auto,

@@ -1,3 +1,4 @@
+const std = @import("std");
 const Size = @import("../values/specified/size.zig").Size;
 const Margin = @import("../values/specified/margin.zig").Margin;
 const LengthPercentage = @import("../values/specified/length_percentage.zig").LengthPercentage;
@@ -26,6 +27,13 @@ pub const Value = union(enum) {
     line_width: LineWidth,
     line_style: LineStyle,
     css_wide: CSSWideKeyword,
+
+    pub fn deinit(self: Value, allocator: std.mem.Allocator) void {
+        switch (self) {
+            .font_family => |family| family.deinit(allocator),
+            else => {},
+        }
+    }
 };
 
 pub const Declaration = struct {

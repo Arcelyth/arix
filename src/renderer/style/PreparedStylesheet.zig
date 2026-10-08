@@ -90,7 +90,7 @@ test "style PreparedStylesheet: parse selectors and cache specificity" {
     const alloc = testing.allocator;
     var arena = std.heap.ArenaAllocator.init(alloc);
     defer arena.deinit();
-    var buffer = try Buffer.init(alloc, ".box, #target { width: 100px; }");
+    var buffer = try Buffer.init(alloc, ".box, #target { width: 100px; font-family: Example Font; }");
     defer buffer.deinit();
     var tokens = buffer.stream(alloc);
     defer tokens.deinit();

@@ -26,10 +26,13 @@ pub fn deinit(self: *LayoutBoxBase, allocator: std.mem.Allocator) void {
 /// Anonymous boxes inherit through the box tree; non-inherited properties
 /// have their initial values. Construction supplies the anonymous display.
 pub fn anonymous(parent_style: *const ComputedStyle, display: Display.Box) LayoutBoxBase {
-    var style: ComputedStyle = .{};
+    var style: ComputedStyle = .{ .values = undefined };
     inline for (@typeInfo(registry.PropertyId).@"enum".field_names) |name| {
-        if (@field(registry.definitions, name).inherited)
-            @field(style.values, name) = @field(parent_style.values, name);
+        const definition = @field(registry.definitions, name);
+        @field(style.values, name) = if (definition.inherited)
+            @field(parent_style.values, name)
+        else
+            definition.initial;
     }
     style.values.display = .{ .box = display };
     return .{ .source = .anonymous, .style = style };

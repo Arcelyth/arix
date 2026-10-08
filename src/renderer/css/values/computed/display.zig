@@ -14,6 +14,10 @@ pub const Display = union(enum) {
         list_item: bool = false,
     };
 
+    pub fn initial(_: *const Context) Display {
+        return .{ .box = .{} };
+    }
+
     pub fn fromSpecified(value: SpecifiedDisplay, _: *const Context) Display {
         return switch (value) {
             .box => |box| .{ .box = .{ .outside = box.outside, .inside = box.inside } },

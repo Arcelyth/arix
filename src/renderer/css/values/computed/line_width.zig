@@ -5,6 +5,10 @@ const ResolvedContext = @import("../resolved.zig").Context;
 
 pub const LineWidth = f64;
 
+pub fn initial(context: *const Context) LineWidth {
+    return fromSpecified(.medium, context);
+}
+
 pub fn fromSpecified(value: SpecifiedLineWidth, context: *const Context) LineWidth {
     const width = switch (value) {
         .thin => @as(f64, 1),

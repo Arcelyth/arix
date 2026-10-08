@@ -25,6 +25,8 @@ pub const Property = union(enum) {
 };
 
 pub const definitions = .{
+    // Font size must be computed before lengths that use em.
+    .font_size = font_size_entry,
     .width = preferred_size,
     .height = preferred_size,
 
@@ -53,7 +55,6 @@ pub const definitions = .{
     .border_bottom_color = border_color,
     .border_left_color = border_color,
 
-    .font_size = font_size_entry,
     .font_family = font_family_entry,
     .font_weight = font_weight_entry,
     .font_style = font_style_entry,
@@ -141,7 +142,7 @@ const border_color = .{
 const font_family_entry = .{
     .parse = &parseFontFamily,
     .value_tag = @as(std.meta.Tag(Value), .font_family),
-    .initial = computed.font_family.FontFamily{ .families = &.{.{ .generic = .serif }} },
+    .initial = computed.font_family.initial,
     .inherited = true,
     .compute = &computed.font_family.fromSpecified,
 };
@@ -149,7 +150,7 @@ const font_family_entry = .{
 const font_size_entry = .{
     .parse = &parseFontSize,
     .value_tag = @as(std.meta.Tag(Value), .font_size),
-    .initial = @as(f64, 16),
+    .initial = computed.font_size.initial,
     .inherited = true,
     .compute = &computed.font_size.fromSpecified,
     .update_context = &computed.font_size.updateContext,
@@ -263,6 +264,19 @@ fn parseFontStyle(_: Allocator, input: *Stream) ParseResult {
     return .{ .font_style = font_style.parse(input) orelse return null };
 }
 
+fn InitialType(comptime initial: anytype) type {
+    return switch (@typeInfo(@TypeOf(initial))) {
+        .@"fn" => |function| function.return_type.?,
+        else => @TypeOf(initial),
+    };
+}
+
+/// Initial values may be constants or functions of the computation context.
+pub fn initialValue(comptime name: []const u8, context: *const computed.Context) InitialType(@field(definitions, name).initial) {
+    const initial = @field(definitions, name).initial;
+    return if (@typeInfo(@TypeOf(initial)) == .@"fn") initial(context) else initial;
+}
+
 /// One field per property, with its concrete computed type and initial default.
 /// ComputedStyle uses this struct.
 pub const ComputedValues = blk: {
@@ -273,9 +287,8 @@ pub const ComputedValues = blk: {
     for (properties, 0..) |property, i| {
         const definition = @field(definitions, property);
         const initial = definition.initial;
-        field_types[i] = @TypeOf(initial);
-        const default = if (@hasField(@TypeOf(definition), "computed_initial")) definition.computed_initial else initial;
-        field_attrs[i] = .{ .default_value_ptr = &default };
+        field_types[i] = InitialType(initial);
+        field_attrs[i] = .{ .default_value_ptr = if (@typeInfo(@TypeOf(initial)) == .@"fn") null else &initial };
     }
     break :blk @Struct(
         .auto,

@@ -7,6 +7,7 @@ const matching = @import("../css/selectors/matching.zig");
 const MatchedRule = @import("cascade/MatchedRule.zig").MatchedRule;
 const Origin = @import("cascade/MatchedRule.zig").Origin;
 const Declaration = @import("../css/properties/types.zig").Declaration;
+const deinitDeclarations = @import("../css/properties/parse.zig").deinitDeclarations;
 
 /// Prepared for matching.
 /// Borrowed stylesheet data, prepared once rather than for each element.
@@ -27,7 +28,7 @@ pub const PreparedRule = struct {
     pub fn deinit(self: PreparedRule, allocator: std.mem.Allocator) void {
         for (self.selectors) |entry| entry.selector.deinit(allocator);
         allocator.free(self.selectors);
-        allocator.free(self.declarations);
+        deinitDeclarations(allocator, self.declarations);
     }
 };
 

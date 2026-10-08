@@ -16,40 +16,68 @@ pub fn parseDeclaration(
     result: *std.ArrayList(Declaration),
 ) !void {
     const property = registry.fromName(declaration.name) orelse return;
-    const ids: []const registry.PropertyId = switch (property) {
-        .longhand => |id| &.{id},
-        .shorthand => |shorthand| shorthand.longhands,
-    };
     for (declaration.value) |value| {
         if (value == .function and value.function.name.eqlAscii("var"))
             @panic("TODO: CSS custom property substitution");
     }
 
+    appendDeclaration(allocator, declaration, property, result) catch |err| switch (err) {
+        error.InvalidValue => return,
+        else => return err,
+    };
+}
+
+fn appendDeclaration(
+    allocator: std.mem.Allocator,
+    declaration: *const syntax.Declaration,
+    property: registry.Property,
+    result: *std.ArrayList(Declaration),
+) !void {
+    const ids: []const registry.PropertyId = switch (property) {
+        .longhand => |id| &.{id},
+        .shorthand => |shorthand| shorthand.longhands,
+    };
     var input = Stream.init(declaration.value);
     input.discardWhitespace();
     // A shorthand can expand to at most all registered longhands.
     var storage: [std.enums.values(registry.PropertyId).len]Value = undefined;
     const values = storage[0..ids.len];
-    parse: {
-        if (input.peekToken()) |token| {
-            if (token.* == .ident) {
-                if (parseCSSWideKeyword(token.ident)) |keyword| {
-                    input.advance();
-                    @memset(values, .{ .css_wide = keyword });
-                    break :parse;
-                }
-            }
-        }
-        switch (property) {
-            .longhand => |id| values[0] = registry.parseValue(allocator, id, &input) orelse return,
-            .shorthand => |shorthand| if (!shorthand.parse(allocator, &input, values)) return,
-        }
-    }
+    @memset(values, .{ .css_wide = .initial });
+    errdefer for (values) |value|
+        value.deinit(allocator);
+
+    try parseValues(allocator, &input, property, values);
     input.discardWhitespace();
-    if (!input.empty()) return;
+    if (!input.empty()) return error.InvalidValue;
+
     try result.ensureUnusedCapacity(allocator, ids.len);
     for (ids, values) |id, value| {
-        result.appendAssumeCapacity(.{ .property = id, .value = value, .important = declaration.important });
+        result.appendAssumeCapacity(.{
+            .property = id,
+            .value = value,
+            .important = declaration.important,
+        });
+    }
+}
+
+fn parseValues(
+    allocator: std.mem.Allocator,
+    input: *Stream,
+    property: registry.Property,
+    values: []Value,
+) error{InvalidValue}!void {
+    if (input.peekToken()) |token| {
+        if (token.* == .ident) {
+            if (parseCSSWideKeyword(token.ident)) |keyword| {
+                input.advance();
+                @memset(values, .{ .css_wide = keyword });
+                return;
+            }
+        }
+    }
+    switch (property) {
+        .longhand => |id| values[0] = registry.parseValue(allocator, id, input) orelse return error.InvalidValue,
+        .shorthand => |shorthand| if (!shorthand.parse(allocator, input, values)) return error.InvalidValue,
     }
 }
 
@@ -64,12 +92,20 @@ fn parseCSSWideKeyword(name: String) ?CSSWideKeyword {
 
 pub fn parseDeclarations(allocator: std.mem.Allocator, declarations: []const syntax.Declaration) ![]Declaration {
     var result: std.ArrayList(Declaration) = .empty;
-    errdefer result.deinit(allocator);
+    errdefer {
+        for (result.items) |declaration| declaration.value.deinit(allocator);
+        result.deinit(allocator);
+    }
 
     for (declarations) |*declaration| {
         try parseDeclaration(allocator, declaration, &result);
     }
     return result.toOwnedSlice(allocator);
+}
+
+pub fn deinitDeclarations(allocator: std.mem.Allocator, declarations: []const Declaration) void {
+    for (declarations) |declaration| declaration.value.deinit(allocator);
+    allocator.free(declarations);
 }
 
 test "properties parse: longhands, shorthands and invalid declarations" {
@@ -101,7 +137,7 @@ test "properties parse: longhands, shorthands and invalid declarations" {
     var parser = Parser.init(arena.allocator(), &tokens);
     const rule = try parser.parseRule();
     const declarations = try parseDeclarations(alloc, rule.qualified_rule.declarations);
-    defer alloc.free(declarations);
+    defer deinitDeclarations(alloc, declarations);
 
     const expected = [_]Declaration{
         .{

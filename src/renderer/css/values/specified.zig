@@ -14,6 +14,7 @@ pub const FontWeight = @import("specified/font_weight.zig").FontWeight;
 pub const Angle = @import("specified/angle.zig").Angle;
 pub const LineHeight = @import("specified/line_height.zig").LineHeight;
 pub const TextWrapMode = @import("specified/text_wrap_mode.zig").TextWrapMode;
+pub const WhiteSpace = @import("specified/white_space.zig").WhiteSpace;
 
 test {
     @import("std").testing.refAllDecls(@This());

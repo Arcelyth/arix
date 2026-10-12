@@ -150,6 +150,10 @@ pub inline fn isCssWhitespace_O(cp: ?u21) bool {
     return if (cp) |value| isCssWhitespace(value) else false;
 }
 
+pub inline fn isSpaceOrTab(comptime T: type, c: T) bool {
+    return c == ' ' or c == '\t';
+}
+
 pub inline fn asciiCaseInsensitiveEq(value: []const u21, expected: []const u8) bool {
     if (value.len != expected.len) return false;
     for (value, expected) |cp, byte| {

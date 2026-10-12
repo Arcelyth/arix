@@ -9,7 +9,7 @@
         },
         .core_foundation_zig = .{
             .url = "https://codeberg.org/Arcelyth/core-foundation-zig/archive/main.tar.gz",
-            .hash = "core_foundation_zig-0.0.1-4nhKwqrRAABXTsu4CSHVpDYs84OVcr_LIkn1_e6mXwKi",
+            .hash = "core_foundation_zig-0.0.1-4nhKwlvXAADngYmE5qerPsWK03tJozWoqXmFPy8F4SxO",
         },
     },
     .paths = .{""},

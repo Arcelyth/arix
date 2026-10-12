@@ -5,6 +5,7 @@ const ComputedStyle = @import("../../style/computed/ComputedStyle.zig");
 const LayoutBox = @import("../LayoutBox.zig");
 const Text = @import("../../dom/Text.zig");
 const TextSequence = @import("../TextSequence.zig");
+const ascii = @import("../../utils/ascii.zig");
 const Font = @import("../../font/platform.zig").backend.Font;
 
 /// A contiguous range of text that shares the same computed style.
@@ -94,7 +95,7 @@ fn appendByte(
         self.pending_space = null;
         return self.emit(allocator, byte, style);
     }
-    if ((byte == ' ' or byte == '\t' or byte == '\n') and mode.collapses()) {
+    if ((ascii.isSpaceOrTab(u8, byte) or byte == '\n') and mode.collapses()) {
         if (self.pending_space == null) self.pending_space = style;
         return;
     }

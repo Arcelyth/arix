@@ -18,6 +18,7 @@ pub fn build(b: *std.Build) !void {
 
     // config
     const debug = b.option(bool, "debug", "show debug information") orelse false;
+    const test_filters = b.option([]const []const u8, "test-filter", "Run tests whose names contain this text") orelse &.{};
 
     const options = b.addOptions();
     options.addOption(bool, "debug", debug);
@@ -83,7 +84,7 @@ pub fn build(b: *std.Build) !void {
     run_bench.addPassthruArgs();
     bench_step.dependOn(&run_bench.step);
 
-    // example
+    // Examples share the renderer, and run from their own asset directory.
     const renderer_module = b.createModule(.{
         .root_source_file = b.path("src/renderer.zig"),
         .target = target,
@@ -123,7 +124,7 @@ pub fn build(b: *std.Build) !void {
         });
 
         moduleAddCommon(test_module, anon_imports, depends, options);
-        const unit_tests = b.addTest(.{ .name = "tests", .root_module = test_module });
+        const unit_tests = b.addTest(.{ .name = "tests", .root_module = test_module, .filters = test_filters });
         const run_unit_tests = b.addRunArtifact(unit_tests);
         test_step.dependOn(&run_unit_tests.step);
     }
@@ -137,6 +138,13 @@ fn moduleAddCommon(
     depends: std.ArrayList(DependItem),
     options: *std.Build.Step.Options,
 ) void {
+    if (m.resolved_target.?.result.os.tag == .macos) {
+        const macos = m.owner.dependency("core_foundation_zig", .{
+            .target = m.resolved_target.?,
+            .optimize = m.optimize orelse .debug,
+        });
+        m.addImport("core_foundation_zig", macos.module("core_foundation_zig"));
+    }
     for (anon_imports.items) |an| {
         m.addImport(an.name, an.module);
     }

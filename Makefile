@@ -6,18 +6,19 @@ ARIX_HTML_BENCH_FILES := $(wildcard $(ARIX_HTML_BENCH_DIR)/*.html)
 fetch: 
 	rm -rf ./zig-pkg
 	zig fetch --save=strale "https://github.com/Arcelyth/strale/archive/main.tar.gz"
+	zig fetch --save=core_foundation_zig "https://codeberg.org/Arcelyth/core-foundation-zig/archive/main.tar.gz"
 
 test_token: 
-	zig build test --summary all -- tokenizer 
+	zig build test --summary all -Dtest-filter=tokenizer
 
 test_tree: 
-	zig build test --summary all -- tree_construction
+	zig build test --summary all -Dtest-filter=tree_construction
 
 test_css: 
-	zig build test --summary all -- CSS 
+	zig build test --summary all -Dtest-filter=CSS
 
 test_enc: 
-	zig build test --summary all -- encoding 
+	zig build test --summary all -Dtest-filter=encoding 
 
 bench_css:
 	zig build bench -- --iterations 100 res/bench/css/bench.css

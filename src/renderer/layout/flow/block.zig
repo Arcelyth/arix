@@ -9,6 +9,9 @@ const EdgeSizes = @import("../../geometry/EdgeSizes.zig");
 const Size = @import("../../css/values/computed/size.zig").Size;
 const line_width = @import("../../css/values/computed/line_width.zig");
 const PropertyId = @import("../../css/properties/registry.zig").PropertyId;
+const Options = @import("../Options.zig");
+const InlineFormattingContext = @import("../inline/InlineFormattingContext.zig");
+const inline_layout = @import("../inline/layout.zig");
 
 pub const ContainingBlock = struct {
     width: f64,
@@ -52,6 +55,7 @@ pub fn layout(
     context: *const BlockFormattingContext,
     viewport_width: f64,
     viewport_height: f64,
+    options: Options,
 ) !FragmentTree {
     var result: FragmentTree = .{
         .initial_containing_block = .{
@@ -63,12 +67,12 @@ pub fn layout(
     };
     const box = switch (context.contents) {
         .block_level_boxes => |first| first orelse return result,
-        .inline_formatting_context => @panic("TODO: inline layout"),
+        .inline_formatting_context => return error.ExpectedRootBlock,
     };
     const root = try layoutBlock(allocator, box, .{
         .width = viewport_width,
         .height = viewport_height,
-    });
+    }, options);
 
     root.fragment.content.box.base.rect.y = root.start.value() + root.fragment.content.box.border.top + root.fragment.content.box.padding.top;
     result.root = root.fragment;
@@ -79,18 +83,15 @@ fn layoutBlock(
     allocator: std.mem.Allocator,
     box: *const LayoutBox,
     containing: ContainingBlock,
-) std.mem.Allocator.Error!BlockResult {
+    options: Options,
+) anyerror!BlockResult {
     const block = switch (box.content) {
         .block_level => |*block| block,
-        else => @panic("TODO: inline layout"),
+        else => return error.ExpectedBlock,
     };
     const container = switch (block.*) {
         .independent => |*context| &context.contents.flow.contents,
         .same_formatting_context => |*normal| &normal.contents,
-    };
-    const first = switch (container.*) {
-        .block_level_boxes => |first| first,
-        .inline_formatting_context => @panic("TODO: inline layout"),
     };
     const independent = block.* == .independent;
     const height = block.base().style.values.height.resolve(containing.height);
@@ -98,12 +99,41 @@ fn layoutBlock(
     const fragment = try createBlockFragment(allocator, block.base(), containing);
     errdefer fragment.destroy(allocator);
 
-    const children = try layoutChildren(allocator, fragment, first, .{
-        .width = fragment.content.box.base.rect.width,
-        .height = height,
-    }, !independent and fragment.content.box.padding.top == 0 and fragment.content.box.border.top == 0);
+    const children = switch (container.*) {
+        .block_level_boxes => |first| try layoutChildren(
+            allocator,
+            fragment,
+            first,
+            .{
+                .width = fragment.content.box.base.rect.width,
+                .height = height,
+            },
+            !independent and fragment.content.box.padding.top == 0 and fragment.content.box.border.top == 0,
+            options,
+        ),
+        .inline_formatting_context => |*context| try layoutInline(
+            allocator,
+            context,
+            fragment,
+            options,
+        ),
+    };
 
     return finishBlock(fragment, independent, height, children);
+}
+
+fn layoutInline(allocator: std.mem.Allocator, context: *const InlineFormattingContext, fragment: *Fragment, options: Options) !ChildLayout {
+    const result = try inline_layout.layout(
+        allocator,
+        context,
+        fragment,
+        fragment.content.box.base.rect.width,
+        options,
+    );
+    return .{
+        .cursor = result.height,
+        .at_start = !result.has_line,
+    };
 }
 
 fn createBlockFragment(
@@ -175,11 +205,12 @@ fn layoutChildren(
     first: ?*LayoutBox,
     containing: ContainingBlock,
     collapse_start: bool,
+    options: Options,
 ) !ChildLayout {
     var result: ChildLayout = .{};
     var child = first;
     while (child) |current| : (child = current.next_sibling()) {
-        const placed = try layoutBlock(allocator, current, containing);
+        const placed = try layoutBlock(allocator, current, containing, options);
         fragment.appendChild(placed.fragment);
         placeChild(&result, placed, collapse_start);
     }

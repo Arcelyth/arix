@@ -13,6 +13,7 @@ const Element = @import("../dom/Element.zig");
 const Text = @import("../dom/Text.zig");
 const LocalTag = @import("local_name").LocalTag;
 const FragmentTree = @import("fragment.zig").FragmentTree;
+const Options = @import("Options.zig");
 
 /// The initial containing block's BFC. Contains the document element's
 /// principal box, or no box when the document element has display:none.
@@ -40,7 +41,11 @@ pub fn create(allocator: std.mem.Allocator, content: LayoutBox.Content) !*Layout
 }
 
 pub fn layout(self: *const BoxTree, allocator: std.mem.Allocator, viewport_width: f64, viewport_height: f64) !FragmentTree {
-    return flow.layout(allocator, &self.root, viewport_width, viewport_height);
+    return flow.layout(allocator, &self.root, viewport_width, viewport_height, .{});
+}
+
+pub fn layoutWithOptions(self: *const BoxTree, allocator: std.mem.Allocator, viewport_width: f64, viewport_height: f64, options: Options) !FragmentTree {
+    return flow.layout(allocator, &self.root, viewport_width, viewport_height, options);
 }
 
 pub fn destroy(self: *BoxTree, allocator: std.mem.Allocator) void {
@@ -188,8 +193,6 @@ fn finishContainer(allocator: std.mem.Allocator, parent: *LayoutBox) !void {
             end = box.next_sibling();
         }
         if (isWhitespaceRun(first, end)) {
-            // FIXME: Only white-space:normal is available in the current property registry.
-            // Need to implement whitespace value.
             while (child != end) {
                 const current = child.?;
                 child = current.next_sibling();
@@ -209,7 +212,16 @@ fn isWhitespaceRun(first: *LayoutBox, end: ?*LayoutBox) bool {
         const current = child.?;
         switch (current.content) {
             .block_level, .inline_level => return false,
-            .text => |text| if (!text.isWhitespace()) return false,
+            .text => |text| {
+                if (!text.isWhitespace()) return false;
+                var node = text.first;
+                while (true) {
+                    const mode = node.style.values.white_space;
+                    if (mode != .normal and mode != .nowrap) return false;
+                    if (node == text.last) break;
+                    node = node.next_sibling().?;
+                }
+            },
         }
         child = current.next_sibling();
     }

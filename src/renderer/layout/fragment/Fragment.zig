@@ -3,9 +3,12 @@ const Fragment = @This();
 const std = @import("std");
 const Tree = @import("../../utils/tree.zig").Tree;
 const BoxFragment = @import("BoxFragment.zig");
+const BaseFragment = @import("BaseFragment.zig");
+const TextFragment = @import("TextFragment.zig");
 
 pub const Content = union(enum) {
     box: BoxFragment,
+    text: TextFragment,
 };
 
 content: Content,
@@ -13,6 +16,12 @@ tree: Tree(Fragment) = .{},
 
 pub fn init(content: Content) Fragment {
     return .{ .content = content };
+}
+
+pub fn base(self: *const Fragment) *const BaseFragment {
+    return switch (self.content) {
+        inline else => |*content| &content.base,
+    };
 }
 
 pub fn destroy(self: *Fragment, allocator: std.mem.Allocator) void {
@@ -25,6 +34,10 @@ pub fn destroy(self: *Fragment, allocator: std.mem.Allocator) void {
         }
         const parent_node = current.parent();
         current.remove();
+        switch (current.content) {
+            .text => |text| text.deinit(allocator),
+            else => {},
+        }
         allocator.destroy(current);
         current = parent_node orelse return;
     }

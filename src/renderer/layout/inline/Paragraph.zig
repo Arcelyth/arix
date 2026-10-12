@@ -94,7 +94,7 @@ fn appendByte(
         self.pending_space = null;
         return self.emit(allocator, byte, style);
     }
-    if ((byte.isSpace() or byte == '\n') and mode.collapses()) {
+    if ((byte == ' ' or byte == '\t' or byte == '\n') and mode.collapses()) {
         if (self.pending_space == null) self.pending_space = style;
         return;
     }

@@ -120,3 +120,28 @@ fn obliqueRank(style: Style, request: f64) Rank {
         .distance = @abs(angle - target),
     };
 }
+
+test "font matching: installed family, weight and style" {
+    const ComputedStyle = @import("../style/computed/ComputedStyle.zig");
+    const Matcher = @import("Matcher.zig");
+    var style = ComputedStyle.init(&.{
+        .font_size = 16,
+        .root_font_size = 16,
+        .x_height = 8,
+        .zero_advance = 8,
+        .viewport_width = 800,
+        .viewport_height = 600,
+    });
+    style.values.font_family = .{ .families = &.{.{ .name = "hElVeTiCa" }} };
+    style.values.font_weight = 700;
+    style.values.font_style = .italic;
+
+    const matcher: Matcher = .{};
+    const font = try matcher.match(std.testing.allocator, &style.values) orelse return error.MissingFont;
+    defer font.deinit();
+    const name = try font.postScriptName(std.testing.allocator);
+    defer std.testing.allocator.free(name);
+
+    try std.testing.expectEqualStrings("Helvetica-BoldOblique", name);
+    try std.testing.expectEqual(@as(f64, 16), font.size);
+}

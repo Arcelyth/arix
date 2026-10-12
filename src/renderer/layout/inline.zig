@@ -1,5 +1,6 @@
 pub const InlineBox = @import("inline/InlineBox.zig");
 pub const InlineFormattingContext = @import("inline/InlineFormattingContext.zig");
+pub const Paragraph = @import("inline/Paragraph.zig");
 pub const layout = @import("inline/layout.zig").layout;
 
 const std = @import("std");

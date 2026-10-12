@@ -9,6 +9,24 @@ pub const WhiteSpace = enum {
     @"pre-wrap",
     @"break-spaces",
     @"pre-line",
+
+    /// Returns whether consecutive whitespace characters are collapsed.
+    pub fn collapses(self: WhiteSpace) bool {
+        return switch (self) {
+            .normal, .nowrap, .@"pre-line" => true,
+            .pre, .@"pre-wrap", .@"break-spaces" => false,
+        };
+    }
+
+    /// Returns whether automatic line wrapping is allowed.
+    pub fn wraps(self: WhiteSpace) bool {
+        return self != .pre and self != .nowrap;
+    }
+
+    /// Returns whether explicit line breaks are preserved.
+    pub fn preservesBreaks(self: WhiteSpace) bool {
+        return self != .normal and self != .nowrap;
+    }
 };
 
 pub fn parse(input: *Stream) ?WhiteSpace {

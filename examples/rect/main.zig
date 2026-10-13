@@ -17,7 +17,7 @@ const css_path = "./rect.css";
 
 const output_path = "./target/rect.ppm";
 const width = 320;
-const height = 200;
+const height = 300;
 
 pub fn main(init: std.process.Init) !void {
     const allocator = init.arena.allocator();
@@ -53,14 +53,15 @@ pub fn main(init: std.process.Init) !void {
     defer prepared.deinit(allocator);
 
     // DOM + CSS -> styled tree -> layout fragments.
-    const styled = try style.StyledNode.build(allocator, root, &.{prepared}, &.{
+    const context: style.computed.ComputedStyle.Context = .{
         .font_size = 16,
         .root_font_size = 16,
         .x_height = 8,
         .zero_advance = 8,
         .viewport_width = width,
         .viewport_height = height,
-    });
+    };
+    const styled = try style.StyledNode.build(allocator, root, &.{prepared}, &context);
     defer styled.destroy(allocator);
 
     var boxes = try layout.BoxTree.build(allocator, styled);
@@ -76,7 +77,7 @@ pub fn main(init: std.process.Init) !void {
     var canvas = try Canvas.init(allocator, width, height, .{ .clear_color = .{ 255, 255, 255 } });
     defer canvas.deinit(allocator);
 
-    try canvas.draw(&list);
+    try canvas.draw(allocator, &list);
     const ppm = try image.ppm.encode(allocator, width, height, canvas.pixels);
     try cwd.createDirPath(init.io, std.fs.path.dirname(output_path).?);
     try cwd.writeFile(init.io, .{ .sub_path = output_path, .data = ppm });

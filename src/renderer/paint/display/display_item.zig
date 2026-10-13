@@ -1,10 +1,14 @@
 const Rect = @import("../../geometry/Rect.zig");
 const EdgeSizes = @import("../../geometry/EdgeSizes.zig");
 const LineStyle = @import("../../css/values/specified/line_style.zig").LineStyle;
+const std = @import("std");
+const Point = @import("../../geometry.zig").Point;
+const Font = @import("../../font/platform.zig").backend.Font;
 
 pub const DisplayItem = union(enum) {
     rect: RectDisplayItem,
     border: BorderDisplayItem,
+    text: TextDisplayItem,
 };
 
 pub const CommonItemProperties = struct {
@@ -17,6 +21,29 @@ pub const RectDisplayItem = struct {
     bounds: Rect,
     /// Unpremultiplied sRGB and alpha, each in [0, 1].
     color: [4]f64,
+};
+
+pub const TextDisplayItem = struct {
+    pub const Glyph = struct {
+        id: u16,
+        /// CSS pixels relative to the baseline origin, with Y increasing upward.
+        position: Point,
+    };
+
+    common: CommonItemProperties,
+    /// Owned font and glyphs, independent of the fragment tree.
+    font: Font,
+    glyphs: []const Glyph,
+    /// CSS pixels in canvas coordinates, with Y increasing downward.
+    baseline_origin: Point,
+    /// The shaping run's text matrix: columns (a, b), (c, d), (tx, ty).
+    text_matrix: [3]Point,
+    color: [4]f64,
+
+    pub fn deinit(self: TextDisplayItem, allocator: std.mem.Allocator) void {
+        self.font.deinit();
+        allocator.free(self.glyphs);
+    }
 };
 
 pub const BorderSide = struct {

@@ -14,6 +14,10 @@ const ComputedStyle = @import("../../style/computed/ComputedStyle.zig");
 const BoxFragment = fragment.BoxFragment;
 const BorderProperties = display_item.BorderProperties;
 const CommonItemProperties = display_item.CommonItemProperties;
+const TextDisplayItem = display_item.TextDisplayItem;
+const TextFragment = @import("../../layout/fragment/TextFragment.zig");
+const ShapedText = @import("../../font/ShapedText.zig");
+const Point = @import("../../geometry.zig").Point;
 
 // Locates the fragment’s content-box origin on the canvas.
 const Offset = struct { x: f64, y: f64 };
@@ -21,6 +25,10 @@ const Offset = struct { x: f64, y: f64 };
 items: std.ArrayList(DisplayItem) = .empty,
 
 pub fn deinit(self: *DisplayList, allocator: std.mem.Allocator) void {
+    for (self.items.items) |item| switch (item) {
+        .text => |text| text.deinit(allocator),
+        else => {},
+    };
     self.items.deinit(allocator);
     self.* = .{};
 }
@@ -35,10 +43,7 @@ pub fn build(allocator: std.mem.Allocator, tree: *const FragmentTree) !DisplayLi
     const canvas_source = canvasBackground(root);
     try result.renderCanvasBackground(allocator, tree.initial_containing_block, canvas_source);
 
-    try result.renderFragments(allocator, root, .{
-        .x = tree.initial_containing_block.x,
-        .y = tree.initial_containing_block.y,
-    }, canvas_source);
+    try result.renderFragments(allocator, root, tree.initial_containing_block, canvas_source);
     return result;
 }
 
@@ -57,21 +62,33 @@ fn renderFragments(
     self: *DisplayList,
     allocator: std.mem.Allocator,
     root: *const Fragment,
-    origin: Offset,
+    viewport: Rect,
     canvas_source: ?*const Fragment,
 ) !void {
     const Pending = struct { node: *const Fragment, offset: Offset };
     var pending: std.ArrayList(Pending) = .empty;
     defer pending.deinit(allocator);
 
-    try pending.append(allocator, .{ .node = root, .offset = origin });
+    try pending.append(allocator, .{
+        .node = root,
+        .offset = .{
+            .x = viewport.x,
+            .y = viewport.y,
+        },
+    });
     while (pending.pop()) |entry| {
-        const content = entry.node.content.box.base.rect;
+        const content = entry.node.base().rect;
         const offset: Offset = .{
             .x = entry.offset.x + content.x,
             .y = entry.offset.y + content.y,
         };
-        try self.renderFragment(allocator, entry.node, offset, entry.node != canvas_source);
+        try self.renderFragment(
+            allocator,
+            entry.node,
+            offset,
+            viewport,
+            entry.node != canvas_source,
+        );
 
         // Normal-flow block backgrounds paint parent before children, with
         // later siblings on top. Child rectangles are parent-content-relative.
@@ -86,6 +103,7 @@ fn renderFragment(
     allocator: std.mem.Allocator,
     node: *const Fragment,
     offset: Offset,
+    clip_rect: Rect,
     paint_background: bool,
 ) !void {
     switch (node.content) {
@@ -100,10 +118,33 @@ fn renderFragment(
             if (paint_background) try self.renderBackground(allocator, rect, &box.style);
             try self.renderBorder(allocator, rect, box);
         },
+        .text => |*text| try self.renderText(allocator, text, offset, clip_rect),
     }
 }
 
-fn renderBorder(self: *DisplayList, allocator: std.mem.Allocator, rect: Rect, box: *const BoxFragment) !void {
+fn renderText(
+    self: *DisplayList,
+    allocator: std.mem.Allocator,
+    text: *const TextFragment,
+    offset: Offset,
+    clip_rect: Rect,
+) !void {
+    const color = try text.style.values.color.toRgba(text.style.values.color);
+    try self.pushText(
+        allocator,
+        .{ .clip_rect = clip_rect },
+        .{ offset.x, offset.y + text.font_metrics.ascent },
+        &text.run,
+        color,
+    );
+}
+
+fn renderBorder(
+    self: *DisplayList,
+    allocator: std.mem.Allocator,
+    rect: Rect,
+    box: *const BoxFragment,
+) !void {
     if (rect.width <= 0 or rect.height <= 0) return;
     var border: BorderProperties = .{};
 
@@ -169,8 +210,35 @@ pub fn pushBorder(
     } });
 }
 
+/// Copies the glyphs and retains the font. The caller keeps ownership of the run.
+pub fn pushText(
+    self: *DisplayList,
+    allocator: std.mem.Allocator,
+    common: CommonItemProperties,
+    baseline_origin: Point,
+    run: *const ShapedText.Run,
+    rgba: [4]f64,
+) !void {
+    if (rgba[3] <= 0 or run.font.size == 0 or run.glyphs.len == 0) return;
+    const glyphs = try allocator.alloc(TextDisplayItem.Glyph, run.glyphs.len);
+    errdefer allocator.free(glyphs);
+    for (glyphs, run.glyphs) |*dest, source|
+        dest.* = .{ .id = source.id, .position = source.position };
+    const font = run.font.retain();
+    errdefer font.deinit();
+    try self.items.append(allocator, .{ .text = .{
+        .common = common,
+        .font = font,
+        .glyphs = glyphs,
+        .baseline_origin = baseline_origin,
+        .text_matrix = run.text_matrix,
+        .color = rgba,
+    } });
+}
+
 /// Find the fragment whose background should be propagated to the canvas.
 fn canvasBackground(root: *const Fragment) ?*const Fragment {
+    if (root.content != .box) return null;
     const element = switch (root.content.box.source) {
         .principal => |element| element,
         else => return null,
@@ -194,6 +262,7 @@ fn canvasBackground(root: *const Fragment) ?*const Fragment {
 
         var candidate = root.first_child();
         while (candidate) |item| : (candidate = item.next_sibling()) {
+            if (item.content != .box) continue;
             if (item.content.box.source == .principal and
                 item.content.box.source.principal == body)
                 return item;

@@ -30,6 +30,13 @@ pub fn deinit(self: Font) void {
     self.native.deinit();
 }
 
+pub fn retain(self: Font) Font {
+    return .{
+        .native = self.native.retain(),
+        .size = self.size,
+    };
+}
+
 /// Returns owned UTF-8 bytes. Free them with allocator.free().
 pub fn familyName(self: Font, allocator: std.mem.Allocator) ![]u8 {
     const name = self.native.copyFamilyName();

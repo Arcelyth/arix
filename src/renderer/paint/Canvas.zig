@@ -5,6 +5,7 @@ const Rect = @import("../geometry/Rect.zig");
 const DisplayList = @import("display/DisplayList.zig");
 const border = @import("border.zig");
 const compositing = @import("compositing.zig");
+const text = @import("text.zig");
 
 pub const Pixel = [3]u8;
 pub const Options = struct {
@@ -38,7 +39,7 @@ pub fn deinit(self: *Canvas, allocator: std.mem.Allocator) void {
     self.height = 0;
 }
 
-pub fn draw(self: *Canvas, list: *const DisplayList) !void {
+pub fn draw(self: *Canvas, allocator: std.mem.Allocator, list: *const DisplayList) !void {
     for (list.items.items) |item| switch (item) {
         .rect => |command| {
             const bounds = command.bounds.intersection(command.common.clip_rect) orelse continue;
@@ -58,6 +59,7 @@ pub fn draw(self: *Canvas, list: *const DisplayList) !void {
             }
             try border.draw(self, scaled);
         },
+        .text => |command| try text.draw(allocator, self, command),
     };
 }
 

@@ -9,3 +9,15 @@ pub fn sourceOver(destination: *[3]u8, source: [4]f64) void {
         channel.* = @intFromFloat(@round(std.math.clamp(value, 0, 255)));
     }
 }
+
+/// Composite premultiplied 8-bit RGBA pixels over equally many RGB pixels.
+pub fn sourceOverPixels(destination: [][3]u8, source: []const [4]u8) void {
+    std.debug.assert(destination.len == source.len);
+
+    for (destination, source) |*pixel, rgba| {
+        if (rgba[3] == 0) continue;
+        var normalized: [4]f64 = undefined;
+        for (&normalized, rgba) |*channel, byte| channel.* = @as(f64, @floatFromInt(byte)) / 255;
+        sourceOver(pixel, normalized);
+    }
+}

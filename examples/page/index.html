@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>The Arix Journal</title>
+  </head>
+  <body>
+    <main class="page">
+      <header class="masthead">
+        <p class="eyebrow">THE ARIX JOURNAL / ISSUE 01</p>
+        <h1>A small engine. A page full of type.</h1>
+        <p class="subtitle">
+          Notes on making the web visible, one fragment at a time.
+        </p>
+      </header>
+      <article>
+        <p class="byline">ENGINEERING NOTES / OCTOBER 2026 / 4 MIN READ</p>
+        <p class="lead">
+          A page begins with words. Give those words a little structure, room to
+          breathe, and a clear rhythm, and a document starts to feel like a
+          place.
+        </p>
+        <section>
+          <h2>01 / From document to pixels</h2>
+          <p>
+            HTML supplies the structure. CSS gives each element its appearance.
+            The engine builds boxes, measures text, and places each line before
+            painting the result.
+          </p>
+          <p>
+            This paragraph mixes <strong>bold emphasis</strong>,
+            <em>an italic voice</em>, and
+            <span class="accent">a change of color</span> within one continuous
+            line of text. Resize its box and the words find their next line.
+          </p>
+          <blockquote>
+            <p>
+              “Good typography is as much about the space between things as it
+              is about the things themselves.”
+            </p>
+            <p class="caption">A NOTE FROM THE TYPE DESK</p>
+          </blockquote>
+        </section>
+        <section>
+          <h2>02 / A closer look</h2>
+          <p>
+            The inset below preserves spaces and line breaks. It uses a separate
+            font family, a dark background, and a solid accent border.
+          </p>
+          <pre>
+document.html + style.css
+    → styled nodes
+    → boxes and text lines
+    → display list
+    → pixels</pre
+          >
+        </section>
+        <section class="language-note">
+          <h3>Many voices, one page</h3>
+          <p>Bonjour, café. Καλημέρα. Привет.</p>
+          <p class="languages">你好，世界。こんにちは。안녕하세요。 🌍</p>
+          <p class="caption">TEXT SHAPING / FONT FALLBACK / COLOR GLYPHS</p>
+        </section>
+        <p class="closing">
+          Built from nested blocks, flowing text, backgrounds, and borders. A
+          modest vocabulary can still make a complete page.
+        </p>
+      </article>
+      <footer><strong>ARIX</strong> / A browser engine written in Zig.</footer>
+    </main>
+  </body>
+</html>

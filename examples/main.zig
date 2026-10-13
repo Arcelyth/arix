@@ -1,7 +1,8 @@
 const config = @import("config");
 
-pub const Example = enum { rect };
+pub const Example = enum { textblock, page };
 
 pub const main = switch (config.example) {
-    .rect => @import("rect/main.zig").main,
+    .textblock => @import("textblock/main.zig").main,
+    .page => @import("page/main.zig").main,
 };

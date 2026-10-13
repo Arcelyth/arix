@@ -6,6 +6,9 @@ const Paragraph = @import("Paragraph.zig");
 const Measurement = @import("measure.zig").Measurement;
 const ascii = @import("../../utils/ascii.zig");
 const backend = @import("../../font/platform.zig").backend;
+const Line = @import("Line.zig");
+const line_height = @import("../../css/values/computed/line_height.zig");
+const measure = @import("measure.zig");
 
 pub const Result = struct {
     height: f64 = 0,
@@ -21,12 +24,65 @@ pub fn layout(
     width: f64,
     options: Options,
 ) !Result {
-    _ = allocator;
-    _ = context;
-    _ = parent;
-    _ = width;
-    _ = options;
-    @panic("TODO");
+    var paragraph: Paragraph = .{};
+    defer paragraph.deinit(allocator);
+    try paragraph.collect(allocator, context.items);
+    if (paragraph.bytes.items.len == 0) return .{};
+
+    const measured = try measure.measure(allocator, &paragraph, options.font_matcher);
+    defer measured.deinit(allocator);
+    const breaks = try opportunities(allocator, &paragraph, measured);
+    defer allocator.free(breaks);
+
+    const font = try options.font_matcher.match(allocator, &context.root.base.style.values) orelse return error.FontNotFound;
+    defer font.deinit();
+    const style = context.root.base.style.values;
+    const strut = line_height.resolve(style.line_height, style.font_size, font.metrics());
+    return layoutLines(allocator, &paragraph, measured, breaks, parent, width, strut);
+}
+
+fn layoutLines(
+    allocator: std.mem.Allocator,
+    paragraph: *const Paragraph,
+    measured: measure.Measurement,
+    breaks: []const Break,
+    parent: *Fragment,
+    width: f64,
+    strut: line_height.Extents,
+) !Result {
+    var result: Result = .{};
+    var start: usize = 0;
+    while (start < paragraph.bytes.items.len) {
+        start = trimStart(paragraph, start);
+        if (start == paragraph.bytes.items.len) break;
+        const end = choose(paragraph, measured, breaks, start, width);
+        const content_end = if (breaks[end] == .forced) end - 1 else end;
+        const trimmed = trimEnd(paragraph, start, content_end);
+        var line: Line = .{ .bounds = strut };
+        defer line.deinit(allocator);
+
+        try collectLine(allocator, &line, paragraph, start, trimmed);
+        if (breaks[end] == .forced) line.include(paragraph.spans.items[paragraph.spanAt(end - 1)]);
+        try line.finish(allocator, parent, result.height);
+        result.height += line.bounds.height();
+        result.has_line = true;
+        start = end;
+    }
+    return result;
+}
+
+fn collectLine(
+    allocator: std.mem.Allocator,
+    line: *Line,
+    paragraph: *const Paragraph,
+    start: usize,
+    end: usize,
+) !void {
+    for (paragraph.spans.items) |span| {
+        const from = @max(start, span.start);
+        const to = @min(end, span.end);
+        if (from < to) try line.appendSpan(allocator, paragraph.bytes.items[from..to], span);
+    }
 }
 
 /// Describes whether a text boundary is a valid line-ending opportunity.

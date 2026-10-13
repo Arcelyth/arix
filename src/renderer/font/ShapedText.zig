@@ -19,6 +19,8 @@ pub const Run = struct {
     font: Font,
     direction: Direction,
     glyphs: []Glyph,
+    /// UTF-8 byte range in the input text, with an exclusive end.
+    text_range: struct { start: usize, end: usize },
     /// Columns (a, b), (c, d), (tx, ty).
     text_matrix: [3]Point,
 

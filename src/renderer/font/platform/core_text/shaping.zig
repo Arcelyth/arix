@@ -51,9 +51,10 @@ fn attributedString(text: []const u8, font: Font, direction: Direction) !cf.CFAt
     return cf.CFAttributeString.initWithAttributes(text, attributes);
 }
 
-/// Map each UTF-16 code unit to its source UTF-8 byte offset.
+/// Map UTF-16 positions to UTF-8 byte offsets, including the exclusive end.
 fn sourceOffsets(allocator: std.mem.Allocator, text: []const u8, utf16_len: usize) ![]usize {
-    const offsets = try allocator.alloc(usize, utf16_len);
+    const offsets = try allocator.alloc(usize, utf16_len + 1);
+    offsets[utf16_len] = text.len;
     var iterator = std.unicode.Utf8View.initUnchecked(text).iterator();
     var unit: usize = 0;
     while (iterator.nextCodepointSlice()) |bytes| {
@@ -95,6 +96,11 @@ fn collectRun(
 ) !ShapedText.Run {
     const font = try runFont(run, size);
     errdefer font.deinit();
+    const range = run.getStringRange();
+    const start = cf.CFIndex.toUsize(range.location) orelse return error.InvalidStringIndex;
+    const length = cf.CFIndex.toUsize(range.length) orelse return error.InvalidStringIndex;
+    if (start >= offsets.len or length >= offsets.len - start) return error.InvalidStringIndex;
+
     const glyphs = try collectGlyphs(allocator, run, offsets, size);
     const matrix = run.getTextMatrix();
 
@@ -102,6 +108,7 @@ fn collectRun(
         .font = font,
         .direction = if (run.getStatus() & core.raw.kCTRunStatusRightToLeft != 0) .rtl else .ltr,
         .glyphs = glyphs,
+        .text_range = .{ .start = offsets[start], .end = offsets[start + length] },
         .text_matrix = .{
             .{ matrix.a, matrix.b },
             .{ matrix.c, matrix.d },
@@ -139,7 +146,7 @@ fn collectGlyphs(
 
     for (glyphs, ids, positions, advances, indices) |*glyph, id, position, advance, index| {
         const unit = cf.CFIndex.toUsize(index) orelse return error.InvalidStringIndex;
-        if (unit >= offsets.len) return error.InvalidStringIndex;
+        if (unit >= offsets.len - 1) return error.InvalidStringIndex;
         glyph.* = .{
             .id = id,
             .cluster = offsets[unit],

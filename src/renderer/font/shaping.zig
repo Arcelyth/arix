@@ -13,6 +13,8 @@ pub fn shape(
 }
 
 test "font shaping: positions, advances and owned font" {
+    // FIXME: Remove this when implement other platform.
+    if (@import("builtin").os.tag != .macos) return error.SkipZigTest;
     const Font = @import("platform.zig").backend.Font;
     const shaping = @import("shaping.zig");
     const allocator = std.testing.allocator;

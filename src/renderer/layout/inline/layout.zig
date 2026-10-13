@@ -184,6 +184,8 @@ pub fn choose(
 }
 
 test "layout: line break computation" {
+    // FIXME: Remove this when implement other platform.
+    if (@import("builtin").os.tag != .macos) return error.SkipZigTest;
     const ComputedStyle = @import("../../style/computed/ComputedStyle.zig");
     const allocator = std.testing.allocator;
     const style: ComputedStyle = .{ .values = .{

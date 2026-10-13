@@ -122,6 +122,8 @@ fn obliqueRank(style: Style, request: f64) Rank {
 }
 
 test "font matching: installed family, weight and style" {
+    // FIXME: Remove this when implement other platform.
+    if (@import("builtin").os.tag != .macos) return error.SkipZigTest;
     const ComputedStyle = @import("../style/computed/ComputedStyle.zig");
     const Matcher = @import("Matcher.zig");
     var style = ComputedStyle.init(&.{

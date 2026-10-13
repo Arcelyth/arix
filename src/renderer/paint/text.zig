@@ -5,7 +5,7 @@ const TextDisplayItem = @import("display/display_item.zig").TextDisplayItem;
 const compositing = @import("compositing.zig");
 const backend = switch (@import("builtin").os.tag) {
     .macos => @import("platform/core_graphics.zig"),
-    else => @compileError("Text rasterization is not implemented for this platform"),
+    else => @import("platform/unsupported.zig"),
 };
 
 pub fn draw(allocator: std.mem.Allocator, canvas: *Canvas, text: TextDisplayItem) !void {

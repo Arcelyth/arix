@@ -129,6 +129,8 @@ pub fn tabAdvance(x: f64, space: f64, zero: f64) f64 {
 }
 
 test "layout measure: text width and combining cluster boundaries" {
+    // FIXME: Remove this when implement other platform.
+    if (@import("builtin").os.tag != .macos) return error.SkipZigTest;
     const ComputedStyle = @import("../../style/computed/ComputedStyle.zig");
     const allocator = std.testing.allocator;
     const style: ComputedStyle = .{ .values = .{

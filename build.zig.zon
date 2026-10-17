@@ -11,6 +11,10 @@
             .url = "https://codeberg.org/Arcelyth/core-foundation-zig/archive/main.tar.gz",
             .hash = "core_foundation_zig-0.0.1-4nhKwrnjAAAC-H1rQ-4gZurp-jL_FBrj0s4KwynC6wVj",
         },
+        .dwrite_zig = .{
+            .url = "https://github.com/Arcelyth/dwrite-zig/archive/main.tar.gz",
+            .hash = "dwrite_zig-0.0.1-IWn6jD5EAADvzOae69uLIF-JEB3oRcEsZKpDbY5eBxHW",
+        },
     },
     .paths = .{""},
     .fingerprint = 0x1f4adaa4fcbee823,

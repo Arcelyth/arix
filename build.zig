@@ -139,12 +139,20 @@ fn moduleAddCommon(
     options: *std.Build.Step.Options,
 ) void {
     if (m.resolved_target.?.result.os.tag == .macos) {
-        const macos = m.owner.dependency("core_foundation_zig", .{
+        const cf = m.owner.dependency("core_foundation_zig", .{
             .target = m.resolved_target.?,
             .optimize = m.optimize orelse .debug,
         });
-        m.addImport("core_foundation_zig", macos.module("core_foundation_zig"));
+        m.addImport("core_foundation_zig", cf.module("core_foundation_zig"));
     }
+    if (m.resolved_target.?.result.os.tag == .windows) {
+        const dwrite = m.owner.dependency("dwrite_zig", .{
+            .target = m.resolved_target.?,
+            .optimize = m.optimize orelse .debug,
+        });
+        m.addImport("dwrite_zig", dwrite.module("dwrite_zig"));
+    }
+
     for (anon_imports.items) |an| {
         m.addImport(an.name, an.module);
     }

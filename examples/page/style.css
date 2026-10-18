@@ -26,7 +26,7 @@ span {
 html {
   background-color: #e9e5de;
   color: #283c43;
-  font-family: Helvetica;
+  font-family: Helvetica, Arial;
   font-size: 16px;
   line-height: 26px;
 }
@@ -138,7 +138,7 @@ blockquote {
 }
 
 blockquote .caption {
-  font-family: Helvetica;
+  font-family: Helvetica, Arial;
   font-style: normal;
 }
 
@@ -151,7 +151,7 @@ pre {
   background-color: #20373d;
   border-left: 4px solid #e9a15a;
   color: #e8e8d7;
-  font-family: Menlo;
+  font-family: Menlo, Consolas;
   font-size: 14px;
   line-height: 23px;
   white-space: pre;

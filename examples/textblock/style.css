@@ -2,7 +2,7 @@ html,
 body,
 div {
   display: block;
-  font-family: Helvetica;
+  font-family: Helvetica, Arial;
   font-size: 16px;
   line-height: 24px;
 }

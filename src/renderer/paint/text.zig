@@ -5,6 +5,7 @@ const TextDisplayItem = @import("display/display_item.zig").TextDisplayItem;
 const compositing = @import("compositing.zig");
 const backend = switch (@import("builtin").os.tag) {
     .macos => @import("platform/core_graphics.zig"),
+    .windows => @import("platform/direct_write.zig"),
     else => @import("platform/unsupported.zig"),
 };
 

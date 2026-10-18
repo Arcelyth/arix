@@ -81,7 +81,7 @@ fn paint(init: std.process.Init, options: Options, fragments: *const layout.frag
     const allocator = init.arena.allocator();
     const cwd = std.Io.Dir.cwd();
 
-    // Fragments -> display list -> pixels -> binary PPM.
+    // Fragments -> display list -> pixels -> BMP.
     var list = try DisplayList.build(allocator, fragments);
     defer list.deinit(allocator);
 
@@ -89,8 +89,9 @@ fn paint(init: std.process.Init, options: Options, fragments: *const layout.frag
     defer canvas.deinit(allocator);
 
     try canvas.draw(allocator, &list);
-    const ppm = try image.ppm.encode(allocator, options.width, options.height, canvas.pixels);
+    const bmp = try image.bmp.encode(allocator, options.width, options.height, canvas.pixels);
+    defer allocator.free(bmp);
     try cwd.createDirPath(init.io, std.fs.path.dirname(options.output_path).?);
-    try cwd.writeFile(init.io, .{ .sub_path = options.output_path, .data = ppm });
+    try cwd.writeFile(init.io, .{ .sub_path = options.output_path, .data = bmp });
     std.debug.print("Wrote {s} ({d} x {d})\n", .{ options.output_path, options.width, options.height });
 }

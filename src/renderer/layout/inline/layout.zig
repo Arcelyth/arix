@@ -184,13 +184,16 @@ pub fn choose(
 }
 
 test "layout: line break computation" {
-    // FIXME: Remove this when implement other platform.
-    if (@import("builtin").os.tag != .macos) return error.SkipZigTest;
+    const family_name = switch (@import("builtin").os.tag) {
+        .macos => "Helvetica",
+        .windows => "Arial",
+        else => return error.SkipZigTest,
+    };
     const ComputedStyle = @import("../../style/computed/ComputedStyle.zig");
     const allocator = std.testing.allocator;
     const style: ComputedStyle = .{ .values = .{
         .font_size = 16,
-        .font_family = .{ .families = &.{.{ .name = "Helvetica" }} },
+        .font_family = .{ .families = &.{.{ .name = family_name }} },
         .white_space = .normal,
     } };
     const text = "hello world";

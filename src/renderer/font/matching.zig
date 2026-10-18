@@ -122,8 +122,11 @@ fn obliqueRank(style: Style, request: f64) Rank {
 }
 
 test "font matching: installed family, weight and style" {
-    // FIXME: Remove this when implement other platform.
-    if (@import("builtin").os.tag != .macos) return error.SkipZigTest;
+    const names = switch (@import("builtin").os.tag) {
+        .macos => .{ "hElVeTiCa", "Helvetica-BoldOblique" },
+        .windows => .{ "aRiAl", "Arial-BoldItalicMT" },
+        else => return error.SkipZigTest,
+    };
     const ComputedStyle = @import("../style/computed/ComputedStyle.zig");
     const Matcher = @import("Matcher.zig");
     var style = ComputedStyle.init(&.{
@@ -134,7 +137,7 @@ test "font matching: installed family, weight and style" {
         .viewport_width = 800,
         .viewport_height = 600,
     });
-    style.values.font_family = .{ .families = &.{.{ .name = "hElVeTiCa" }} };
+    style.values.font_family = .{ .families = &.{.{ .name = names[0] }} };
     style.values.font_weight = 700;
     style.values.font_style = .italic;
 
@@ -144,6 +147,6 @@ test "font matching: installed family, weight and style" {
     const name = try font.postScriptName(std.testing.allocator);
     defer std.testing.allocator.free(name);
 
-    try std.testing.expectEqualStrings("Helvetica-BoldOblique", name);
+    try std.testing.expectEqualStrings(names[1], name);
     try std.testing.expectEqual(@as(f64, 16), font.size);
 }

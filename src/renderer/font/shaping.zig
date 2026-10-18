@@ -13,14 +13,17 @@ pub fn shape(
 }
 
 test "font shaping: positions, advances and owned font" {
-    // FIXME: Remove this when implement other platform.
-    if (@import("builtin").os.tag != .macos) return error.SkipZigTest;
+    const font_name = switch (@import("builtin").os.tag) {
+        .macos => "Helvetica",
+        .windows => "ArialMT",
+        else => return error.SkipZigTest,
+    };
     const Font = @import("platform.zig").backend.Font;
     const shaping = @import("shaping.zig");
     const allocator = std.testing.allocator;
 
     const result = blk: {
-        const font = try Font.initWithName("Helvetica", 16);
+        const font = try Font.initWithName(font_name, 16);
         defer font.deinit();
         break :blk try shaping.shape(allocator, "ABC", font, .ltr);
     };
@@ -51,5 +54,5 @@ test "font shaping: positions, advances and owned font" {
 
     const name = try run.font.postScriptName(allocator);
     defer allocator.free(name);
-    try std.testing.expectEqualStrings("Helvetica", name);
+    try std.testing.expectEqualStrings(font_name, name);
 }

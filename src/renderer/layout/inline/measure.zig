@@ -129,15 +129,18 @@ pub fn tabAdvance(x: f64, space: f64, zero: f64) f64 {
 }
 
 test "layout measure: text width and combining cluster boundaries" {
-    // FIXME: Remove this when implement other platform.
-    if (@import("builtin").os.tag != .macos) return error.SkipZigTest;
+    const names = switch (@import("builtin").os.tag) {
+        .macos => .{ "Helvetica", "Helvetica" },
+        .windows => .{ "Arial", "ArialMT" },
+        else => return error.SkipZigTest,
+    };
     const ComputedStyle = @import("../../style/computed/ComputedStyle.zig");
     const allocator = std.testing.allocator;
     const style: ComputedStyle = .{ .values = .{
         .font_size = 16,
-        .font_family = .{ .families = &.{.{ .name = "Helvetica" }} },
+        .font_family = .{ .families = &.{.{ .name = names[0] }} },
     } };
-    const font = try Font.initWithName("Helvetica", 16);
+    const font = try Font.initWithName(names[1], 16);
     defer font.deinit();
     const text = "e\u{301}x";
     var paragraph: Paragraph = .{};

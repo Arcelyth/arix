@@ -199,8 +199,9 @@ fn collectGlyphs(
 
 fn sourceGlyphCount(indices: []const u32, end: usize) usize {
     var count: usize = 0;
-    for (indices) |unit|
+    for (indices) |unit| {
         if (unit >= 1 and unit < end) count += 1;
+    }
 
     return count;
 }

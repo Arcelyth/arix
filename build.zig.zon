@@ -13,7 +13,7 @@
         },
         .dwrite_zig = .{
             .url = "https://github.com/Arcelyth/dwrite-zig/archive/main.tar.gz",
-            .hash = "dwrite_zig-0.0.1-IWn6jCeSAACkkUxIC0fewln1cwswPWHSxlOrAV-giTgt",
+            .hash = "dwrite_zig-0.0.1-IWn6jL2YAAA4WwR_y7zFPFh2Woggt_cKKgXmhxnKgUc0",
         },
     },
     .paths = .{""},

@@ -8,6 +8,10 @@ fetch:
 	zig fetch --save=strale "https://github.com/Arcelyth/strale/archive/main.tar.gz"
 	zig fetch --save=core_foundation_zig "https://codeberg.org/Arcelyth/core-foundation-zig/archive/main.tar.gz"
 	zig fetch --save=dwrite_zig "https://github.com/Arcelyth/dwrite-zig/archive/main.tar.gz"
+	zig fetch --save=freetype_zig "https://codeberg.org/Arcelyth/freetype-zig/archive/main.tar.gz"
+	zig fetch --save=harfbuzz_zig "https://codeberg.org/Arcelyth/harfbuzz-zig/archive/main.tar.gz"
+	zig fetch --save=fontconfig_zig "https://codeberg.org/Arcelyth/fontconfig-zig/archive/main.tar.gz"
+	zig fetch --save=unibreak_zig "https://codeberg.org/Arcelyth/unibreak-zig/archive/main.tar.gz"
 
 test_token: 
 	zig build test --summary all -Dtest-filter=tokenizer

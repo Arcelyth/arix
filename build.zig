@@ -2,6 +2,7 @@ const std = @import("std");
 const Generator = @import("src/build/Generator.zig");
 const AnonItem = @import("src/build/AnonItem.zig");
 const DependItem = @import("src/build/DependItem.zig");
+const Translator = @import("translate_c").Translator;
 
 const test_targets = [_]std.Target.Query{
     .{}, // native
@@ -138,6 +139,15 @@ fn moduleAddCommon(
     depends: std.ArrayList(DependItem),
     options: *std.Build.Step.Options,
 ) void {
+    if (m.resolved_target.?.result.os.tag == .linux) {
+        inline for (.{ "fontconfig_zig", "harfbuzz_zig", "unibreak_zig", "freetype_zig" }) |name| {
+            const dependency = m.owner.dependency(name, .{
+                .target = m.resolved_target.?,
+                .optimize = m.optimize orelse .debug,
+            });
+            m.addImport(name, dependency.module(name));
+        }
+    }
     if (m.resolved_target.?.result.os.tag == .macos) {
         const cf = m.owner.dependency("core_foundation_zig", .{
             .target = m.resolved_target.?,

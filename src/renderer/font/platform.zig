@@ -1,6 +1,7 @@
 pub const backend = switch (@import("builtin").os.tag) {
     .macos => @import("platform/core_text.zig"),
     .windows => @import("platform/direct_write.zig"),
+    .linux => @import("platform/freetype.zig"),
     else => @import("platform/unsupported.zig"),
 };
 

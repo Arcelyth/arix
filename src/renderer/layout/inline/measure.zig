@@ -132,6 +132,7 @@ test "layout measure: text width and combining cluster boundaries" {
     const names = switch (@import("builtin").os.tag) {
         .macos => .{ "Helvetica", "Helvetica" },
         .windows => .{ "Arial", "ArialMT" },
+        .linux => .{ "Liberation Sans", "LiberationSans" },
         else => return error.SkipZigTest,
     };
     const ComputedStyle = @import("../../style/computed/ComputedStyle.zig");

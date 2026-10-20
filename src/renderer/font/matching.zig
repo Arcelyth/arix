@@ -125,6 +125,7 @@ test "font matching: installed family, weight and style" {
     const names = switch (@import("builtin").os.tag) {
         .macos => .{ "hElVeTiCa", "Helvetica-BoldOblique" },
         .windows => .{ "aRiAl", "Arial-BoldItalicMT" },
+        .linux => .{ "lIbErAtIoN sAnS", "LiberationSans-BoldItalic" },
         else => return error.SkipZigTest,
     };
     const ComputedStyle = @import("../style/computed/ComputedStyle.zig");

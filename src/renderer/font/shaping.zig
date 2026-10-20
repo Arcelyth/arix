@@ -16,6 +16,7 @@ test "font shaping: positions, advances and owned font" {
     const font_name = switch (@import("builtin").os.tag) {
         .macos => "Helvetica",
         .windows => "ArialMT",
+        .linux => "LiberationSans",
         else => return error.SkipZigTest,
     };
     const Font = @import("platform.zig").backend.Font;

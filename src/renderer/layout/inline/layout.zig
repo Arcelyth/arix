@@ -187,6 +187,7 @@ test "layout: line break computation" {
     const family_name = switch (@import("builtin").os.tag) {
         .macos => "Helvetica",
         .windows => "Arial",
+        .linux => "Liberation Sans",
         else => return error.SkipZigTest,
     };
     const ComputedStyle = @import("../../style/computed/ComputedStyle.zig");

@@ -68,7 +68,10 @@ pub fn run(init: std.process.Init, options: Options) !void {
 }
 
 fn parseHtml(allocator: std.mem.Allocator, html: []const u8) !*HtmlParser {
-    const parser = try HtmlParser.create(allocator, .{ .tokenizer = .{}, .tree_builder = .{} });
+    const parser = try HtmlParser.create(allocator, .{
+        .tokenizer = .{},
+        .tree_builder = .{},
+    });
     errdefer parser.destroy();
     var input = try BufferDeque(.utf8, .not_atomic, true).init(allocator);
     defer input.deinit();
@@ -85,7 +88,14 @@ fn paint(init: std.process.Init, options: Options, fragments: *const layout.frag
     var list = try DisplayList.build(allocator, fragments);
     defer list.deinit(allocator);
 
-    var canvas = try Canvas.init(allocator, options.width, options.height, .{ .clear_color = .{ 255, 255, 255 } });
+    var canvas = try Canvas.init(
+        allocator,
+        options.width,
+        options.height,
+        .{
+            .clear_color = .{ 255, 255, 255 },
+        },
+    );
     defer canvas.deinit(allocator);
 
     try canvas.draw(allocator, &list);

@@ -2,7 +2,7 @@ html,
 body,
 div {
   display: block;
-  font-family: Helvetica, Arial;
+  font-family: Helvetica, Arial, "Liberation Serif";
   font-size: 16px;
   line-height: 24px;
 }

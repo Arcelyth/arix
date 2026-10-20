@@ -6,8 +6,13 @@ const compositing = @import("compositing.zig");
 const backend = switch (@import("builtin").os.tag) {
     .macos => @import("platform/core_graphics.zig"),
     .windows => @import("platform/direct_write.zig"),
+    .linux => @import("platform/freetype.zig"),
     else => @import("platform/unsupported.zig"),
 };
+
+test {
+    @import("std").testing.refAllDecls(backend);
+}
 
 pub fn draw(allocator: std.mem.Allocator, canvas: *Canvas, text: TextDisplayItem) !void {
     if (text.glyphs.len == 0 or text.font.size == 0 or text.color[3] <= 0) return;

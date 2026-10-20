@@ -104,6 +104,15 @@ pub fn shapingFont(self: Font) hb.Font {
     return self.state.shaper;
 }
 
+pub fn sizedFace(self: Font, library: ft.Library, size: f64) !ft.Face {
+    try validateSize(size);
+    const face = try utils.open(library, self.descriptor);
+    errdefer face.deinit();
+    try setSize(face, size);
+
+    return face;
+}
+
 fn validateSize(size: f64) !void {
     if (!std.math.isFinite(size) or size < 0 or size * 64 > std.math.maxInt(i32)) return error.InvalidFontSize;
 }

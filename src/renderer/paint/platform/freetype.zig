@@ -144,6 +144,62 @@ fn validateBitmap(bitmap: ft.Bitmap) !void {
     if (bitmap.raw.buffer == null or @abs(bitmap.raw.pitch) < bytes) return error.InvalidBitmap;
 }
 
+/// Reads one validated bitmap pixel as normalized premultiplied sRGB RGBA.
+/// Out-of-bounds coordinates yield transparent black.
+fn sample(bitmap: ft.Bitmap, x: i64, y: i64, color: [4]f64) [4]f64 {
+    if (x < 0 or y < 0 or x >= bitmap.raw.width or y >= bitmap.raw.rows) return .{ 0, 0, 0, 0 };
+    const column: usize = @intCast(x);
+    const row = bitmap.row(@intCast(y));
+    if (bitmap.raw.pixel_mode == ft.raw.FT_PIXEL_MODE_BGRA) {
+        const pixel = row[column * 4 ..][0..4];
+        return .{
+            @as(f64, @floatFromInt(pixel[2])) / 255,
+            @as(f64, @floatFromInt(pixel[1])) / 255,
+            @as(f64, @floatFromInt(pixel[0])) / 255,
+            @as(f64, @floatFromInt(pixel[3])) / 255,
+        };
+    }
+    const alpha: f64 = switch (bitmap.raw.pixel_mode) {
+        ft.raw.FT_PIXEL_MODE_MONO => @floatFromInt((row[column / 8] >> @as(u3, @intCast(7 - column % 8))) & 1),
+        ft.raw.FT_PIXEL_MODE_GRAY2 => @as(f64, @floatFromInt((row[column / 4] >> @as(u3, @intCast(6 - column % 4 * 2))) & 3)) / 3,
+        ft.raw.FT_PIXEL_MODE_GRAY4 => @as(f64, @floatFromInt((row[column / 2] >> @as(u3, @intCast(4 - column % 2 * 4))) & 15)) / 15,
+        ft.raw.FT_PIXEL_MODE_GRAY => @as(f64, @floatFromInt(row[column])) / @as(f64, @floatFromInt(bitmap.raw.num_grays - 1)),
+        else => unreachable,
+    };
+
+    return .{
+        color[0] * alpha,
+        color[1] * alpha,
+        color[2] * alpha,
+        alpha,
+    };
+}
+
+/// Bilinearly samples a validated bitmap with transparent pixels outside its bounds.
+/// Coordinates refer to pixel edges, placing the first pixel center at (0.5, 0.5).
+/// Interpolation uses premultiplied channels to avoid color fringes at transparent edges.
+fn filteredSample(bitmap: ft.Bitmap, x: f64, y: f64, color: [4]f64) [4]f64 {
+    if (!(x > -1 and y > -1 and x < @as(f64, @floatFromInt(bitmap.raw.width)) + 1 and
+        y < @as(f64, @floatFromInt(bitmap.raw.rows)) + 1)) return .{ 0, 0, 0, 0 };
+
+    const px = x - 0.5;
+    const py = y - 0.5;
+    const ix: i64 = @intFromFloat(@floor(px));
+    const iy: i64 = @intFromFloat(@floor(py));
+    const fx = px - @floor(px);
+    const fy = py - @floor(py);
+    var result: [4]f64 = @splat(0);
+    for (0..2) |row| {
+        for (0..2) |column| {
+            const weight = (if (column == 0) 1 - fx else fx) * (if (row == 0) 1 - fy else fy);
+            const value = sample(bitmap, ix + @as(i64, @intCast(column)), iy + @as(i64, @intCast(row)), color);
+            for (&result, value) |*channel, v| channel.* += v * weight;
+        }
+    }
+
+    return result;
+}
+
 /// Composites a validated glyph bitmap over `destination` using source-over.
 fn blit(
     destination: Bitmap,
@@ -152,11 +208,58 @@ fn blit(
     color: [4]f64,
     filter: bool,
 ) void {
-    _ = destination;
-    _ = source;
-    _ = matrix;
-    _ = color;
-    _ = filter;
+    const a = matrix[0][0];
+    const b = matrix[0][1];
+    const c = matrix[1][0];
+    const d = matrix[1][1];
+    const det = a * d - b * c;
+    if (det == 0 or !std.math.isFinite(det)) return;
+
+    const width: f64 = @floatFromInt(source.raw.width);
+    const height: f64 = @floatFromInt(source.raw.rows);
+    var lower: Point = .{ std.math.inf(f64), std.math.inf(f64) };
+    var upper: Point = .{ -std.math.inf(f64), -std.math.inf(f64) };
+    const pad: f64 = if (filter) 0.5 else 0;
+    for ([_]f64{ -pad, height + pad }) |y| {
+        for ([_]f64{ -pad, width + pad }) |x| {
+            const point: Point = .{ a * x + c * y + matrix[2][0], b * x + d * y + matrix[2][1] };
+            for (0..2) |i| {
+                lower[i] = @min(lower[i], point[i]);
+                upper[i] = @max(upper[i], point[i]);
+            }
+        }
+    }
+
+    const left: f64 = @floatFromInt(destination.x);
+    const top: f64 = @floatFromInt(destination.y);
+    const right: f64 = @floatFromInt(destination.x + destination.width);
+    const bottom: f64 = @floatFromInt(destination.y + destination.height);
+    const x0: usize = @intFromFloat(std.math.clamp(@floor(lower[0]), left, right));
+    const y0: usize = @intFromFloat(std.math.clamp(@floor(lower[1]), top, bottom));
+    const x1: usize = @intFromFloat(std.math.clamp(@ceil(upper[0]), left, right));
+    const y1: usize = @intFromFloat(std.math.clamp(@ceil(upper[1]), top, bottom));
+    // Supersample embedded bitmaps when shrinking or transforming their pixels.
+    const samples: usize = if (filter) 4 else 1;
+    const count: f64 = @floatFromInt(samples);
+
+    for (y0..y1) |y| {
+        for (x0..x1) |x| {
+            var rgba: [4]f64 = @splat(0);
+            for (0..samples) |sy| {
+                for (0..samples) |sx| {
+                    const dx = @as(f64, @floatFromInt(x)) + (@as(f64, @floatFromInt(sx)) + 0.5) / count - matrix[2][0];
+                    const dy = @as(f64, @floatFromInt(y)) + (@as(f64, @floatFromInt(sy)) + 0.5) / count - matrix[2][1];
+                    const px = (d * dx - c * dy) / det;
+                    const py = (a * dy - b * dx) / det;
+                    const value = if (filter) filteredSample(source, px, py, color) else sample(source, @intFromFloat(@floor(px)), @intFromFloat(@floor(py)), color);
+                    for (&rgba, value) |*channel, v| channel.* += v / (count * count);
+                }
+            }
+            const pixel = &destination.pixels[(y - destination.y) * destination.width + x - destination.x];
+            for (pixel, rgba) |*channel, value|
+                channel.* = @intFromFloat(@round(std.math.clamp(value * 255 + @as(f64, @floatFromInt(channel.*)) * (1 - rgba[3]), 0, 255)));
+        }
+    }
 }
 
 fn applyOpacity(bitmap: Bitmap, clip: Rect, opacity: f64) void {

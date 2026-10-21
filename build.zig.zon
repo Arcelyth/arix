@@ -23,10 +23,6 @@
             .url = "https://codeberg.org/Arcelyth/harfbuzz-zig/archive/main.tar.gz",
             .hash = "harfbuzz_zig-0.0.1-GkGykTUhAAA21qife9iPrFJvsYxibMEYJ_Xfx6DxOTeE",
         },
-        .@"unibreak-zig" = .{
-            .url = "https://codeberg.org/Arcelyth/unibreak-zig/archive/main.tar.gz",
-            .hash = "unibreak_zig-0.0.1-lSZ0UnQSAAAHpurKlrvdigYC8zd5YebXp6TKr5WZAOnj",
-        },
         .fontconfig_zig = .{
             .url = "https://codeberg.org/Arcelyth/fontconfig-zig/archive/main.tar.gz",
             .hash = "fontconfig_zig-0.0.1-32_O9bhXAAA6xQEKBrVZn5XmY4qMoTMF7fK42Ypypcbk",

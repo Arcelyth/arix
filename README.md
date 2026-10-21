@@ -11,6 +11,13 @@ The project currently includes:
 
 **Arix is still under active development. Styling, layout, and painting are currently partial and incomplete. Networking and the JavaScript engine are not yet implemented.**
 
+## Requirements
+
+Requires Zig 0.17.0. 
+
+### Linux
+Ensure that `Python 3` is on your machine.
+
 ## Examples
 
 ```sh

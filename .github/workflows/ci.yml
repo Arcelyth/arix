@@ -23,19 +23,14 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Install Linux dependencies
+      - name: Install Linux build tools and test fonts
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            pkg-config \
-            libfreetype-dev \
-            libfontconfig-dev \
-            libharfbuzz-dev \
-            libunibreak-dev \
+            python3 \
             fonts-liberation \
             fonts-noto-color-emoji
-          pkg-config --exists freetype2 fontconfig harfbuzz libunibreak
 
       - name: Setup Zig
         uses: mlugg/setup-zig@v2

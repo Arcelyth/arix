@@ -17,11 +17,11 @@
         },
         .freetype_zig = .{
             .url = "https://codeberg.org/Arcelyth/freetype-zig/archive/main.tar.gz",
-            .hash = "freetype_zig-0.0.1-0K_OpeQtAACHG0gPi5YW3HhCmIfsofHfCo5lPpUtEt2Y",
+            .hash = "freetype_zig-0.0.1-0K_OpapCAAB1swn9nyRe_N-PVgfNfkpaDLqmbhEOKzw_",
         },
         .harfbuzz_zig = .{
             .url = "https://codeberg.org/Arcelyth/harfbuzz-zig/archive/main.tar.gz",
-            .hash = "harfbuzz_zig-0.0.1-GkGykZkbAADrcgde6Um0xczQPfabl9ABV7BAYQtdAwlx",
+            .hash = "harfbuzz_zig-0.0.1-GkGykTUhAAA21qife9iPrFJvsYxibMEYJ_Xfx6DxOTeE",
         },
         .@"unibreak-zig" = .{
             .url = "https://codeberg.org/Arcelyth/unibreak-zig/archive/main.tar.gz",
@@ -29,11 +29,11 @@
         },
         .fontconfig_zig = .{
             .url = "https://codeberg.org/Arcelyth/fontconfig-zig/archive/main.tar.gz",
-            .hash = "fontconfig_zig-0.0.1-32_O9aQmAADlbuCsxfOtWjxbqd1Q7HYI74sbptziSBX9",
+            .hash = "fontconfig_zig-0.0.1-32_O9bhXAAA6xQEKBrVZn5XmY4qMoTMF7fK42Ypypcbk",
         },
         .unibreak_zig = .{
             .url = "https://codeberg.org/Arcelyth/unibreak-zig/archive/main.tar.gz",
-            .hash = "unibreak_zig-0.0.1-lSZ0UnQSAAAHpurKlrvdigYC8zd5YebXp6TKr5WZAOnj",
+            .hash = "unibreak_zig-0.0.1-lSZ0Um8XAACNoA9lqF3VkN_F_HaiZzXjR8dMlUK1QDFf",
         },
     },
     .paths = .{""},

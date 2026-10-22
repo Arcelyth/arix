@@ -2,71 +2,54 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>The Arix Journal</title>
+    <title>Simple Page Example</title>
   </head>
   <body>
     <main class="page">
       <header class="masthead">
-        <p class="eyebrow">THE ARIX JOURNAL / ISSUE 01</p>
-        <h1>A small engine. A page full of type.</h1>
-        <p class="subtitle">
-          Notes on making the web visible, one fragment at a time.
-        </p>
+        <p class="eyebrow">Top of page</p>
+        <h1>Simple Page Example</h1>
+        <p class="subtitle">Here is the subtitle</p>
       </header>
       <article>
-        <p class="byline">ENGINEERING NOTES / OCTOBER 2026 / 4 MIN READ</p>
+        <p class="byline">By Arix</p>
         <p class="lead">
-          A page begins with words. Give those words a little structure, room to
-          breathe, and a clear rhythm, and a document starts to feel like a
-          place.
+          This is a simple page with headings, paragraphs, and different text
+          styles.
         </p>
         <section>
-          <h2>01 / From document to pixels</h2>
+          <h2>Text styles</h2>
           <p>
-            HTML supplies the structure. CSS gives each element its appearance.
-            The engine builds boxes, measures text, and places each line before
-            painting the result.
+            This is a paragraph. Long text wraps onto the next line when there
+            is no more room.
           </p>
           <p>
-            This paragraph mixes <strong>bold emphasis</strong>,
-            <em>an italic voice</em>, and
-            <span class="accent">a change of color</span> within one continuous
-            line of text. Resize its box and the words find their next line.
+            Here is <strong>bold text</strong>, <em>italic text</em>, and
+            <span class="accent">colored text</span>.
           </p>
           <blockquote>
-            <p>
-              “Good typography is as much about the space between things as it
-              is about the things themselves.”
-            </p>
-            <p class="caption">A NOTE FROM THE TYPE DESK</p>
+            <p>This is a quote.</p>
+            <p class="caption">Quote caption</p>
           </blockquote>
         </section>
         <section>
-          <h2>02 / A closer look</h2>
-          <p>
-            The inset below preserves spaces and line breaks. It uses a separate
-            font family, a dark background, and a solid accent border.
-          </p>
+          <h2>Preformatted text</h2>
+          <p>The text below keeps its spaces and line breaks.</p>
           <pre>
-document.html + style.css
-    → styled nodes
-    → boxes and text lines
-    → display list
-    → pixels</pre
+First line
+    Indented line
+Last line</pre
           >
         </section>
         <section class="language-note">
-          <h3>Many voices, one page</h3>
+          <h3>Different languages</h3>
           <p>Bonjour, café. Καλημέρα. Привет.</p>
           <p class="languages">你好，世界。こんにちは。안녕하세요。 🌍</p>
-          <p class="caption">TEXT SHAPING / FONT FALLBACK / COLOR GLYPHS</p>
+          <p class="caption">Text and emoji</p>
         </section>
-        <p class="closing">
-          Built from nested blocks, flowing text, backgrounds, and borders. A
-          modest vocabulary can still make a complete page.
-        </p>
+        <p class="closing">This is the last paragraph.</p>
       </article>
-      <footer><strong>ARIX</strong> / A browser engine written in Zig.</footer>
+      <footer><strong>Arix</strong> / End of page</footer>
     </main>
   </body>
 </html>

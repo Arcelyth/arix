@@ -23,6 +23,7 @@ pub fn draw(allocator: std.mem.Allocator, canvas: *Canvas, text: TextDisplayItem
     composite(canvas, bitmap);
 }
 
+/// Converts a CSS-pixel clip to device pixels and intersects it with the canvas.
 fn deviceClip(canvas: *const Canvas, clip: Rect) ?Rect {
     const scale = canvas.device_pixel_ratio;
     const scaled: Rect = .{
@@ -39,6 +40,7 @@ fn deviceClip(canvas: *const Canvas, clip: Rect) ?Rect {
     });
 }
 
+/// Blends the backend's clipped bitmap over the canvas using source-over.
 fn composite(canvas: *Canvas, bitmap: backend.Bitmap) void {
     for (0..bitmap.height) |y| {
         const row = bitmap.pixels[y * bitmap.width ..][0..bitmap.width];

@@ -5,6 +5,8 @@ const Point = geometry.Point;
 const Quad = geometry.Quad;
 const Polygon = geometry.Polygon;
 
+/// Returns how much of the unit pixel at (x, y) is covered by the quad and clip.
+/// All coordinates use device pixels. The result ranges from 0 (none) to 1 (full).
 pub fn quadCoverage(
     quad: Quad,
     x: f64,

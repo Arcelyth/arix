@@ -25,28 +25,48 @@ pub fn match(self: Matcher, allocator: std.mem.Allocator, style: *const Computed
         };
         if (result) |font| return font;
     }
+
     return matchNames(allocator, self.fallback_families, request, style.font_size);
 }
 
-fn matchGeneric(self: Matcher, allocator: std.mem.Allocator, generic: font_family.Generic, request: matching.Attributes, size: f64) !?backend.Font {
+fn matchGeneric(
+    self: Matcher,
+    allocator: std.mem.Allocator,
+    generic: font_family.Generic,
+    request: matching.Attributes,
+    size: f64,
+) !?backend.Font {
     for (self.generic_families) |mapping| {
         if (mapping.generic == generic)
             if (try matchNames(allocator, mapping.families, request, size)) |font| return font;
     }
+
     return null;
 }
 
-fn matchNames(allocator: std.mem.Allocator, names: []const []const u8, request: matching.Attributes, size: f64) !?backend.Font {
+fn matchNames(
+    allocator: std.mem.Allocator,
+    names: []const []const u8,
+    request: matching.Attributes,
+    size: f64,
+) !?backend.Font {
     for (names) |name| {
         if (try matchFamily(allocator, name, request, size)) |font| return font;
     }
+
     return null;
 }
 
-fn matchFamily(allocator: std.mem.Allocator, name: []const u8, request: matching.Attributes, size: f64) !?backend.Font {
+fn matchFamily(
+    allocator: std.mem.Allocator,
+    name: []const u8,
+    request: matching.Attributes,
+    size: f64,
+) !?backend.Font {
     const family = try backend.Family.init(name) orelse return null;
     defer family.deinit();
     const descriptor = try family.match(allocator, request) orelse return null;
     defer descriptor.deinit();
+
     return try backend.Font.initWithDescriptor(descriptor, size);
 }

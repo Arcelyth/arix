@@ -15,6 +15,7 @@ pub const Angle = @import("specified/angle.zig").Angle;
 pub const LineHeight = @import("specified/line_height.zig").LineHeight;
 pub const TextWrapMode = @import("specified/text_wrap_mode.zig").TextWrapMode;
 pub const WhiteSpace = @import("specified/white_space.zig").WhiteSpace;
+pub const Direction = @import("specified/direction.zig").Direction;
 
 test {
     @import("std").testing.refAllDecls(@This());

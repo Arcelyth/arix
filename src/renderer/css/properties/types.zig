@@ -14,6 +14,7 @@ const FontStyle = specified.FontStyle;
 const FontWeight = specified.FontWeight;
 const WhiteSpace = specified.WhiteSpace;
 const LineHeight = specified.LineHeight;
+const Direction = specified.Direction;
 pub const PropertyId = @import("registry.zig").PropertyId;
 
 /// Parsed specified values, not yet selected by the cascade or computed.
@@ -32,6 +33,7 @@ pub const Value = union(enum) {
     css_wide: CSSWideKeyword,
     line_height: LineHeight,
     white_space: WhiteSpace,
+    direction: Direction,
 
     pub fn deinit(self: Value, allocator: std.mem.Allocator) void {
         switch (self) {

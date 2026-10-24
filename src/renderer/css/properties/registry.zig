@@ -18,6 +18,7 @@ const font_style = @import("../values/specified/font_style.zig");
 const white_space = @import("../values/specified/white_space.zig");
 const line_height = @import("../values/specified/line_height.zig");
 const direction = @import("../values/specified/direction.zig");
+const unicode_bidi = @import("../values/specified/unicode_bidi.zig");
 const shorthand = @import("shorthand.zig");
 const Shorthand = shorthand.Shorthand;
 const shorthands = shorthand.shorthands;
@@ -65,6 +66,7 @@ pub const definitions = .{
     .line_height = line_height_entry,
     .white_space = white_space_entry,
     .direction = direction_entry,
+    .unicode_bidi = unicode_bidi_entry,
 };
 
 // https://www.w3.org/TR/css-sizing-3/#preferred-size-properties
@@ -203,6 +205,14 @@ const direction_entry = .{
     .compute = &computed.direction.fromSpecified,
 };
 
+const unicode_bidi_entry = .{
+    .parse = &parseUnicodeBidi,
+    .value_tag = @as(std.meta.Tag(Value), .unicode_bidi),
+    .initial = @as(computed.unicode_bidi.UnicodeBidi, .normal),
+    .inherited = false,
+    .compute = &computed.unicode_bidi.fromSpecified,
+};
+
 pub const PropertyId = std.meta.FieldEnum(@TypeOf(definitions));
 
 const names = blk: {
@@ -305,6 +315,10 @@ fn parseWhiteSpace(_: Allocator, input: *Stream) ParseResult {
 
 fn parseDirection(_: Allocator, input: *Stream) ParseResult {
     return .{ .direction = direction.parse(input) orelse return null };
+}
+
+fn parseUnicodeBidi(_: Allocator, input: *Stream) ParseResult {
+    return .{ .unicode_bidi = unicode_bidi.parse(input) orelse return null };
 }
 
 fn InitialType(comptime initial: anytype) type {

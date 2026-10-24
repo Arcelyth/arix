@@ -15,6 +15,7 @@ pub const LineHeight = line_height.LineHeight;
 pub const text_wrap_mode = @import("computed/text_wrap_mode.zig");
 pub const white_space = @import("computed/white_space.zig");
 pub const direction = @import("computed/direction.zig");
+pub const unicode_bidi = @import("computed/unicode_bidi.zig");
 
 test {
     @import("std").testing.refAllDecls(@This());

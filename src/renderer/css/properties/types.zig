@@ -15,6 +15,7 @@ const FontWeight = specified.FontWeight;
 const WhiteSpace = specified.WhiteSpace;
 const LineHeight = specified.LineHeight;
 const Direction = specified.Direction;
+const UnicodeBidi = specified.UnicodeBidi;
 pub const PropertyId = @import("registry.zig").PropertyId;
 
 /// Parsed specified values, not yet selected by the cascade or computed.
@@ -34,6 +35,7 @@ pub const Value = union(enum) {
     line_height: LineHeight,
     white_space: WhiteSpace,
     direction: Direction,
+    unicode_bidi: UnicodeBidi,
 
     pub fn deinit(self: Value, allocator: std.mem.Allocator) void {
         switch (self) {

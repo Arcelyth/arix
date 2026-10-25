@@ -151,3 +151,70 @@ pub fn resolve(
     for (original, processing, levels) |class, *working, *level|
         level.* = state.process(class, working);
 }
+
+test "bidi X1-X8: nested embeddings and PDF" {
+    const testing = @import("std").testing;
+
+    const original = [_]BidiCharType{ .LRE, .R, .RLE, .L, .PDF, .AL, .PDF, .B };
+    var levels: [original.len]u8 = undefined;
+    var processing: [original.len]BidiCharType = undefined;
+    try resolve(testing.allocator, &original, 0, &levels, &processing);
+
+    try testing.expectEqualSlices(u8, &.{ 0, 2, 2, 3, 2, 2, 0, 0 }, &levels);
+    try testing.expectEqualSlices(BidiCharType, &original, &processing);
+}
+
+test "bidi X1-X8: overrides stop inside isolates and resume after PDI" {
+    const testing = @import("std").testing;
+
+    const original = [_]BidiCharType{ .RLO, .L, .LRI, .R, .PDF, .PDI, .AL, .BN, .PDF, .L };
+    var levels: [original.len]u8 = undefined;
+    var processing: [original.len]BidiCharType = undefined;
+    try resolve(testing.allocator, &original, 0, &levels, &processing);
+
+    try testing.expectEqualSlices(u8, &.{ 0, 1, 1, 2, 2, 1, 1, 1, 0, 0 }, &levels);
+    try testing.expectEqualSlices(BidiCharType, &.{ .RLO, .R, .R, .R, .PDF, .R, .R, .BN, .PDF, .L }, &processing);
+}
+
+test "bidi X5c: FSI skips nested isolates and defaults to LTR" {
+    const testing = @import("std").testing;
+
+    const original = [_]BidiCharType{ .FSI, .LRI, .R, .PDI, .AL, .PDI, .L };
+    var levels: [original.len]u8 = undefined;
+    var processing: [original.len]BidiCharType = undefined;
+    try resolve(testing.allocator, &original, 0, &levels, &processing);
+    try testing.expectEqualSlices(u8, &.{ 0, 1, 2, 1, 1, 0, 0 }, &levels);
+    try testing.expectEqualSlices(BidiCharType, &original, &processing);
+
+    const neutral = [_]BidiCharType{ .FSI, .EN, .PDI };
+    try resolve(testing.allocator, &neutral, 1, levels[0..neutral.len], processing[0..neutral.len]);
+    try testing.expectEqualSlices(u8, &.{ 1, 2, 1 }, levels[0..neutral.len]);
+}
+
+test "bidi X6a-X7: overflow scopes and PDI restore valid state" {
+    const testing = @import("std").testing;
+
+    const suffix = [_]BidiCharType{ .LRE, .RLI, .PDF, .PDI, .PDF, .PDI, .L, .B };
+    var original: [max_depth + suffix.len]BidiCharType = undefined;
+    for (original[0..max_depth], 0..) |*class, i|
+        class.* = if (i == 0) .RLI else if (i & 1 == 1) .LRE else .RLE;
+
+    @memcpy(original[max_depth..], &suffix);
+    var levels: [original.len]u8 = undefined;
+    var processing: [original.len]BidiCharType = undefined;
+    try resolve(testing.allocator, &original, 0, &levels, &processing);
+
+    try testing.expectEqualSlices(u8, &.{ 125, 125, 125, 125, 125, 0, 0, 0 }, levels[max_depth..]);
+}
+
+test "bidi X5-X7: LRO, unmatched controls and isolate termination" {
+    const testing = @import("std").testing;
+
+    const original = [_]BidiCharType{ .PDF, .PDI, .LRO, .AL, .FSI, .EN, .PDI, .PDF, .AL };
+    var levels: [original.len]u8 = undefined;
+    var processing: [original.len]BidiCharType = undefined;
+    try resolve(testing.allocator, &original, 1, &levels, &processing);
+
+    try testing.expectEqualSlices(u8, &.{ 1, 1, 1, 2, 2, 4, 2, 1, 1 }, &levels);
+    try testing.expectEqualSlices(BidiCharType, &.{ .PDF, .PDI, .LRO, .L, .L, .EN, .L, .PDF, .AL }, &processing);
+}

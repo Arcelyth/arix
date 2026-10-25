@@ -6,6 +6,7 @@ pub const BoxTree = @import("layout/BoxTree.zig");
 pub const inline_ = @import("layout/inline.zig");
 pub const LayoutBoxBase = @import("layout/LayoutBoxBase.zig");
 pub const formatting_context = @import("layout/formatting_context.zig");
+pub const unicode_bidi = @import("layout/unicode_bidi.zig");
 
 test {
     @import("std").testing.refAllDecls(@This());

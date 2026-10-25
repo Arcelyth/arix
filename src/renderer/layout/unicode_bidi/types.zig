@@ -1,3 +1,5 @@
+const std = @import("std");
+
 // The same as BidiClass.
 // Replace with
 // pub const BidiCharType = BidiClass;
@@ -73,5 +75,16 @@ pub const BidiCharType = enum {
     pub inline fn isNI(self: BidiCharType) bool {
         if (self.isNeutral() or self.isIsolate()) return true;
         return false;
+    }
+};
+
+pub const IsolatingRunSequence = struct {
+    indices: []usize,
+    level: u8,
+    sos: BidiCharType,
+    eos: BidiCharType,
+
+    pub fn deinit(self: IsolatingRunSequence, allocator: std.mem.Allocator) void {
+        allocator.free(self.indices);
     }
 };

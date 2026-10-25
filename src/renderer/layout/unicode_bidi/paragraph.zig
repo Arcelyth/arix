@@ -1,6 +1,6 @@
 const BidiCharType = @import("types.zig").BidiCharType;
 
-/// P2–P3: Determine one paragraph's embedding level level from its original bidi classes.
+/// [P2–P3]Determine one paragraph's embedding level level from its original bidi classes.
 /// A supplied level overrides detection, otherwise skip isolates and use the
 /// first strong character: L gives 0, R or AL gives 1, and no match gives 0.
 pub fn paragraphLevel(classes: []const BidiCharType, supplied_level: ?u1) u1 {

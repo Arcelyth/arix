@@ -149,3 +149,52 @@ fn collectSequence(
         };
     }
 }
+
+test "bidi prepare: simple LTR text" {
+    const allocator = std.testing.allocator;
+    const result = try prepare(
+        allocator,
+        &.{ .L, .WS, .L },
+        &.{ 0, 0, 0 },
+        0,
+    );
+    defer deinit(allocator, result);
+
+    try std.testing.expectEqual(@as(usize, 1), result.len);
+    try std.testing.expectEqualSlices(usize, &.{ 0, 1, 2 }, result[0].indices);
+    try std.testing.expectEqual(@as(u8, 0), result[0].level);
+    try std.testing.expectEqual(.L, result[0].sos);
+    try std.testing.expectEqual(.L, result[0].eos);
+}
+
+test "bidi prepare: skip BN without changing original indices" {
+    const allocator = std.testing.allocator;
+    const result = try prepare(
+        allocator,
+        &.{ .L, .BN, .L },
+        &.{ 0, 0, 0 },
+        0,
+    );
+    defer deinit(allocator, result);
+
+    try std.testing.expectEqual(@as(usize, 1), result.len);
+    try std.testing.expectEqualSlices(usize, &.{ 0, 2 }, result[0].indices);
+}
+
+test "bidi prepare: isolate separates inner and outer text" {
+    const allocator = std.testing.allocator;
+    const result = try prepare(
+        allocator,
+        &.{ .L, .RLI, .R, .PDI, .L },
+        &.{ 0, 0, 1, 0, 0 },
+        0,
+    );
+    defer deinit(allocator, result);
+
+    try std.testing.expectEqual(@as(usize, 2), result.len);
+    try std.testing.expectEqualSlices(usize, &.{ 0, 1, 3, 4 }, result[0].indices);
+    try std.testing.expectEqualSlices(usize, &.{2}, result[1].indices);
+    try std.testing.expectEqual(@as(u8, 1), result[1].level);
+    try std.testing.expectEqual(.R, result[1].sos);
+    try std.testing.expectEqual(.R, result[1].eos);
+}

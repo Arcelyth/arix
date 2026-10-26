@@ -97,6 +97,11 @@ pub const BidiCharType = enum {
     }
 };
 
+/// Lookup bidiCharType from a codepoint.
+pub fn bidiClass(codepoint: u21) BidiCharType {
+    return @import("bidi_classes").bidiClass(BidiCharType, codepoint);
+}
+
 /// [BD2]Embedding levels start at zero and explicit levels cannot exceed 125.
 pub const EmbeddingLevel = u8;
 pub const max_depth: EmbeddingLevel = 125;

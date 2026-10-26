@@ -111,3 +111,55 @@ fn neutralSequences(sequence: IsolatingRunSequence, processing: []BidiCharType) 
         for (sequence.indices[start..i]) |index| processing[index] = direction;
     }
 }
+
+test "bidi neutral N0: brackets follow enclosed text and preceding context" {
+    const original = [_]BidiCharType{ .R, .ON, .R, .ON };
+    var processing = original;
+    var indices = [_]usize{ 0, 1, 2, 3 };
+    const sequence: IsolatingRunSequence = .{
+        .indices = &indices,
+        .level = 0,
+        .sos = .L,
+        .eos = .L,
+    };
+
+    try resolve(
+        std.testing.allocator,
+        sequence,
+        &.{ 0x05d0, '(', 0x05d1, ')' },
+        &original,
+        &processing,
+    );
+
+    try std.testing.expectEqualSlices(BidiCharType, &.{ .R, .R, .R, .R }, &processing);
+}
+
+test "bidi neutral N1: space between numbers takes R" {
+    var processing = [_]BidiCharType{ .EN, .WS, .AN };
+    var indices = [_]usize{ 0, 1, 2 };
+    const sequence: IsolatingRunSequence = .{
+        .indices = &indices,
+        .level = 0,
+        .sos = .L,
+        .eos = .L,
+    };
+
+    neutralSequences(sequence, &processing);
+
+    try std.testing.expectEqualSlices(BidiCharType, &.{ .EN, .R, .AN }, &processing);
+}
+
+test "bidi neutral N2: different surrounding directions use embedding direction" {
+    var processing = [_]BidiCharType{ .L, .WS, .R };
+    var indices = [_]usize{ 0, 1, 2 };
+    const sequence: IsolatingRunSequence = .{
+        .indices = &indices,
+        .level = 1,
+        .sos = .R,
+        .eos = .R,
+    };
+
+    neutralSequences(sequence, &processing);
+
+    try std.testing.expectEqualSlices(BidiCharType, &.{ .L, .R, .R }, &processing);
+}

@@ -1,5 +1,6 @@
 //! 3.1 Definitions
 const std = @import("std");
+const data = @import("bidi_brackets");
 
 // The same as BidiClass.
 // Replace with
@@ -172,3 +173,78 @@ pub const IsolatingRunSequence = struct {
         allocator.free(self.indices);
     }
 };
+
+pub const BracketPair = struct { open: usize, close: usize };
+const Opening = struct { position: usize, close: u21 };
+pub const max_bracket_openings = 63;
+
+pub fn pairedBracket(codepoint: u21, current: BidiCharType) ?data.Bracket {
+    return if (current == .ON) lookup(codepoint) else null;
+}
+
+/// [BD16]Find pairs in opening-position order, excluding other isolates.
+pub fn identifyBracketPairs(
+    allocator: std.mem.Allocator,
+    indices: []const usize,
+    codepoints: []const u21,
+    processing: []const BidiCharType,
+) ![]BracketPair {
+    var pairs: std.ArrayList(BracketPair) = .empty;
+    errdefer pairs.deinit(allocator);
+    var stack: [max_bracket_openings]Opening = undefined;
+    var len: usize = 0;
+    for (indices, 0..) |index, position| {
+        const bracket = pairedBracket(codepoints[index], processing[index]) orelse continue;
+        if (bracket.is_open) {
+            if (len == stack.len) {
+                pairs.clearRetainingCapacity();
+                break;
+            }
+            stack[len] = .{
+                .position = position,
+                .close = canonical(bracket.pair),
+            };
+            len += 1;
+        } else if (findOpening(stack[0..len], canonical(codepoints[index]))) |opening| {
+            try pairs.append(allocator, .{
+                .open = stack[opening].position,
+                .close = position,
+            });
+            len = opening;
+        }
+    }
+    std.mem.sort(BracketPair, pairs.items, {}, before);
+    return pairs.toOwnedSlice(allocator);
+}
+
+fn before(_: void, a: BracketPair, b: BracketPair) bool {
+    return a.open < b.open;
+}
+
+inline fn findOpening(stack: []const Opening, close: u21) ?usize {
+    var i = stack.len;
+    while (i > 0) {
+        i -= 1;
+        if (stack[i].close == close) return i;
+    }
+    return null;
+}
+
+fn canonical(codepoint: u21) u21 {
+    return if (codepoint == 0x232a) 0x3009 else codepoint;
+}
+
+fn lookup(codepoint: u21) ?data.Bracket {
+    var low: usize = 0;
+    var high = data.entries.len;
+    while (low < high) {
+        const mid = low + (high - low) / 2;
+        const entry = data.entries[mid];
+        if (codepoint < entry.codepoint) {
+            high = mid;
+        } else if (codepoint > entry.codepoint) {
+            low = mid + 1;
+        } else return entry;
+    }
+    return null;
+}

@@ -1,4 +1,4 @@
-const BidiCharType = @import("types.zig").BidiCharType;
+const BidiCharType = @import("defs.zig").BidiCharType;
 
 /// [P2–P3]Determine one paragraph's embedding level level from its original bidi classes.
 /// A supplied level overrides detection, otherwise skip isolates and use the

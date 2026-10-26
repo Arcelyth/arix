@@ -1,16 +1,11 @@
 //! Explicit embeddings, overrides, and isolates: X1–X8.
 //! https://www.unicode.org/reports/tr9/#Explicit_Levels_and_Directions
 const std = @import("std");
-const BidiCharType = @import("types.zig").BidiCharType;
+const BidiCharType = @import("defs.zig").BidiCharType;
+const defs = @import("defs.zig");
 
-/// Maximum explicit embedding level, specified by UAX #9 BD2.
-const max_depth = 125;
-
-const Entry = struct {
-    level: u8,
-    override: ?BidiCharType = null,
-    isolate: bool = false,
-};
+const max_depth = defs.max_depth;
+const Entry = defs.DirectionalStatus;
 
 const State = struct {
     stack: [max_depth + 2]Entry = undefined,
@@ -39,13 +34,13 @@ const State = struct {
         const level = if (rtl) (current + 1) | 1 else (current + 2) & ~@as(u8, 1);
         const isolate = class.isIsolate();
 
-        if (isValid(level) and self.overflow_isolates == 0 and self.overflow_embeddings == 0) {
+        if (defs.isValidExplicitLevel(level) and self.overflow_isolates == 0 and self.overflow_embeddings == 0) {
             self.stack[self.len] = .{
                 .level = level,
                 .override = switch (class) {
-                    .RLO => .R,
-                    .LRO => .L,
-                    else => null,
+                    .RLO => .rtl,
+                    .LRO => .ltr,
+                    else => .neutral,
                 },
                 .isolate = isolate,
             };
@@ -78,7 +73,7 @@ const State = struct {
     }
 
     inline fn applyOverride(self: *const State, class: *BidiCharType) void {
-        if (self.top().override) |value| class.* = value;
+        if (self.top().override.reset()) |value| class.* = value;
     }
 
     fn process(self: *State, original: BidiCharType, working: *BidiCharType) u8 {
@@ -107,10 +102,6 @@ const State = struct {
         return level;
     }
 };
-
-inline fn isValid(level: u8) bool {
-    return level <= max_depth;
-}
 
 /// [X5c]Determine each FSI's direction from its first strong character outside
 /// nested isolates.

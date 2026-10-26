@@ -1,8 +1,8 @@
 //! Resolving Weak Types.
 //! https://www.unicode.org/reports/tr9/#Resolving_Weak_Types
-const types = @import("types.zig");
-const BidiCharType = types.BidiCharType;
-const IsolatingRunSequence = types.IsolatingRunSequence;
+const defs = @import("defs.zig");
+const BidiCharType = defs.BidiCharType;
+const IsolatingRunSequence = defs.IsolatingRunSequence;
 
 /// Applies W1–W7 to one isolating run sequence.
 pub fn resolve(sequence: IsolatingRunSequence, processing: []BidiCharType) void {
@@ -54,7 +54,7 @@ fn separators(indices: []const usize, classes: []BidiCharType) void {
         const current = &classes[indices[i]];
         if (before != after) continue;
         if ((current.* == .ES and before == .EN) or
-            (current.* == .CS and (before == .EN or before == .AN))) 
+            (current.* == .CS and (before == .EN or before == .AN)))
             current.* = before;
     }
 }

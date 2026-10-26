@@ -1,21 +1,10 @@
 //! Preparations for Implicit Processing
 //! https://www.unicode.org/reports/tr9/#Preparations_for_Implicit_Processing
 const std = @import("std");
-const BidiCharType = @import("types.zig").BidiCharType;
-const types = @import("types.zig");
-const IsolatingRunSequence = types.IsolatingRunSequence;
-
-/// [BD7]A maximal same-level range in the filtered index array.
-pub const LevelRun = struct {
-    start: usize,
-    end: usize,
-    level: u8,
-    sos: BidiCharType,
-    eos: BidiCharType,
-    next: ?usize = null,
-    /// Mark a level run that continues an existing isolating run sequence.
-    continuation: bool = false,
-};
+const BidiCharType = @import("defs.zig").BidiCharType;
+const defs = @import("defs.zig");
+const IsolatingRunSequence = defs.IsolatingRunSequence;
+const LevelRun = defs.LevelRun;
 
 pub fn prepare(allocator: std.mem.Allocator, original: []const BidiCharType, levels: []const u8, base: u1) ![]IsolatingRunSequence {
     std.debug.assert(original.len == levels.len);

@@ -1,7 +1,7 @@
 //! Iterator for P1: split at B, keeping the separator with the preceding paragraph.
 //! https://www.unicode.org/reports/tr9/#P1
 const ParagraphIterator = @This();
-const BidiCharType = @import("types.zig").BidiCharType;
+const BidiCharType = @import("defs.zig").BidiCharType;
 
 classes: []const BidiCharType,
 position: usize = 0,

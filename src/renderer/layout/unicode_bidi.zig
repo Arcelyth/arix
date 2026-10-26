@@ -6,6 +6,7 @@ pub const prepare = @import("unicode_bidi/prepare.zig");
 pub const weak = @import("unicode_bidi/weak.zig");
 pub const neutral = @import("unicode_bidi/neutral.zig");
 pub const implicit = @import("unicode_bidi/implicit.zig");
+pub const reorder = @import("unicode_bidi/reorder.zig");
 
 test {
     @import("std").testing.refAllDecls(@This());

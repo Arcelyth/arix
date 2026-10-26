@@ -248,3 +248,32 @@ fn lookup(codepoint: u21) ?data.Bracket {
     }
     return null;
 }
+
+test "bidi defs: nested isolates and paragraph boundaries" {
+    const testing = std.testing;
+    const allocator = testing.allocator;
+
+    const matches = try isolateMatches(allocator, &.{ .LRI, .RLI, .PDI, .PDI, .B, .FSI, .B, .PDI });
+    defer allocator.free(matches);
+
+    try testing.expectEqualSlices(?usize, &.{ 3, 2, 1, 0, null, null, null, null }, matches);
+}
+
+test "bidi defs: nested bracket pairs in opening order" {
+    const testing = std.testing;
+    const allocator = testing.allocator;
+
+    const pairs = try identifyBracketPairs(
+        allocator,
+        &.{ 0, 1, 2, 3, 4, 5 },
+        &.{ '(', 'a', '[', 'b', ']', ')' },
+        &.{ .ON, .L, .ON, .L, .ON, .ON },
+    );
+    defer allocator.free(pairs);
+
+    try testing.expectEqualDeep(&[_]BracketPair{
+        .{ .open = 0, .close = 5 },
+        .{ .open = 2, .close = 4 },
+    }, pairs);
+    try testing.expectEqual(null, pairedBracket('(', .L));
+}

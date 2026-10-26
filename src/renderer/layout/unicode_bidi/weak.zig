@@ -1,4 +1,4 @@
-//! Resolving Weak Types.
+//! 3.3.4 Resolving Weak Types.
 //! https://www.unicode.org/reports/tr9/#Resolving_Weak_Types
 const defs = @import("defs.zig");
 const BidiCharType = defs.BidiCharType;

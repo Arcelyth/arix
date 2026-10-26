@@ -4,6 +4,7 @@ pub const paragraph = @import("unicode_bidi/paragraph.zig");
 pub const explicit = @import("unicode_bidi/explicit.zig");
 pub const prepare = @import("unicode_bidi/prepare.zig");
 pub const weak = @import("unicode_bidi/weak.zig");
+pub const neutral = @import("unicode_bidi/neutral.zig");
 
 test {
     @import("std").testing.refAllDecls(@This());

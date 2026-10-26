@@ -1,3 +1,5 @@
+//! 3.3.1 The Paragraph Level
+//! https://www.unicode.org/reports/tr9/#The_Paragraph_LeveL
 const BidiCharType = @import("defs.zig").BidiCharType;
 
 /// [P2–P3]Determine one paragraph's embedding level level from its original bidi classes.

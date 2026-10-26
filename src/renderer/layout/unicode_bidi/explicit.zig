@@ -1,4 +1,4 @@
-//! Explicit embeddings, overrides, and isolates: X1–X8.
+//! 3.3.2 Explicit embeddings, overrides, and isolates: X1–X8.
 //! https://www.unicode.org/reports/tr9/#Explicit_Levels_and_Directions
 const std = @import("std");
 const BidiCharType = @import("defs.zig").BidiCharType;

@@ -87,6 +87,15 @@ pub const BidiCharType = enum {
         if (self.isNeutral() or self.isIsolate()) return true;
         return false;
     }
+
+    /// For N0, EN and AN influence surrounding characters as R.
+    pub inline fn contextDirection(self: BidiCharType) ?BidiCharType {
+        return switch (self) {
+            .L => .L,
+            .R, .EN, .AN => .R,
+            else => null,
+        };
+    }
 };
 
 /// [BD2]Embedding levels start at zero and explicit levels cannot exceed 125.
@@ -131,7 +140,9 @@ pub const LevelRun = struct {
     start: usize,
     end: usize,
     level: u8,
+    /// Start of sequence.
     sos: BidiCharType,
+    /// End of sequence.
     eos: BidiCharType,
     next: ?usize = null,
     /// Mark a level run that continues an existing isolating run sequence.
@@ -166,7 +177,9 @@ pub fn isolateMatches(allocator: std.mem.Allocator, original: []const BidiCharTy
 pub const IsolatingRunSequence = struct {
     indices: []usize,
     level: u8,
+    /// Start of sequence.
     sos: BidiCharType,
+    /// End of sequence.
     eos: BidiCharType,
 
     pub fn deinit(self: IsolatingRunSequence, allocator: std.mem.Allocator) void {

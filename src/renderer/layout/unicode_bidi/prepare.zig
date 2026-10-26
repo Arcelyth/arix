@@ -6,7 +6,28 @@ const defs = @import("defs.zig");
 const IsolatingRunSequence = defs.IsolatingRunSequence;
 const LevelRun = defs.LevelRun;
 
-pub fn prepare(allocator: std.mem.Allocator, original: []const BidiCharType, levels: []const u8, base: u1) ![]IsolatingRunSequence {
+/// For example:
+///
+/// Paragraph text:
+/// text1, RLI, text2, PDI, RLI, text3, PDI, text4
+///
+/// Level runs:
+/// - text1, RLI        // level 0
+/// - text2             // level 1
+/// - PDI, RLI          // level 0
+/// - text3             // level 1
+/// - PDI, text4        // level 0
+///
+/// Isolating run sequences:
+/// - text1, RLI, PDI, RLI, PDI, text4      // level 0
+/// - text2                                 // level 1
+/// - text3                                 // level 1
+pub fn prepare(
+    allocator: std.mem.Allocator,
+    original: []const BidiCharType,
+    levels: []const u8,
+    base: u1,
+) ![]IsolatingRunSequence {
     std.debug.assert(original.len == levels.len);
 
     const indices = try activeIndices(allocator, original);
@@ -56,7 +77,10 @@ fn levelRuns(
         while (end < indices.len and levels[indices[end]] == level) : (end += 1) {}
 
         const previous = if (start > 0) levels[indices[start - 1]] else base;
-        const following = if (end < indices.len and !original[indices[end - 1]].isIsolate()) levels[indices[end]] else base;
+        const following = if (end < indices.len and !original[indices[end - 1]].isIsolate())
+            levels[indices[end]]
+        else
+            base;
         try runs.append(allocator, .{
             .start = start,
             .end = end,

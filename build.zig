@@ -56,9 +56,18 @@ pub fn build(b: *std.Build) !void {
         "gen_encoding_indexes.zig",
         depends,
     );
+    const bidi_brackets_module = Generator.generate(
+        b,
+        "gen_bidi_brackets",
+        "./src/gen/bidi_brackets.zig",
+        &.{"./res/txt/BidiBrackets.txt"},
+        "gen_bidi_brackets.zig",
+        depends,
+    );
     try anon_imports.append(b.allocator, .{ .name = "named_ref", .module = named_ref_module });
     try anon_imports.append(b.allocator, .{ .name = "local_name", .module = local_name_module });
     try anon_imports.append(b.allocator, .{ .name = "encoding_indexes", .module = encoding_indexes_module });
+    try anon_imports.append(b.allocator, .{ .name = "bidi_brackets", .module = bidi_brackets_module });
 
     // executable
     const exe_module = b.createModule(.{

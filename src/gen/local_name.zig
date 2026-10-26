@@ -1,4 +1,4 @@
-/// Local name generator.
+//! Local name generator.
 const std = @import("std");
 const Io = std.Io;
 

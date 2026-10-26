@@ -1,5 +1,5 @@
-/// Named character reference generator.
-/// This file will generates a compact trie table for HTML named character references.
+//! Named character reference generator.
+//! This file will generates a compact trie table for HTML named character references.
 const std = @import("std");
 const Io = std.Io;
 

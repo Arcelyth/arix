@@ -1,5 +1,5 @@
-/// Encoding index generator.
-/// Source: https://encoding.spec.whatwg.org/indexes.json
+//! Encoding index generator.
+//! Source: https://encoding.spec.whatwg.org/indexes.json
 const std = @import("std");
 const Io = std.Io;
 

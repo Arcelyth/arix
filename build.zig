@@ -64,10 +64,19 @@ pub fn build(b: *std.Build) !void {
         "gen_bidi_brackets.zig",
         depends,
     );
+    const bidi_classes_module = Generator.generate(
+        b,
+        "gen_bidi_classes",
+        "./src/gen/bidi_classes.zig",
+        &.{ "./res/txt/DerivedBidiClass.txt", "./res/txt/PropertyValueAliases.txt" },
+        "gen_bidi_classes.zig",
+        depends,
+    );
     try anon_imports.append(b.allocator, .{ .name = "named_ref", .module = named_ref_module });
     try anon_imports.append(b.allocator, .{ .name = "local_name", .module = local_name_module });
     try anon_imports.append(b.allocator, .{ .name = "encoding_indexes", .module = encoding_indexes_module });
     try anon_imports.append(b.allocator, .{ .name = "bidi_brackets", .module = bidi_brackets_module });
+    try anon_imports.append(b.allocator, .{ .name = "bidi_classes", .module = bidi_classes_module });
 
     // executable
     const exe_module = b.createModule(.{

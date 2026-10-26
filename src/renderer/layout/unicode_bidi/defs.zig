@@ -84,8 +84,7 @@ pub const BidiCharType = enum {
 
     /// Neutral or Isolate formatting character.
     pub inline fn isNI(self: BidiCharType) bool {
-        if (self.isNeutral() or self.isIsolate()) return true;
-        return false;
+        return self.isNeutral() or self.isIsolate() or self == .PDI;
     }
 
     /// For N0, EN and AN influence surrounding characters as R.

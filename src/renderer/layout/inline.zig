@@ -3,6 +3,7 @@ pub const InlineFormattingContext = @import("inline/InlineFormattingContext.zig"
 pub const Paragraph = @import("inline/Paragraph.zig");
 pub const Line = @import("inline/Line.zig");
 pub const measure = @import("inline/measure.zig");
+pub const Bidi = @import("inline/Bidi.zig");
 pub const layout = @import("inline/layout.zig").layout;
 
 const std = @import("std");

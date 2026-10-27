@@ -37,8 +37,12 @@ pub const SameFormattingContextBlock = struct {
     contents: BlockContainer = .{ .block_level_boxes = null },
 };
 
+/// A box participating in block layout. The variants differ
+/// in whether their contents establish an independent formatting context.
 pub const BlockLevelBox = union(enum) {
+    /// Establishes its own formatting context, as with display: flow-root.
     independent: IndependentFormattingContext,
+    /// Continues the surrounding block formatting context, as with a normal div.
     same_formatting_context: SameFormattingContextBlock,
 
     pub fn base(self: *const BlockLevelBox) *const LayoutBoxBase {

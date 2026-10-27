@@ -1,3 +1,5 @@
+//! A node in the layout tree representing a layout box or text content.
+//! Stores the content payload and tree informations.
 const LayoutBox = @This();
 
 const std = @import("std");

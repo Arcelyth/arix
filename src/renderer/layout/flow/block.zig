@@ -122,7 +122,12 @@ fn layoutBlock(
     return finishBlock(fragment, independent, height, children);
 }
 
-fn layoutInline(allocator: std.mem.Allocator, context: *const InlineFormattingContext, fragment: *Fragment, options: Options) !ChildLayout {
+fn layoutInline(
+    allocator: std.mem.Allocator,
+    context: *const InlineFormattingContext,
+    fragment: *Fragment,
+    options: Options,
+) !ChildLayout {
     const result = try inline_layout.layout(
         allocator,
         context,
@@ -149,6 +154,7 @@ fn createBlockFragment(
         .bottom = style.padding_bottom.resolve(containing.width),
         .left = style.padding_left.resolve(containing.width),
     };
+    // Solve the content width and horizontal margins after accounting for edges.
     const horizontal = usedWidth(
         style,
         containing.width,
@@ -156,26 +162,28 @@ fn createBlockFragment(
     );
 
     const fragment = try allocator.create(Fragment);
-    fragment.* = Fragment.init(.{ .box = .{
-        .base = .{
-            .rect = .{
-                .x = horizontal.left + border.left + padding.left,
-                .y = 0,
-                .width = horizontal.width,
-                .height = 0,
+    fragment.* = Fragment.init(.{
+        .box = .{
+            .base = .{
+                .rect = .{
+                    .x = horizontal.left + border.left + padding.left,
+                    .y = 0, // Set when the block is placed in its parent.
+                    .width = horizontal.width,
+                    .height = 0, // Set by finishBlock after child layout.
+                },
+            },
+            .source = base.source,
+            .style = base.style,
+            .padding = padding,
+            .border = border,
+            .margin = .{
+                .top = style.margin_top.resolve(containing.width) orelse 0,
+                .right = horizontal.right,
+                .bottom = style.margin_bottom.resolve(containing.width) orelse 0,
+                .left = horizontal.left,
             },
         },
-        .source = base.source,
-        .style = base.style,
-        .padding = padding,
-        .border = border,
-        .margin = .{
-            .top = style.margin_top.resolve(containing.width) orelse 0,
-            .right = horizontal.right,
-            .bottom = style.margin_bottom.resolve(containing.width) orelse 0,
-            .left = horizontal.left,
-        },
-    } });
+    });
     return fragment;
 }
 

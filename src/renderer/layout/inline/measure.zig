@@ -1,3 +1,5 @@
+//! Measures paragraph text before line breaking. Shaped advances determine
+//! how much text fits and cluster boundaries prevent breaks inside shaped clusters.
 const std = @import("std");
 const Paragraph = @import("Paragraph.zig");
 const Matcher = @import("../../font/Matcher.zig");
@@ -7,6 +9,7 @@ const Font = @import("../../font/platform.zig").backend.Font;
 pub const Measurement = struct {
     /// Cumulative shaped advances at each byte boundary.
     widths: []f64,
+    /// True at shaped cluster boundaries, including the paragraph end.
     clusters: []bool,
 
     pub fn deinit(self: Measurement, allocator: std.mem.Allocator) void {
@@ -65,14 +68,15 @@ pub fn measure(allocator: std.mem.Allocator, paragraph: *Paragraph, matcher: Mat
     return .{ .widths = widths, .clusters = clusters };
 }
 
-fn glyphWidth(allocator: std.mem.Allocator, text: []const u8, font: Font) !f64 {
+pub fn glyphWidth(allocator: std.mem.Allocator, text: []const u8, font: Font) !f64 {
     const shaped = try shaping.shape(allocator, text, font, .ltr);
     defer shaped.deinit(allocator);
 
     return shaped.width;
 }
 
-fn measureSpan(
+/// Measures a span in pieces separated by preserved newlines and tabs.
+pub fn measureSpan(
     allocator: std.mem.Allocator,
     bytes: []const u8,
     span: Paragraph.Span,
@@ -103,7 +107,7 @@ fn measureSpan(
     }
 }
 
-fn measureText(
+pub fn measureText(
     allocator: std.mem.Allocator,
     text: []const u8,
     font: Font,

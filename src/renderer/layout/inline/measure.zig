@@ -5,6 +5,7 @@ const Paragraph = @import("Paragraph.zig");
 const Matcher = @import("../../font/Matcher.zig");
 const shaping = @import("../../font/shaping.zig");
 const Font = @import("../../font/platform.zig").backend.Font;
+const Bidi = @import("Bidi.zig");
 
 pub const Measurement = struct {
     /// Cumulative shaped advances at each byte boundary.
@@ -40,7 +41,7 @@ pub const Measurement = struct {
     }
 };
 
-pub fn measure(allocator: std.mem.Allocator, paragraph: *Paragraph, matcher: Matcher) !Measurement {
+pub fn measure(allocator: std.mem.Allocator, paragraph: *Paragraph, matcher: Matcher, bidi: *const Bidi) !Measurement {
     const widths = try allocator.alloc(f64, paragraph.bytes.items.len + 1);
     errdefer allocator.free(widths);
     @memset(widths, 0);
@@ -56,13 +57,20 @@ pub fn measure(allocator: std.mem.Allocator, paragraph: *Paragraph, matcher: Mat
             span.space_width = try glyphWidth(allocator, " ", span.font.?);
             span.zero_width = try glyphWidth(allocator, "0", span.font.?);
         }
-        try measureSpan(
-            allocator,
-            paragraph.bytes.items,
-            span.*,
-            widths,
-            clusters,
-        );
+        var runs = bidi.runs(span.start, span.end, bidi.info.levels);
+        while (runs.next()) |run| {
+            var segment = span.*;
+            segment.start = run.start;
+            segment.end = run.end;
+            try measureSpan(
+                allocator,
+                paragraph.bytes.items,
+                segment,
+                widths,
+                clusters,
+                run.level,
+            );
+        }
     }
     for (1..widths.len) |i| widths[i] += widths[i - 1];
     return .{ .widths = widths, .clusters = clusters };
@@ -82,6 +90,7 @@ pub fn measureSpan(
     span: Paragraph.Span,
     widths: []f64,
     clusters: []bool,
+    level: Bidi.Level,
 ) !void {
     var start = span.start;
     while (start < span.end) {
@@ -99,6 +108,7 @@ pub fn measureSpan(
             start,
             widths,
             clusters,
+            level,
         );
         clusters[start] = true;
         clusters[end] = true;
@@ -114,8 +124,9 @@ pub fn measureText(
     start: usize,
     widths: []f64,
     clusters: []bool,
+    level: Bidi.Level,
 ) !void {
-    const shaped = try shaping.shape(allocator, text, font, .ltr);
+    const shaped = try shaping.shape(allocator, text, font, if (level & 1 == 0) .ltr else .rtl);
     defer shaped.deinit(allocator);
     for (shaped.runs) |run| for (run.glyphs) |glyph| {
         widths[start + glyph.cluster + 1] += glyph.advance[0];
@@ -151,7 +162,9 @@ test "layout measure: text width and combining cluster boundaries" {
     var paragraph: Paragraph = .{};
     defer paragraph.deinit(allocator);
     try paragraph.append(allocator, text, &style);
-    const measured = try measure(allocator, &paragraph, .{});
+    const bidi = try Bidi.init(allocator, &paragraph, &style.values);
+    defer bidi.deinit(allocator);
+    const measured = try measure(allocator, &paragraph, .{}, &bidi);
     defer measured.deinit(allocator);
 
     try std.testing.expectApproxEqAbs(

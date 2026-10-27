@@ -7,6 +7,7 @@ const Text = @import("../../dom/Text.zig");
 const TextSequence = @import("../TextSequence.zig");
 const ascii = @import("../../utils/ascii.zig");
 const Font = @import("../../font/platform.zig").backend.Font;
+const Bidi = @import("Bidi.zig");
 
 /// A contiguous range of text that shares the same computed style.
 ///
@@ -27,6 +28,9 @@ pub const Span = struct {
 
 bytes: std.ArrayList(u8) = .empty,
 spans: std.ArrayList(Span) = .empty,
+/// Inline CSS bidi scopes, kept out of the visible UTF-8 text.
+bidi_events: std.ArrayList(Bidi.Event) = .empty,
+pending_event_start: usize = 0,
 /// The style associated with a collapsible whitespace sequence that has not
 /// yet been emitted.
 pending_space: ?*const ComputedStyle = null,
@@ -37,6 +41,7 @@ pub fn deinit(self: *Paragraph, allocator: std.mem.Allocator) void {
     for (self.spans.items) |span| if (span.font) |font| font.deinit();
     self.bytes.deinit(allocator);
     self.spans.deinit(allocator);
+    self.bidi_events.deinit(allocator);
 }
 
 /// Collects text from the sibling layout boxes.
@@ -46,12 +51,22 @@ pub fn collect(self: *Paragraph, allocator: std.mem.Allocator, first: ?*LayoutBo
         switch (box.content) {
             .text => |sequence| try self.appendSequence(allocator, sequence),
             .inline_level => |inline_box| switch (inline_box) {
-                .inline_box => try self.collect(allocator, box.first_child()),
+                .inline_box => |inline_content| {
+                    const scope = Bidi.Scope.forStyle(&inline_content.base.style.values, false);
+                    try self.addBidiScope(allocator, scope, true);
+                    try self.collect(allocator, box.first_child());
+                    try self.addBidiScope(allocator, scope, false);
+                },
                 .atomic => return error.UnsupportedAtomicInline,
             },
             .block_level => return error.UnexpectedBlockInInline,
         }
     }
+}
+
+pub fn addBidiScope(self: *Paragraph, allocator: std.mem.Allocator, scope: Bidi.Scope, opening: bool) !void {
+    if (scope.start.len == 0) return;
+    try self.bidi_events.append(allocator, .{ .offset = self.bytes.items.len, .scope = scope, .opening = opening });
 }
 
 fn appendSequence(self: *Paragraph, allocator: std.mem.Allocator, sequence: TextSequence) !void {
@@ -96,13 +111,19 @@ fn appendByte(
         return self.emit(allocator, byte, style);
     }
     if ((ascii.isSpaceOrTab(u8, byte) or byte == '\n') and mode.collapses()) {
-        if (self.pending_space == null) self.pending_space = style;
+        if (self.pending_space == null) {
+            self.pending_space = style;
+            self.pending_event_start = self.bidi_events.items.len;
+        }
         return;
     }
     if (self.pending_space) |pending| {
         self.pending_space = null;
-        if (self.bytes.items.len != 0 and self.bytes.items[self.bytes.items.len - 1] != '\n')
+        if (self.bytes.items.len != 0 and self.bytes.items[self.bytes.items.len - 1] != '\n') {
+            // The collapsed space precedes CSS scopes entered after its source whitespace.
+            for (self.bidi_events.items[self.pending_event_start..]) |*event| event.offset += 1;
             try self.emit(allocator, ' ', pending);
+        }
     }
     try self.emit(allocator, byte, style);
 }

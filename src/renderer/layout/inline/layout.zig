@@ -9,6 +9,7 @@ const backend = @import("../../font/platform.zig").backend;
 const Line = @import("Line.zig");
 const line_height = @import("../../css/values/computed/line_height.zig");
 const measure = @import("measure.zig");
+const Bidi = @import("Bidi.zig");
 
 pub const Result = struct {
     height: f64 = 0,
@@ -16,7 +17,7 @@ pub const Result = struct {
     has_line: bool = false,
 };
 
-/// Horizontal, baseline-aligned inline text with the initial direction:ltr.
+/// Resolves paragraph bidi levels, measures logical text and lays out visual lines.
 pub fn layout(
     allocator: std.mem.Allocator,
     context: *const InlineFormattingContext,
@@ -29,7 +30,9 @@ pub fn layout(
     try paragraph.collect(allocator, context.items);
     if (paragraph.bytes.items.len == 0) return .{};
 
-    const measured = try measure.measure(allocator, &paragraph, options.font_matcher);
+    const bidi = try Bidi.init(allocator, &paragraph, &parent.content.box.style.values);
+    defer bidi.deinit(allocator);
+    const measured = try measure.measure(allocator, &paragraph, options.font_matcher, &bidi);
     defer measured.deinit(allocator);
     const breaks = try opportunities(allocator, &paragraph, measured);
     defer allocator.free(breaks);
@@ -38,12 +41,13 @@ pub fn layout(
     defer font.deinit();
     const style = context.root.base.style.values;
     const strut = line_height.resolve(style.line_height, style.font_size, font.metrics());
-    return layoutLines(allocator, &paragraph, measured, breaks, parent, width, strut);
+    return layoutLines(allocator, &paragraph, &bidi, measured, breaks, parent, width, strut);
 }
 
 fn layoutLines(
     allocator: std.mem.Allocator,
     paragraph: *const Paragraph,
+    bidi: *const Bidi,
     measured: measure.Measurement,
     breaks: []const Break,
     parent: *Fragment,
@@ -61,9 +65,11 @@ fn layoutLines(
         var line: Line = .{ .bounds = strut };
         defer line.deinit(allocator);
 
-        try collectLine(allocator, &line, paragraph, start, trimmed);
+        const levels = try bidi.lineLevels(allocator, start, end);
+        defer allocator.free(levels);
+        try collectLine(allocator, &line, paragraph, bidi, levels, start, trimmed);
         if (breaks[end] == .forced) line.include(paragraph.spans.items[paragraph.spanAt(end - 1)]);
-        try line.finish(allocator, parent, result.height);
+        try line.finish(allocator, parent, result.height, width, bidi.paragraphAt(start).level == 1);
         result.height += line.bounds.height();
         result.has_line = true;
         start = end;
@@ -75,13 +81,18 @@ fn collectLine(
     allocator: std.mem.Allocator,
     line: *Line,
     paragraph: *const Paragraph,
+    bidi: *const Bidi,
+    levels: []const Bidi.Level,
     start: usize,
     end: usize,
 ) !void {
     for (paragraph.spans.items) |span| {
         const from = @max(start, span.start);
         const to = @min(end, span.end);
-        if (from < to) try line.appendSpan(allocator, paragraph.bytes.items[from..to], span);
+        if (from >= to) continue;
+        var runs = bidi.runs(from, to, levels);
+        while (runs.next()) |run|
+            try line.appendSpan(allocator, paragraph.bytes.items[run.start..run.end], span, run.start, run.level);
     }
 }
 
@@ -202,7 +213,9 @@ test "layout: line break computation" {
     defer paragraph.deinit(allocator);
     try paragraph.append(allocator, text, &style);
 
-    const measured = try @import("measure.zig").measure(allocator, &paragraph, .{});
+    const bidi = try Bidi.init(allocator, &paragraph, &style.values);
+    defer bidi.deinit(allocator);
+    const measured = try measure.measure(allocator, &paragraph, .{}, &bidi);
     defer measured.deinit(allocator);
     const breaks = try opportunities(allocator, &paragraph, measured);
     defer allocator.free(breaks);

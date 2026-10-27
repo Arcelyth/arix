@@ -177,6 +177,11 @@ h3 {
   font-size: 20px;
   line-height: 30px;
 }
+.arabic {
+  direction: rtl;
+  font-size: 20px;
+  line-height: 30px;
+}
 .closing {
   margin-top: 24px;
   color: #59696c;

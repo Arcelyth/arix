@@ -1,4 +1,4 @@
-pub const Host = @import("url/Host.zig");
+pub const host = @import("url/host.zig");
 pub const Url = @import("url/Url.zig");
 
 test {

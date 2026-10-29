@@ -1,3 +1,6 @@
 [submodule "src/renderer/tests/html/html5lib-tests"]
 	path = src/renderer/tests/html/html5lib-tests
 	url = https://github.com/html5lib/html5lib-tests.git
+[submodule "src/renderer/tests/wpt"]
+	path = src/renderer/tests/wpt
+	url = https://github.com/web-platform-tests/wpt.git

@@ -78,16 +78,12 @@ pub fn build(b: *std.Build) !void {
     try anon_imports.append(b.allocator, .{ .name = "bidi_brackets", .module = bidi_brackets_module });
     try anon_imports.append(b.allocator, .{ .name = "bidi_classes", .module = bidi_classes_module });
 
-    // executable
-    const exe_module = b.createModule(.{
-        .root_source_file = b.path("src/main.zig"),
+    const arix_module = b.addModule("arix", .{
+        .root_source_file = b.path("src/renderer.zig"),
         .target = target,
         .optimize = optimize,
     });
-
-    moduleAddCommon(exe_module, anon_imports, depends, options);
-
-    const exe = b.addExecutable(.{ .name = "main", .root_module = exe_module });
+    moduleAddCommon(arix_module, anon_imports, depends, options);
 
     const bench_module = b.createModule(.{
         .root_source_file = b.path("src/bench.zig"),
@@ -95,6 +91,7 @@ pub fn build(b: *std.Build) !void {
         .optimize = .ReleaseFast,
     });
     moduleAddCommon(bench_module, anon_imports, depends, options);
+
     const bench_exe = b.addExecutable(.{
         .name = "parser-benchmark",
         .root_module = bench_module,
@@ -110,6 +107,7 @@ pub fn build(b: *std.Build) !void {
         .optimize = optimize,
     });
     moduleAddCommon(renderer_module, anon_imports, depends, options);
+
     const Example = @import("examples/main.zig").Example;
     for (std.enums.values(Example)) |selection| {
         const name = @tagName(selection);
@@ -147,8 +145,6 @@ pub fn build(b: *std.Build) !void {
         const run_unit_tests = b.addRunArtifact(unit_tests);
         test_step.dependOn(&run_unit_tests.step);
     }
-
-    b.installArtifact(exe);
 }
 
 fn moduleAddCommon(

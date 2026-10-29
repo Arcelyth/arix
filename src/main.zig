@@ -1,8 +1,7 @@
 const std = @import("std");
 const config = @import("config");
-
-pub fn main() !void {}
+pub const renderer = @import("renderer.zig");
 
 test {
-    _ = @import("renderer.zig");
+    @import("std").testing.refAllDecls(@This());
 }

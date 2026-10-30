@@ -37,6 +37,10 @@ pub inline fn isAsciiHexDigit(c: u21) bool {
     return isAsciiDigit(c) or (c >= 'a' and c <= 'f') or (c >= 'A' and c <= 'F');
 }
 
+pub inline fn isAsciiTabOrNewline(comptime T: type, c: T) bool {
+    return c == '\t' or c == '\n' or c == '\r';
+}
+
 pub inline fn isLeadingSurrogate(comptime T: type, c: T) bool {
     return c >= 0xD800 and c <= 0xDBFF;
 }
@@ -78,7 +82,7 @@ pub inline fn isC0(comptime T: type, c: T) bool {
 
 // https://infra.spec.whatwg.org/#c0-control-or-space
 pub inline fn isC0OrSpace(comptime T: type, c: T) bool {
-    return isC0(T, c) or 0x0020;
+    return isC0(T, c) or c == 0x0020;
 }
 
 // https://infra.spec.whatwg.org/#noncharacter

@@ -41,6 +41,8 @@ source: []u8,
 parsed: Parsed = .{},
 opaque_path: bool = false,
 
+pub const empty: Url = .{ .source = &.{} };
+
 pub fn deinit(self: Url, allocator: std.mem.Allocator) void {
     allocator.free(self.source);
 }

@@ -33,6 +33,13 @@ pub const State = enum {
 allocator: std.mem.Allocator,
 input: Input,
 url: Url = .empty,
+buffer: std.ArrayList(u8) = .empty,
+/// Output source of Url.
+output: std.ArrayList(u8) = .empty,
+/// Component ranges of output as parsing progresses.
+parsed: Url.Parsed = .{},
+/// For output url's opaque_path.
+opaque_path: bool = false,
 
 pub const ParseOpts = struct {
     base: ?*const Url = null,
@@ -46,6 +53,10 @@ pub fn init(allocator: std.mem.Allocator, input: []const u8) Parser {
     };
 }
 
+pub fn deinit(self: *Parser) void {
+    self.buffer.deinit(self.allocator);
+}
+
 /// https://url.spec.whatwg.org/#concept-basic-url-parser
 pub fn parseUrl(self: *Parser, opts: ParseOpts) Url {
     if (std.mem.indexOfAny(u8, self.input.asSlice(), "\t\n\r") != null)
@@ -53,7 +64,7 @@ pub fn parseUrl(self: *Parser, opts: ParseOpts) Url {
 
     var state = .scheme_start;
     const encoding = encodings.getOutputEncoding(opts.encoding orelse .utf8);
-    var buffer: std.ArrayList(u8) = .empty;
+    self.buffer = .empty;
     const at_sign_seen = false;
     const inside_brackets = false;
     const password_token_seen = false;
@@ -64,10 +75,6 @@ pub fn parseUrl(self: *Parser, opts: ParseOpts) Url {
     _ = inside_brackets;
     _ = password_token_seen;
 
-    var arena = std.heap.ArenaAllocator.init(self.allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
-
     while (true) {
         const before = self.input;
         const cp = self.input.next();
@@ -75,15 +82,49 @@ pub fn parseUrl(self: *Parser, opts: ParseOpts) Url {
             // https://url.spec.whatwg.org/#scheme-start-state
             .scheme_start => {
                 if (cp != null and ascii.isAsciiAlpha(cp.?)) {
-                    try buffer.append(allocator, std.ascii.toLower(@intCast(cp.?)));
+                    try self.appendBuffer(std.ascii.toLower(@intCast(cp.?)));
                     state = .scheme;
                 } else {
                     state = .no_scheme;
                     self.input = before;
                 }
             },
+
             // https://url.spec.whatwg.org/#scheme-state
-            .scheme => {},
+            .scheme => {
+                if (cp != null and
+                    (ascii.isAsciiAlphanum(cp.?) or
+                        cp == '+' or
+                        cp == '-' or
+                        cp == '.'))
+                {
+                    try self.appendBuffer(std.ascii.toLower(@intCast(cp.?)));
+                } else if (cp == ':') {
+                    try self.setScheme();
+                    self.buffer.clearRetainingCapacity();
+
+                    if (std.mem.eql(u8, self.scheme(), "file")) {
+                        if (!self.input.startsWith("//"))
+                            self.handleError(.SpecialSchemeMissingFollowingSolidus);
+                        state = .file;
+                    } else if (self.isSpecial()) {
+                        state = if (opts.base != null and std.mem.eql(u8, self.scheme(), opts.base.?.scheme()))
+                            .special_relative_or_authority
+                        else
+                            .special_authority_slashes;
+                    } else if (self.input.splitPrefix("/")) |remaining| {
+                        self.input = remaining;
+                        state = .path_or_authority;
+                    } else {
+                        self.opaque_path = true;
+                        state = .opaque_path;
+                    }
+                } else {
+                    self.buffer.clearRetainingCapacity();
+                    self.input.startOver();
+                    state = .no_scheme;
+                }
+            },
             // https://url.spec.whatwg.org/#no-scheme-state
             .no_scheme => {},
             // https://url.spec.whatwg.org/#special-relative-or-authority-state
@@ -127,8 +168,37 @@ pub fn parseUrl(self: *Parser, opts: ParseOpts) Url {
     }
 }
 
+fn appendBuffer(self: *Parser, ch: u8) !void {
+    try self.buffer.append(self.allocator, ch);
+}
+
+fn appendOutput(self: *Parser, ch: u8) !void {
+    try self.output.append(self.allocator, ch);
+}
+
+fn appendComponent(self: *Parser) !Url.Component {
+    const start = self.output.items.len;
+    try self.output.appendSlice(self.allocator, self.buffer.items);
+    return Url.Component.fromBounds(start, self.output.items.len);
+}
+
+fn setScheme(self: *Parser) !void {
+    self.parsed.scheme = try self.appendComponent();
+    try self.appendOutput(':');
+    self.parsed.path = .{ .begin = self.output.items.len };
+}
+
+fn scheme(self: *const Parser) []const u8 {
+    return self.parsed.scheme.slice(self.output.items);
+}
+
+fn isSpecial(self: *const Parser) bool {
+    return Url.special_scheme.has(self.scheme());
+}
+
 pub const ParserError = enum {
     InvalidUrlUnit,
+    SpecialSchemeMissingFollowingSolidus,
 };
 
 pub fn handleError(self: *const Parser, err: ParserError) void {

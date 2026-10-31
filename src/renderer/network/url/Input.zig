@@ -116,6 +116,10 @@ pub fn countMatching(self: *const Input, comptime predicate: anytype) struct {
     };
 }
 
+pub fn startOver(self: *Input) void {
+    self.chars.i = 0;
+}
+
 test "network url input: filtered iteration and prefix checks" {
     const testing = std.testing;
     var input = Input.initNoTrim("\th\nt\rtps://例え.test\r");

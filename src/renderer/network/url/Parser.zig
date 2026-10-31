@@ -5,6 +5,7 @@ const encodings = @import("../../encoding/encoding.zig");
 const Encoding = encodings.Encoding;
 const ascii = @import("../../utils/ascii.zig");
 const Input = @import("Input.zig");
+const paths = @import("path.zig");
 
 pub const State = enum {
     scheme_start,
@@ -76,7 +77,7 @@ pub fn parseUrl(self: *Parser, opts: ParseOpts) !Url {
     _ = inside_brackets;
     _ = password_token_seen;
 
-    while (true) {
+    parse: while (true) {
         const before = self.input;
         const cp = self.input.next();
         switch (state) {
@@ -141,12 +142,54 @@ pub fn parseUrl(self: *Parser, opts: ParseOpts) !Url {
                     self.input = before;
                 }
             },
+
             // https://url.spec.whatwg.org/#special-relative-or-authority-state
-            .special_relative_or_authority => {},
+            .special_relative_or_authority => {
+                if (cp == '/' and self.input.startsWith("/")) {
+                    _ = self.input.next();
+                    state = .special_authority_ignore_slashes;
+                } else {
+                    self.handleError(.SpecialSchemeMissingFollowingSolidus);
+                    state = .relative;
+                    self.input = before;
+                }
+            },
+
             // https://url.spec.whatwg.org/#path-or-authority-state
-            .path_or_authority => {},
+            .path_or_authority => {
+                if (cp == '/') {
+                    try self.beginAuthority();
+                    state = .authority;
+                } else {
+                    state = .path;
+                    self.input = before;
+                }
+            },
+
             // https://url.spec.whatwg.org/#relative-state
-            .relative => {},
+            .relative => {
+                const base_url = opts.base.?;
+                try self.setScheme(base_url.scheme());
+                if (cp == '/' or (self.isSpecial() and cp == '\\')) {
+                    if (cp == '\\') self.handleError(.InvalidReverseSolidus);
+                    state = .relative_slash;
+                    continue :parse;
+                }
+                try self.copyBase(base_url);
+                if (cp == '?') {
+                    try self.setQuery("");
+                    state = .query;
+                } else if (cp == '#') {
+                    try self.beginFragment();
+                    state = .fragment;
+                } else if (cp != null) {
+                    try self.removeQuery();
+                    paths.shorten(&self.output, &self.parsed, self.opaque_path);
+                    state = .path;
+                    self.input = before;
+                } else break :parse;
+            },
+
             // https://url.spec.whatwg.org/#relative-slash-state
             .relative_slash => {},
             // https://url.spec.whatwg.org/#special-authority-slashes-state
@@ -327,10 +370,22 @@ fn beginFragment(self: *Parser) !void {
     self.parsed.fragment = .{ .begin = self.output.items.len };
 }
 
+fn beginAuthority(self: *Parser) !void {
+    self.output.shrinkRetainingCapacity(self.parsed.scheme.end() + 1);
+    try self.output.appendSlice(self.allocator, "//");
+    self.parsed.username = .{ .begin = self.output.items.len };
+    self.parsed.password = null;
+    self.parsed.host = null;
+    self.parsed.port = null;
+    self.parsed.query = null;
+    self.parsed.fragment = null;
+}
+
 pub const ParserError = enum {
     InvalidUrlUnit,
     SpecialSchemeMissingFollowingSolidus,
     MissingSchemeNonRelativeUrl,
+    InvalidReverseSolidus,
 };
 
 pub fn handleError(self: *const Parser, err: ParserError) void {

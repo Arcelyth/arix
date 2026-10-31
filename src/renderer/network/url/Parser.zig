@@ -128,7 +128,19 @@ pub fn parseUrl(self: *Parser, opts: ParseOpts) !Url {
             },
 
             // https://url.spec.whatwg.org/#no-scheme-state
-            .no_scheme => {},
+            .no_scheme => {
+                const base_url = opts.base orelse return self.fail(.MissingSchemeNonRelativeUrl);
+                if (base_url.opaque_path) {
+                    if (cp != '#') return self.fail(.MissingSchemeNonRelativeUrl);
+                    try self.setScheme(base_url.scheme());
+                    try self.copyBase(base_url);
+                    try self.beginFragment();
+                    state = .fragment;
+                } else {
+                    state = if (std.mem.eql(u8, base_url.scheme(), "file")) .file else .relative;
+                    self.input = before;
+                }
+            },
             // https://url.spec.whatwg.org/#special-relative-or-authority-state
             .special_relative_or_authority => {},
             // https://url.spec.whatwg.org/#path-or-authority-state
@@ -296,6 +308,23 @@ fn shiftComponents(self: *Parser, comptime name: []const u8, old_length: usize, 
         }
         if (comptime std.mem.eql(u8, field, name)) follows = true;
     }
+}
+
+fn copyBase(self: *Parser, base: *const Url) !void {
+    const end = if (base.parsed.fragment) |fragment|
+        fragment.begin - 1
+    else
+        base.source.len;
+    self.output.clearRetainingCapacity();
+    try self.output.appendSlice(self.allocator, base.source[0..end]);
+    self.parsed = base.parsed;
+    self.parsed.fragment = null;
+    self.opaque_path = base.opaque_path;
+}
+
+fn beginFragment(self: *Parser) !void {
+    try self.appendOutput('#');
+    self.parsed.fragment = .{ .begin = self.output.items.len };
 }
 
 pub const ParserError = enum {

@@ -1,3 +1,4 @@
+//! URL input that skips ASCII tabs and newlines.
 const Input = @This();
 const std = @import("std");
 const ascii = @import("../../utils/ascii.zig");

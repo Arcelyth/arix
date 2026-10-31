@@ -449,6 +449,14 @@ pub fn nameToEncoding(label: []const u8) ?Encoding {
     return enc_map.get(l);
 }
 
+/// https://encoding.spec.whatwg.org/#get-an-output-encoding
+pub fn getOutputEncoding(enc: Encoding) Encoding {
+    return switch (enc) {
+        .replacement, .utf16be, .utf16le => .utf8,
+        else => enc,
+    };
+}
+
 /// https://encoding.spec.whatwg.org/#decode
 pub fn decode(allocator: std.mem.Allocator, input: []const u8, fallback: Encoding) ![]u21 {
     var encoding = fallback;

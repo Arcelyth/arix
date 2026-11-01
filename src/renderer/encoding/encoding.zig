@@ -1,6 +1,7 @@
 const std = @import("std");
 const Decoder = @import("Decoder.zig");
 const IoQueue = @import("queue.zig").IoQueue;
+const Encoder = @import("Encoder.zig");
 
 pub const Encoding = enum {
     utf8,
@@ -483,6 +484,10 @@ fn decodeBytes(allocator: std.mem.Allocator, bytes: []const u8, encoding: Encodi
     defer output.deinit(allocator);
     _ = try decoder.processQueue(allocator, &input_queue, &output, .replacement);
     return output.items.toOwnedSlice(allocator);
+}
+
+pub fn getEncoder(encoding: Encoding) Encoder {
+    return Encoder.init(encoding);
 }
 
 test "encoding: UTF-8 decode and without BOM" {

@@ -279,7 +279,22 @@ pub fn parseUrl(self: *Parser, opts: ParseOpts) !Url {
             },
 
             // https://url.spec.whatwg.org/#port-state
-            .post => {},
+            .port => {
+                if (cp != null and ascii.isAsciiDigit(cp.?)) {
+                    try self.appendBuffer(@intCast(cp.?));
+                } else if (self.isAuthorityEnd(cp)) {
+                    if (self.buffer.items.len != 0) {
+                        const value = std.fmt.parseInt(u16, self.buffer.items, 10) catch return self.fail(.PortOutOfRange);
+                        const default = Url.special_scheme.get(self.scheme()) orelse null;
+                        if (default == null or default.? != value)
+                            try self.appendPort(value);
+                    }
+                    self.buffer.clearRetainingCapacity();
+                    state = .path_start;
+                    self.input = before;
+                } else return self.fail(.PortInvalid);
+            },
+
             // https://url.spec.whatwg.org/#file-state
             .file => {},
             // https://url.spec.whatwg.org/#file-slash-state
@@ -339,6 +354,12 @@ pub fn appendCredential(self: *Parser, cp: u21, password: bool) !void {
     else
         &self.parsed.username.?;
     component.len = self.output.items.len - component.begin;
+}
+
+pub fn appendPort(self: *Parser, value: u16) !void {
+    try self.appendOutput(':');
+    var bytes: [5]u8 = undefined;
+    self.parsed.port = try self.appendComponent(try std.fmt.bufPrint(&bytes, "{d}", .{value}));
 }
 
 pub fn finishCredentials(self: *Parser) !void {

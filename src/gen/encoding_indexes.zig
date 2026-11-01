@@ -35,8 +35,6 @@ pub fn main(init: std.process.Init) !void {
     var entries = parsed.value.object.iterator();
     while (entries.next()) |entry| {
         const name = entry.key_ptr.*;
-        // Only used by the ISO-2022-JP encoder, not the decoder.
-        if (std.mem.eql(u8, name, "iso-2022-jp-katakana")) continue;
         const ranges = std.mem.eql(u8, name, "gb18030-ranges");
         const values = entry.value_ptr.array.items;
 

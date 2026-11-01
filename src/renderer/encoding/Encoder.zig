@@ -193,7 +193,7 @@ fn handleIso2022Jp(
         if (cp == 0xA5) return self.emit(&.{0x5C});
         if (cp == 0x203E) return self.emit(&.{0x7E});
     }
-    if (cp < 0x80 and self.iso2022jp_state != .ascii) 
+    if (cp < 0x80 and self.iso2022jp_state != .ascii)
         return self.changeIso2022JpState(allocator, input, cp, .ascii);
     if ((cp == 0xA5 or cp == 0x203E) and self.iso2022jp_state != .roman)
         return self.changeIso2022JpState(allocator, input, cp, .roman);

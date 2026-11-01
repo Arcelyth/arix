@@ -6,6 +6,7 @@ const Encoding = encodings.Encoding;
 const ascii = @import("../../utils/ascii.zig");
 const Input = @import("Input.zig");
 const paths = @import("path.zig");
+const percent = @import("percent_encoded.zig");
 
 pub const State = enum {
     scheme_start,
@@ -70,12 +71,12 @@ pub fn parseUrl(self: *Parser, opts: ParseOpts) !Url {
     const at_sign_seen = false;
     const inside_brackets = false;
     const password_token_seen = false;
+    // The host start position in input's bytes.
+    var host_start: usize = 0;
     self.input.chars.i = 0;
 
     _ = encoding;
-    _ = at_sign_seen;
     _ = inside_brackets;
-    _ = password_token_seen;
 
     parse: while (true) {
         const before = self.input;
@@ -191,13 +192,67 @@ pub fn parseUrl(self: *Parser, opts: ParseOpts) !Url {
             },
 
             // https://url.spec.whatwg.org/#relative-slash-state
-            .relative_slash => {},
+            .relative_slash => {
+                if (self.isSpecial() and (cp == '/' or cp == '\\')) {
+                    if (cp == '\\') self.handleError(.InvalidReverseSolidus);
+                    state = .special_authority_ignore_slashes;
+                } else if (cp == '/') {
+                    try self.beginAuthority();
+                    state = .authority;
+                } else {
+                    try self.copyAuthority(opts.base.?);
+                    state = .path;
+                    self.input = before;
+                }
+            },
+
             // https://url.spec.whatwg.org/#special-authority-slashes-state
-            .special_authority_slashes => {},
+            .special_authority_slashes => {
+                if (cp == '/' and self.input.startsWith("/")) {
+                    _ = self.input.next();
+                    state = .special_authority_ignore_slashes;
+                } else {
+                    self.handleError(.SpecialSchemeMissingFollowingSolidus);
+                    state = .special_authority_ignore_slashes;
+                    self.input = before;
+                }
+            },
+
             // https://url.spec.whatwg.org/#special-authority-ignore-slashes-state
-            .special_authority_ignore_slashes => {},
+            .special_authority_ignore_slashes => {
+                if (cp == '/' or cp == '\\') {
+                    self.handleError(.SpecialSchemeMissingFollowingSolidus);
+                } else {
+                    try self.beginAuthority();
+                    state = .authority;
+                    self.input = before;
+                }
+            },
+
             // https://url.spec.whatwg.org/#authority-state
-            .authority => {},
+            .authority => {
+                if (self.buffer.items.len == 0) host_start = before.chars.i;
+                if (cp == '@') {
+                    self.handleError(.InvalidCredentials);
+                    if (at_sign_seen) try self.appendCredential('@', password_token_seen);
+                    at_sign_seen = true;
+                    var chars = std.unicode.Utf8Iterator{ .bytes = self.buffer.items, .i = 0 };
+                    while (chars.nextCodepoint()) |char| {
+                        if (char == ':' and !password_token_seen) {
+                            password_token_seen = true;
+                        } else {
+                            try self.appendCredential(char, password_token_seen);
+                        }
+                    }
+                    self.buffer.clearRetainingCapacity();
+                } else if (self.isAuthorityEnd(cp)) {
+                    if (at_sign_seen and self.buffer.items.len == 0) return self.fail(.HostMissing);
+                    self.input.chars.i = host_start;
+                    self.buffer.clearRetainingCapacity();
+                    try self.finishCredentials();
+                    state = .host;
+                } else try self.appendRaw(cp.?);
+            },
             // https://url.spec.whatwg.org/#host-state
             .host => {},
             // https://url.spec.whatwg.org/#hostname-state
@@ -225,18 +280,49 @@ pub fn parseUrl(self: *Parser, opts: ParseOpts) !Url {
     }
 }
 
-fn appendBuffer(self: *Parser, ch: u8) !void {
+pub fn appendBuffer(self: *Parser, ch: u8) !void {
     try self.buffer.append(self.allocator, ch);
 }
 
-fn appendOutput(self: *Parser, ch: u8) !void {
+pub fn appendOutput(self: *Parser, ch: u8) !void {
     try self.output.append(self.allocator, ch);
 }
 
-fn appendComponent(self: *Parser, text: []const u8) !Url.Component {
+pub fn appendComponent(self: *Parser, text: []const u8) !Url.Component {
     const start = self.output.items.len;
     try self.output.appendSlice(self.allocator, text);
     return Url.Component.fromBounds(start, self.output.items.len);
+}
+
+/// Converts a Unicode code point to UTF-8 bytes and appends them to the buffer
+/// without percent-encoding.
+pub fn appendRaw(self: *Parser, cp: u21) !void {
+    var bytes: [4]u8 = undefined;
+    const length = try std.unicode.utf8Encode(cp, &bytes);
+    try self.output.appendSlice(self.allocator, bytes[0..length]);
+}
+
+/// Appends a code point to the username or password component.
+/// Inserts the `:` separator between the username and password.
+/// The code point is percent-encoded using the userinfo percent-encode set.
+pub fn appendCredential(self: *Parser, cp: u21, password: bool) !void {
+    if (password and self.parsed.password == null) {
+        try self.appendOutput(':');
+        self.parsed.password = .{
+            .begin = self.output.items.len,
+        };
+    }
+    try percent.append(self.allocator, &self.output, cp, .userinfo);
+    const component = if (password)
+        &self.parsed.password.?
+    else
+        &self.parsed.username.?;
+    component.len = self.output.items.len - component.begin;
+}
+
+pub fn finishCredentials(self: *Parser) !void {
+    if (self.parsed.username.?.len != 0 or self.parsed.password != null)
+        try self.appendOutput('@');
 }
 
 pub fn setScheme(self: *Parser, text: []const u8) !void {
@@ -353,7 +439,9 @@ fn shiftComponents(self: *Parser, comptime name: []const u8, old_length: usize, 
     }
 }
 
-fn copyBase(self: *Parser, base: *const Url) !void {
+/// Sets output and ranges to the base URL without its fragment
+/// and whether the path is opaque.
+pub fn copyBase(self: *Parser, base: *const Url) !void {
     const end = if (base.parsed.fragment) |fragment|
         fragment.begin - 1
     else
@@ -363,6 +451,19 @@ fn copyBase(self: *Parser, base: *const Url) !void {
     self.parsed = base.parsed;
     self.parsed.fragment = null;
     self.opaque_path = base.opaque_path;
+}
+
+/// Sets output to the base scheme, credentials, host, and port.
+/// Updates those ranges before parsing a new path.
+pub fn copyAuthority(self: *Parser, base: *const Url) !void {
+    const end = if (base.parsed.port) |port| port.end() else if (base.parsed.host) |host| host.end() else base.parsed.scheme.end() + 1;
+    self.output.clearRetainingCapacity();
+    try self.output.appendSlice(self.allocator, base.source[0..end]);
+    self.parsed.scheme = base.parsed.scheme;
+    self.parsed.username = base.parsed.username;
+    self.parsed.password = base.parsed.password;
+    self.parsed.host = base.parsed.host;
+    self.parsed.port = base.parsed.port;
 }
 
 fn beginFragment(self: *Parser) !void {
@@ -381,11 +482,17 @@ fn beginAuthority(self: *Parser) !void {
     self.parsed.fragment = null;
 }
 
+inline fn isAuthorityEnd(self: *Parser, cp: ?u21) bool {
+    return cp == null or cp == '/' or cp == '?' or cp == '#' or (self.isSpecial() and cp == '\\');
+}
+
 pub const ParserError = enum {
     InvalidUrlUnit,
     SpecialSchemeMissingFollowingSolidus,
     MissingSchemeNonRelativeUrl,
     InvalidReverseSolidus,
+    InvalidCredentials,
+    HostMissing,
 };
 
 pub fn handleError(self: *const Parser, err: ParserError) void {

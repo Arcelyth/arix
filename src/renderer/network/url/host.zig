@@ -4,7 +4,7 @@ const percent = @import("percent_encoded.zig");
 const ascii = @import("../../utils/ascii.zig");
 const domains = @import("domain.zig");
 const ipv4 = @import("ipv4.zig");
-const ipv6 = @import("ipv6.zig");
+const Ipv6Parser = @import("Ipv6Parser.zig");
 const ErrorAdapter = @import("ErrorAdapter.zig");
 
 /// Parses and serializes a host. Unicode IDNA processing is not implemented yet.
@@ -20,7 +20,9 @@ pub fn parse(
             if (adapter) |value| value.handleError(.IPv6Unclosed);
             return error.IPv6Unclosed;
         }
-        return ipv6.serialize(allocator, try ipv6.parse(input[1 .. input.len - 1]));
+        var parser: Ipv6Parser = .{ .input = input[1 .. input.len - 1], .adapter = adapter };
+        _ = try parser.parse();
+        return parser.serialize(allocator);
     }
     if (is_opaque) return parseOpaque(allocator, input);
     const bytes = try percent.decode(allocator, input);

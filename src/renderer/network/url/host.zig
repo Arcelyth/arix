@@ -24,16 +24,16 @@ pub fn parse(
         _ = try parser.parse();
         return parser.serialize(allocator);
     }
-    if (is_opaque) return parseOpaque(allocator, input);
+    if (is_opaque) return parseOpaque(allocator, input, adapter);
     const bytes = try percent.decode(allocator, input);
-    errdefer allocator.free(bytes);
+    defer allocator.free(bytes);
     const codepoints = try encoding.utf8DecodeWithoutBom(allocator, bytes);
     defer allocator.free(codepoints);
     const domain = try domains.parse(allocator, codepoints);
     errdefer allocator.free(domain);
 
     if (endsInNumber(domain)) {
-        const address = try ipv4.parse(domain);
+        const address = try ipv4.parse(domain, adapter);
         const output = try ipv4.serialize(allocator, address);
         allocator.free(domain);
         return output;
@@ -75,7 +75,7 @@ pub fn parseOpaque(allocator: std.mem.Allocator, input: []const u8, adapter: ?Er
 }
 
 /// https://url.spec.whatwg.org/#forbidden-host-code-point
-pub inline fn isForbiddenCodePoint(byte: u8) bool {
+pub inline fn isForbiddenCodePoint(byte: u21) bool {
     return switch (byte) {
         0, '\t', '\n', '\r', ' ', '#', '/', ':', '<', '>', '?', '@', '[', '\\', ']', '^', '|' => true,
         else => false,
@@ -96,10 +96,21 @@ pub fn isUrlCodePoint(cp: u21) bool {
     };
 }
 
+/// Returns whether the last domain label needs IPv4 parsing.
 /// https://url.spec.whatwg.org/#ends-in-a-number-checker
 pub fn endsInNumber(input: []const u8) bool {
-    _ = input;
-    @panic("TODO");
+    std.debug.assert(input.len != 0);
+    const text = if (std.mem.endsWith(u8, input, ".")) input[0 .. input.len - 1] else input;
+    const start = if (std.mem.lastIndexOfScalar(u8, text, '.')) |dot| dot + 1 else 0;
+    const last = text[start..];
+    if (last.len == 0) return false;
+    if (allDigits(last)) return true;
+    return ipv4.number(last) != null;
+}
+
+fn allDigits(text: []const u8) bool {
+    for (text) |byte| if (!ascii.isAsciiDigit(byte)) return false;
+    return text.len != 0;
 }
 
 pub const Host = union(enum) {
@@ -126,4 +137,19 @@ test "network url host: from ipv4, ipv6, domain and empty slice" {
     const loopback: [16]u8 = .{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1 };
     try std.testing.expectEqual(loopback, Host.fromSlice("[::1]", false).ipv6);
     try std.testing.expectEqualStrings("", Host.fromSlice("", false).domain);
+}
+
+test "network url host: parse host" {
+    const allocator = std.testing.allocator;
+    const cases = .{
+        .{ "EXAMPLE.org", false, "example.org" },
+        .{ "0x7f.1", false, "127.0.0.1" },
+        .{ "[0:0:0:0:0:0:0:1]", false, "[::1]" },
+        .{ "EXAMPLE.org", true, "EXAMPLE.org" },
+    };
+    inline for (cases) |case| {
+        const result = try parse(allocator, case[0], case[1], null);
+        defer allocator.free(result);
+        try std.testing.expectEqualStrings(case[2], result);
+    }
 }

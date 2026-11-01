@@ -7,6 +7,15 @@ pub fn isWindowsDriveLetter(text: []const u8) bool {
     return text.len == 2 and ascii.isAsciiAlpha(text[0]) and (text[1] == ':' or text[1] == '|');
 }
 
+pub fn isSingleDot(text: []const u8) bool {
+    return std.mem.eql(u8, text, ".") or std.ascii.eqlIgnoreCase(text, "%2e");
+}
+
+pub fn isDoubleDot(text: []const u8) bool {
+    return std.mem.eql(u8, text, "..") or std.ascii.eqlIgnoreCase(text, ".%2e") or
+        std.ascii.eqlIgnoreCase(text, "%2e.") or std.ascii.eqlIgnoreCase(text, "%2e%2e");
+}
+
 /// Removes the last path segment from the `output`.
 /// If `file` is true, preserves a Windows drive-letter root (e.g. `C:`).
 pub fn shorten(output: *std.ArrayList(u8), parsed: *Url.Parsed, opaque_path: bool) void {

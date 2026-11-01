@@ -384,11 +384,74 @@ pub fn parseUrl(self: *Parser, opts: ParseOpts) !Url {
             },
 
             // https://url.spec.whatwg.org/#path-start-state
-            .path_start => {},
+            .path_start => {
+                self.parsed.path = .{
+                    .begin = self.output.items.len,
+                };
+                if (self.isSpecial()) {
+                    if (cp == '\\') self.handleError(.InvalidReverseSolidus);
+                    state = .path;
+                    if (cp != '/' and cp != '\\') self.input = before;
+                } else if (cp == '?') {
+                    try self.setQuery("");
+                    state = .query;
+                } else if (cp == '#') {
+                    try self.beginFragment();
+                    state = .fragment;
+                } else if (cp != null) {
+                    state = .path;
+                    if (cp != '/') self.input = before;
+                } else break :parse;
+            },
+
             // https://url.spec.whatwg.org/#path-state
-            .path => {},
+            .path => {
+                if (self.parsed.path.begin == 0)
+                    self.parsed.path.begin = self.output.items.len;
+                const separator = cp == '/' or (self.isSpecial() and cp == '\\');
+                if (cp == null or separator or cp == '?' or cp == '#') {
+                    if (cp == '\\' and self.isSpecial()) self.handleError(.InvalidReverseSolidus);
+                    try self.appendPathSegment(separator);
+                    self.buffer.clearRetainingCapacity();
+                    if (cp == '?') {
+                        try self.setQuery("");
+                        state = .query;
+                    }
+                    if (cp == '#') {
+                        try self.beginFragment();
+                        state = .fragment;
+                    }
+                    if (cp == null) break :parse;
+                } else {
+                    self.validateUnit(cp.?);
+                    try percent.append(self.allocator, &self.buffer, cp.?, .path);
+                }
+            },
+
             // https://url.spec.whatwg.org/#cannot-be-a-base-url-path-state
-            .opaque_path => {},
+            .opaque_path => {
+                if (self.parsed.path.begin == 0)
+                    self.parsed.path.begin = self.output.items.len;
+                if (cp == '?') {
+                    try self.setQuery("");
+                    state = .query;
+                } else if (cp == '#') {
+                    try self.beginFragment();
+                    state = .fragment;
+                } else if (cp == ' ') {
+                    self.handleError(.InvalidUrlUnit);
+                    if (self.input.startsWith("?") or self.input.startsWith("#"))
+                        try self.output.appendSlice(self.allocator, "%20")
+                    else
+                        try self.appendOutput(' ');
+                    self.parsed.path.len = self.output.items.len - self.parsed.path.begin;
+                } else if (cp) |char| {
+                    self.validateUnit(char);
+                    try percent.append(self.allocator, &self.output, char, .c0_control);
+                    self.parsed.path.len = self.output.items.len - self.parsed.path.begin;
+                } else break :parse;
+            },
+
             // https://url.spec.whatwg.org/#query-state
             .query => {},
             // https://url.spec.whatwg.org/#fragment-state
@@ -442,6 +505,23 @@ pub fn appendPort(self: *Parser, value: u16) !void {
     try self.appendOutput(':');
     var bytes: [5]u8 = undefined;
     self.parsed.port = try self.appendComponent(try std.fmt.bufPrint(&bytes, "{d}", .{value}));
+}
+
+/// Resolves dot segments and appends one completed path segment.
+fn appendPathSegment(self: *Parser, separator: bool) !void {
+    const segment = self.buffer.items;
+    if (paths.isDoubleDot(segment)) {
+        paths.shorten(&self.output, &self.parsed, self.opaque_path);
+        if (!separator) try self.appendOutput('/');
+    } else if (paths.isSingleDot(segment)) {
+        if (!separator) try self.appendOutput('/');
+    } else {
+        if (std.mem.eql(u8, self.scheme(), "file") and self.parsed.path.len == 0 and paths.isWindowsDriveLetter(segment))
+            segment[1] = ':';
+        try self.appendOutput('/');
+        try self.output.appendSlice(self.allocator, segment);
+    }
+    self.parsed.path.len = self.output.items.len - self.parsed.path.begin;
 }
 
 pub fn finishCredentials(self: *Parser) !void {
@@ -610,10 +690,22 @@ inline fn isAuthorityEnd(self: *Parser, cp: ?u21) bool {
     return cp == null or cp == '/' or cp == '?' or cp == '#' or (self.isSpecial() and cp == '\\');
 }
 
-fn parseHost(self: *Parser, text: []const u8) !void {
+pub fn parseHost(self: *Parser, text: []const u8) !void {
     const host = try hosts.parse(self.allocator, text, !self.isSpecial());
     defer self.allocator.free(host);
     try self.setHost(host);
+}
+
+/// Reports invalid URL code points and malformed percent escapes.
+pub fn validateUnit(self: *const Parser, cp: u21) void {
+    if (cp == '%') {
+        var remaining = self.input;
+        const first = remaining.next();
+        const second = remaining.next();
+        if (first == null or second == null or
+            !ascii.isAsciiHexDigit(first.?) or !ascii.isAsciiHexDigit(second.?))
+            self.handleError(.InvalidUrlUnit);
+    } else if (!hosts.isUrlCodePoint(cp)) self.handleError(.InvalidUrlUnit);
 }
 
 pub fn handleError(self: *const Parser, err: ParserError) void {
@@ -621,7 +713,7 @@ pub fn handleError(self: *const Parser, err: ParserError) void {
 }
 
 /// Return failure during parsing.
-fn fail(self: *const Parser, err: ParserError) error{InvalidUrl} {
+pub fn fail(self: *const Parser, err: ParserError) error{InvalidUrl} {
     self.handleError(err);
     return error.InvalidUrl;
 }

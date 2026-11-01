@@ -68,3 +68,25 @@ pub fn append(
     const length = try std.unicode.utf8Encode(cp, &bytes);
     for (bytes[0..length]) |byte| try appendByte(allocator, output, byte, set);
 }
+
+/// Converts % followed by two hex digits into a byte in `input`.
+/// For example, %40 becomes byte 0x40 (@).
+/// https://url.spec.whatwg.org/#percent-decode
+pub fn decode(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
+    const output = try allocator.alloc(u8, input.len);
+    errdefer allocator.free(output);
+    var length: usize = 0;
+    var i: usize = 0;
+    while (i < input.len) : (i += 1) {
+        if (input[i] == '%' and
+            i + 2 < input.len and
+            ascii.isAsciiHexDigit(input[i + 1]) and
+            ascii.isAsciiHexDigit(input[i + 2]))
+        {
+            output[length] = @as(u8, ascii.toHexDigit(u8, input[i + 1])) * 16 + ascii.toHexDigit(u8, input[i + 2]);
+            i += 2;
+        } else output[length] = input[i];
+        length += 1;
+    }
+    return allocator.realloc(output, length);
+}

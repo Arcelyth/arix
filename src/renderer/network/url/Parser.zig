@@ -6,7 +6,10 @@ const Encoding = encodings.Encoding;
 const ascii = @import("../../utils/ascii.zig");
 const Input = @import("Input.zig");
 const paths = @import("path.zig");
+const hosts = @import("host.zig");
 const percent = @import("percent_encoded.zig");
+const ErrorAdapter = @import("ErrorAdapter.zig");
+const ParserError = @import("error.zig").ParserError;
 
 pub const State = enum {
     scheme_start,
@@ -33,6 +36,7 @@ pub const State = enum {
 };
 
 allocator: std.mem.Allocator,
+adapter: ?ErrorAdapter = null,
 input: Input,
 url: Url = .empty,
 buffer: std.ArrayList(u8) = .empty,
@@ -76,7 +80,6 @@ pub fn parseUrl(self: *Parser, opts: ParseOpts) !Url {
     self.input.chars.i = 0;
 
     _ = encoding;
-    _ = inside_brackets;
 
     parse: while (true) {
         const before = self.input;
@@ -253,10 +256,28 @@ pub fn parseUrl(self: *Parser, opts: ParseOpts) !Url {
                     state = .host;
                 } else try self.appendRaw(cp.?);
             },
+
             // https://url.spec.whatwg.org/#host-state
-            .host => {},
             // https://url.spec.whatwg.org/#hostname-state
-            .hostname => {},
+            .host, .hostname => {
+                if (cp == ':' and !inside_brackets) {
+                    if (self.buffer.items.len == 0) return self.fail(.HostMissing);
+                    try self.parseHost();
+                    self.buffer.clearRetainingCapacity();
+                    state = .port;
+                } else if (self.isAuthorityEnd(cp)) {
+                    if (self.isSpecial() and self.buffer.items.len == 0) return self.fail(.HostMissing);
+                    try self.parseHost();
+                    self.buffer.clearRetainingCapacity();
+                    state = .path_start;
+                    self.input = before;
+                } else {
+                    if (cp == '[') inside_brackets = true;
+                    if (cp == ']') inside_brackets = false;
+                    try self.appendRaw(cp.?);
+                }
+            },
+
             // https://url.spec.whatwg.org/#port-state
             .post => {},
             // https://url.spec.whatwg.org/#file-state
@@ -486,18 +507,14 @@ inline fn isAuthorityEnd(self: *Parser, cp: ?u21) bool {
     return cp == null or cp == '/' or cp == '?' or cp == '#' or (self.isSpecial() and cp == '\\');
 }
 
-pub const ParserError = enum {
-    InvalidUrlUnit,
-    SpecialSchemeMissingFollowingSolidus,
-    MissingSchemeNonRelativeUrl,
-    InvalidReverseSolidus,
-    InvalidCredentials,
-    HostMissing,
-};
+fn parseHost(self: *Parser, text: []const u8) !void {
+    const host = try hosts.parse(self.allocator, text, !self.isSpecial());
+    defer self.allocator.free(host);
+    try self.setHost(host);
+}
 
 pub fn handleError(self: *const Parser, err: ParserError) void {
-    _ = self;
-    _ = err;
+    if (self.adapter) |adapter| adapter.handleError(err);
 }
 
 /// Return failure during parsing.

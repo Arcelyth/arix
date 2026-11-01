@@ -466,6 +466,16 @@ pub fn decode(allocator: std.mem.Allocator, input: []const u8, fallback: Encodin
         bytes = input[if (bom == .utf8) @as(usize, 3) else 2..];
     }
 
+    return decodeBytes(allocator, bytes, encoding);
+}
+
+/// Decodes UTF-8, keeping U+FEFF and replacing invalid sequences with U+FFFD.
+/// https://encoding.spec.whatwg.org/#utf-8-decode-without-bom
+pub fn utf8DecodeWithoutBom(allocator: std.mem.Allocator, input: []const u8) ![]u21 {
+    return decodeBytes(allocator, input, .utf8);
+}
+
+fn decodeBytes(allocator: std.mem.Allocator, bytes: []const u8, encoding: Encoding) ![]u21 {
     var decoder = Decoder.init(encoding);
     var input_queue = try IoQueue(u8).fromSlice(allocator, bytes);
     defer input_queue.deinit(allocator);
@@ -473,4 +483,24 @@ pub fn decode(allocator: std.mem.Allocator, input: []const u8, fallback: Encodin
     defer output.deinit(allocator);
     _ = try decoder.processQueue(allocator, &input_queue, &output, .replacement);
     return output.items.toOwnedSlice(allocator);
+}
+
+test "encoding: UTF-8 decode and without BOM" {
+    const allocator = std.testing.allocator;
+    const input = "\xEF\xBB\xBFAé\xE2\x82<";
+    const decoded = try utf8DecodeWithoutBom(allocator, input);
+    defer allocator.free(decoded);
+    try std.testing.expectEqualSlices(
+        u21,
+        &.{ 0xFEFF, 'A', 0xE9, 0xFFFD, '<' },
+        decoded,
+    );
+
+    const with_bom_handling = try decode(allocator, input, .utf8);
+    defer allocator.free(with_bom_handling);
+    try std.testing.expectEqualSlices(
+        u21,
+        &.{ 'A', 0xE9, 0xFFFD, '<' },
+        with_bom_handling,
+    );
 }

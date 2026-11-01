@@ -1,6 +1,22 @@
 /// URL validation errors.
 /// https://url.spec.whatwg.org/#validation-error
 pub const ParserError = enum {
+    IPv4EmptyPart,
+    IPv4TooFewParts,
+    IPv4TooManyParts,
+    IPv4NonNumericPart,
+    IPv4NonDecimalPart,
+    IPv4OutOfRangePart,
+    IPv6InvalidCompression,
+    IPv6TooManyPieces,
+    IPv6MultipleCompression,
+    IPv4InIPv6InvalidCodePoint,
+    IPv4InIPv6TooManyPieces,
+    IPv4InIPv6OutOfRangePart,
+    IPv4InIPv6TooFewParts,
+    IPv6InvalidCodePoint,
+    IPv6PieceLeadingZero,
+    IPv6TooFewPieces,
     HostInvalidCodePoint,
     IPv6Unclosed,
     InvalidUrlUnit,

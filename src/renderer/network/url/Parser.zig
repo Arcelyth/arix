@@ -79,8 +79,6 @@ pub fn parseUrl(self: *Parser, opts: ParseOpts) !Url {
     var host_start: usize = 0;
     self.input.chars.i = 0;
 
-    _ = encoding;
-
     parse: while (true) {
         const before = self.input;
         const cp = self.input.next();
@@ -453,12 +451,48 @@ pub fn parseUrl(self: *Parser, opts: ParseOpts) !Url {
             },
 
             // https://url.spec.whatwg.org/#query-state
-            .query => {},
+            .query => {
+                if (encoding != .utf8 and (!self.isSpecial() or
+                    std.mem.eql(u8, self.scheme(), "ws") or std.mem.eql(u8, self.scheme(), "wss")))
+                    encoding = .utf8;
+                if (cp == null or cp == '#') {
+                    try percent.percentEncodeAfterEncoding(
+                        self.allocator,
+                        &self.output,
+                        self.buffer.items,
+                        encoding,
+                        if (self.isSpecial()) .special_query else .query,
+                    );
+                    self.parsed.query.?.len = self.output.items.len - self.parsed.query.?.begin;
+                    self.buffer.clearRetainingCapacity();
+                    if (cp == '#') {
+                        try self.beginFragment();
+                        state = .fragment;
+                    } else break :parse;
+                } else {
+                    self.validateUnit(cp.?);
+                    try self.appendRaw(cp.?);
+                }
+            },
+
             // https://url.spec.whatwg.org/#fragment-state
-            .fragment => {},
-            else => return error.UnimplementedState,
+            .fragment => {
+                if (cp) |char| {
+                    self.validateUnit(char);
+                    try percent.append(self.allocator, &self.output, char, .fragment);
+                } else break :parse;
+            },
         }
     }
+    if (self.parsed.fragment) |*fragment|
+        fragment.len = self.output.items.len - fragment.begin;
+    try self.normalizePathPrefix();
+    self.url = .{
+        .source = try self.output.toOwnedSlice(self.allocator),
+        .parsed = self.parsed,
+        .opaque_path = self.opaque_path,
+    };
+    return self.url;
 }
 
 pub fn appendBuffer(self: *Parser, ch: u8) !void {
@@ -706,6 +740,24 @@ pub fn validateUnit(self: *const Parser, cp: u21) void {
             !ascii.isAsciiHexDigit(first.?) or !ascii.isAsciiHexDigit(second.?))
             self.handleError(.InvalidUrlUnit);
     } else if (!hosts.isUrlCodePoint(cp)) self.handleError(.InvalidUrlUnit);
+}
+
+/// Adds or removes the `/.` prefix used when a path could look like an authority.
+fn normalizePathPrefix(self: *Parser) !void {
+    if (self.opaque_path or self.parsed.host != null) return;
+    const start = self.parsed.scheme.end() + 1;
+    const needed = std.mem.startsWith(u8, self.parsed.path.slice(self.output.items), "//");
+    const present = self.parsed.path.begin == start + 2;
+    if (needed == present) return;
+    const old_length: usize = if (present) 2 else 0;
+    const new_length: usize = if (needed) 2 else 0;
+    try self.replaceOldComponent(
+        .{ .begin = start, .len = old_length },
+        new_length,
+    );
+    if (needed) @memcpy(self.output.items[start..][0..2], "/.");
+    self.parsed.path.begin = self.parsed.path.begin - old_length + new_length;
+    self.shiftComponents("path", old_length, new_length);
 }
 
 pub fn handleError(self: *const Parser, err: ParserError) void {

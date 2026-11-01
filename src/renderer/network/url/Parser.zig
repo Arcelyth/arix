@@ -296,11 +296,93 @@ pub fn parseUrl(self: *Parser, opts: ParseOpts) !Url {
             },
 
             // https://url.spec.whatwg.org/#file-state
-            .file => {},
+            .file => {
+                try self.setScheme("file");
+                try self.beginAuthority();
+                try self.setHost("");
+                const file_base = if (opts.base) |base|
+                    if (std.mem.eql(u8, base.scheme(), "file")) base else null
+                else
+                    null;
+                if (cp == '/' or cp == '\\') {
+                    if (cp == '\\') self.handleError(.InvalidReverseSolidus);
+                    state = .file_slash;
+                } else if (file_base) |base| {
+                    try self.setHost(base.parsed.host.?.slice(base.source));
+                    self.parsed.path = .{
+                        .begin = self.output.items.len,
+                    };
+                    try self.setPath(base.path());
+                    if (base.query()) |query| try self.setQuery(query);
+                    if (cp == '?') {
+                        try self.setQuery("");
+                        state = .query;
+                    } else if (cp == '#') {
+                        try self.beginFragment();
+                        state = .fragment;
+                    } else if (cp != null) {
+                        try self.removeQuery();
+                        if (!paths.startsWithWindowsDriveLetter(&before)) {
+                            paths.shorten(&self.output, &self.parsed, self.opaque_path);
+                        } else {
+                            self.handleError(.FileInvalidWindowsDriveLetter);
+                            try self.setPath("");
+                        }
+                        state = .path;
+                        self.input = before;
+                    } else break :parse;
+                } else {
+                    state = .path;
+                    self.input = before;
+                }
+            },
+
             // https://url.spec.whatwg.org/#file-slash-state
-            .file_slash => {},
+            .file_slash => {
+                if (cp == '/' or cp == '\\') {
+                    if (cp == '\\') self.handleError(.InvalidReverseSolidus);
+                    state = .file_host;
+                } else {
+                    if (opts.base) |base| {
+                        if (std.mem.eql(u8, base.scheme(), "file")) {
+                            try self.setHost(base.parsed.host.?.slice(base.source));
+                            self.parsed.path = .{ .begin = self.output.items.len };
+                            const path = base.path();
+                            const first_start = @min(1, path.len);
+                            const first_end = std.mem.indexOfScalarPos(u8, path, first_start, '/') orelse path.len;
+                            const first = path[first_start..first_end];
+                            if (!paths.startsWithWindowsDriveLetter(&before) and paths.isNormalizedWindowsDriveLetter(first)) {
+                                try self.appendOutput('/');
+                                try self.output.appendSlice(self.allocator, first);
+                                self.parsed.path.len = self.output.items.len - self.parsed.path.begin;
+                            }
+                        }
+                    }
+                    state = .path;
+                    self.input = before;
+                }
+            },
+
             // https://url.spec.whatwg.org/#file-host-state
-            .file_host => {},
+            .file_host => {
+                if (cp == null or cp == '/' or cp == '\\' or cp == '?' or cp == '#') {
+                    self.input = before;
+                    if (paths.isWindowsDriveLetter(self.buffer.items)) {
+                        self.handleError(.FileInvalidWindowsDriveLetterHost);
+                        state = .path;
+                    } else if (self.buffer.items.len == 0) {
+                        try self.setHost("");
+                        state = .path_start;
+                    } else {
+                        try self.parseHost(self.buffer.items);
+                        if (std.mem.eql(u8, self.parsed.host.?.slice(self.output.items), "localhost"))
+                            try self.setHost("");
+                        self.buffer.clearRetainingCapacity();
+                        state = .path_start;
+                    }
+                } else try self.appendRaw(cp.?);
+            },
+
             // https://url.spec.whatwg.org/#path-start-state
             .path_start => {},
             // https://url.spec.whatwg.org/#path-state

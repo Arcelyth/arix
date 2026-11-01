@@ -28,3 +28,16 @@ pub fn shorten(output: *std.ArrayList(u8), parsed: *Url.Parsed, opaque_path: boo
     if (parsed.query) |*query| query.begin -= removed;
     if (parsed.fragment) |*fragment| fragment.begin -= removed;
 }
+
+/// A Windows drive letter consists of an ASCII alphabetic character
+/// followed by ':' or '|'. It must be followed by EOF, '/', '\\', '?', or '#'.
+pub fn startsWithWindowsDriveLetter(input: *const Input) bool {
+    var remaining = input.*;
+    const first = remaining.next() orelse return false;
+    const second = remaining.next() orelse return false;
+    if (!ascii.isAsciiAlpha(first) or (second != ':' and second != '|')) return false;
+    return switch (remaining.next() orelse return true) {
+        '/', '\\', '?', '#' => true,
+        else => false,
+    };
+}

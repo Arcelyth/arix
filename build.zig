@@ -72,11 +72,21 @@ pub fn build(b: *std.Build) !void {
         "gen_bidi_classes.zig",
         depends,
     );
+    const idna_mapping_module = Generator.generate(
+        b,
+        "gen_idna_mapping",
+        "./src/gen/idna_mapping.zig",
+        &.{"./res/txt/IdnaMappingTable.txt"},
+        "gen_idna_mapping.zig",
+        depends,
+    );
+
     try anon_imports.append(b.allocator, .{ .name = "named_ref", .module = named_ref_module });
     try anon_imports.append(b.allocator, .{ .name = "local_name", .module = local_name_module });
     try anon_imports.append(b.allocator, .{ .name = "encoding_indexes", .module = encoding_indexes_module });
     try anon_imports.append(b.allocator, .{ .name = "bidi_brackets", .module = bidi_brackets_module });
     try anon_imports.append(b.allocator, .{ .name = "bidi_classes", .module = bidi_classes_module });
+    try anon_imports.append(b.allocator, .{ .name = "idna_mapping", .module = idna_mapping_module });
 
     const arix_module = b.addModule("arix", .{
         .root_source_file = b.path("src/renderer.zig"),

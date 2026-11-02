@@ -69,15 +69,15 @@ pub fn parseUrl(self: *Parser, opts: ParseOpts) !Url {
     if (std.mem.indexOfAny(u8, self.input.asSlice(), "\t\n\r") != null)
         self.handleError(.InvalidUrlUnit);
 
-    var state = .scheme_start;
-    const encoding = encodings.getOutputEncoding(opts.encoding orelse .utf8);
-    self.buffer = .empty;
-    const at_sign_seen = false;
-    const inside_brackets = false;
-    const password_token_seen = false;
+    var state: State = .scheme_start;
+    var encoding = encodings.getOutputEncoding(opts.encoding orelse .utf8);
+    self.buffer.clearRetainingCapacity();
+    var at_sign_seen = false;
+    var inside_brackets = false;
+    var password_token_seen = false;
     // The host start position in input's bytes.
     var host_start: usize = 0;
-    self.input.chars.i = 0;
+    self.input.startOver();
 
     parse: while (true) {
         const before = self.input;
@@ -260,12 +260,12 @@ pub fn parseUrl(self: *Parser, opts: ParseOpts) !Url {
             .host, .hostname => {
                 if (cp == ':' and !inside_brackets) {
                     if (self.buffer.items.len == 0) return self.fail(.HostMissing);
-                    try self.parseHost();
+                    try self.parseHost(self.buffer.items);
                     self.buffer.clearRetainingCapacity();
                     state = .port;
                 } else if (self.isAuthorityEnd(cp)) {
                     if (self.isSpecial() and self.buffer.items.len == 0) return self.fail(.HostMissing);
-                    try self.parseHost();
+                    try self.parseHost(self.buffer.items);
                     self.buffer.clearRetainingCapacity();
                     state = .path_start;
                     self.input = before;
@@ -514,7 +514,7 @@ pub fn appendComponent(self: *Parser, text: []const u8) !Url.Component {
 pub fn appendRaw(self: *Parser, cp: u21) !void {
     var bytes: [4]u8 = undefined;
     const length = try std.unicode.utf8Encode(cp, &bytes);
-    try self.output.appendSlice(self.allocator, bytes[0..length]);
+    try self.buffer.appendSlice(self.allocator, bytes[0..length]);
 }
 
 /// Appends a code point to the username or password component.
@@ -626,7 +626,7 @@ fn replaceComponent(
     prefix: []const u8,
     text: []const u8,
 ) !Url.Component {
-    const output = self.output;
+    const output = &self.output;
     const alloc = self.allocator;
     // Text inside output must stay valid when the buffer grows or moves.
     const overlaps = text.len != 0 and output.items.len != 0 and
@@ -725,7 +725,7 @@ inline fn isAuthorityEnd(self: *Parser, cp: ?u21) bool {
 }
 
 pub fn parseHost(self: *Parser, text: []const u8) !void {
-    const host = try hosts.parse(self.allocator, text, !self.isSpecial());
+    const host = try hosts.parse(self.allocator, text, !self.isSpecial(), self.adapter);
     defer self.allocator.free(host);
     try self.setHost(host);
 }

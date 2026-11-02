@@ -15,6 +15,8 @@ pub const Set = enum {
     path,
     userinfo,
     component,
+    /// https://url.spec.whatwg.org/#application-x-www-form-urlencoded-percent-encode-set
+    form_urlencoded,
 
     /// Checks whether the byte belongs to the chosen percent-encode set.
     /// - true: encode it as %HH.
@@ -40,6 +42,10 @@ pub const Set = enum {
             },
             .userinfo => contains(.path, byte) or switch (byte) {
                 '/', ':', ';', '=', '@', '[', '\\', ']', '|' => true,
+                else => false,
+            },
+            .form_urlencoded => contains(.component, byte) or switch (byte) {
+                '!', '\'', '(', ')', '~' => true,
                 else => false,
             },
             .component => contains(.userinfo, byte) or switch (byte) {

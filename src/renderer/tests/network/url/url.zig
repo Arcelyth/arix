@@ -1,0 +1,161 @@
+const std = @import("std");
+const Parser = @import("../../../network/url/Parser.zig");
+const Url = @import("../../../network/url/Url.zig");
+const ParserError = @import("../../../network/url/error.zig").ParserError;
+const encodings = @import("../../../encoding/encoding.zig");
+const percent = @import("../../../network/url/percent_encoded.zig");
+
+test "network url parser: WPT urltestdata.json" {
+    try runParsing("urltestdata.json");
+}
+
+test "network url parser: WPT urltestdata-javascript-only.json" {
+    try runParsing("urltestdata-javascript-only.json");
+}
+
+const test_data_dir = "../../wpt/url/resources/";
+
+fn runParsing(comptime name: []const u8) !void {
+    const allocator = std.testing.allocator;
+    const data = try loadFixture(allocator, name);
+    defer data.deinit();
+    var failed: usize = 0;
+    for (data.value.array.items, 0..) |item, i| {
+        if (item != .object) continue;
+        checkCase(allocator, item) catch |err| {
+            if (err == error.OutOfMemory) return err;
+            failed += 1;
+            std.debug.print(
+                "Fixture: {s}, case #{d}, input: {s}: {s}\n",
+                .{ name, i, item.object.get("input").?.string, @errorName(err) },
+            );
+        };
+    }
+    std.debug.print("WPT {s}: {d} failed\n", .{ name, failed });
+    try std.testing.expectEqual(@as(usize, 0), failed);
+}
+
+fn checkCase(allocator: std.mem.Allocator, item: std.json.Value) !void {
+    const failure = if (item.object.get("failure")) |value| value.bool else false;
+    const url = parseCase(allocator, item) catch |err| {
+        if (failure and isUrlFailure(err)) return;
+        return err;
+    };
+    defer url.deinit(allocator);
+    if (failure) return error.ExpectedFailure;
+    var failure_error: ?anyerror = null;
+    for (std.meta.tags(Property)) |property| {
+        const expected = item.object.get(@tagName(property)) orelse continue;
+        expectProperty(&url, property, expected.string) catch |err| {
+            std.debug.print("  {s}: {s}\n", .{ @tagName(property), @errorName(err) });
+            failure_error = err;
+        };
+    }
+    if (failure_error) |err| return err;
+}
+
+/// Reads a WPT JSON file and replaces lone surrogates for URL input.
+fn loadFixture(allocator: std.mem.Allocator, comptime name: []const u8) !std.json.Parsed(std.json.Value) {
+    const text = try allocator.dupe(u8, @embedFile(test_data_dir ++ name));
+    defer allocator.free(text);
+    replaceSurrogates(text);
+    return std.json.parseFromSlice(std.json.Value, allocator, text, .{ .allocate = .alloc_always });
+}
+
+fn parse(allocator: std.mem.Allocator, input: []const u8, opts: Parser.ParseOpts) !Url {
+    var parser = Parser.init(allocator, input);
+    defer parser.deinit();
+    return parser.parseUrl(opts);
+}
+
+fn parseCase(allocator: std.mem.Allocator, item: std.json.Value) !Url {
+    var base: ?Url = null;
+    defer if (base) |url| url.deinit(allocator);
+    if (item.object.get("base")) |value| {
+        if (value == .string) base = try parse(allocator, value.string, .{});
+    }
+    return parse(
+        allocator,
+        item.object.get("input").?.string,
+        .{ .base = if (base) |*url| url else null },
+    );
+}
+
+/// Only URL failures satisfy an upstream failure expectation.
+fn isUrlFailure(err: anyerror) bool {
+    return err == error.InvalidUrl or err == error.InvalidHost or
+        std.meta.stringToEnum(ParserError, @errorName(err)) != null;
+}
+
+const Property = enum {
+    href,
+    protocol,
+    username,
+    password,
+    host,
+    hostname,
+    port,
+    pathname,
+    search,
+    hash,
+    origin,
+    searchParams,
+};
+
+/// Reads the string properties asserted by WPT's URL constructor tests.
+fn expectProperty(url: *const Url, property: Property, expected: []const u8) !void {
+    const actual = switch (property) {
+        .href => url.source,
+        .protocol => url.source[0 .. url.parsed.scheme.end() + 1],
+        .username => url.username(),
+        .password => url.password() orelse "",
+        .host => if (url.parsed.host) |host| url.source[host.begin..if (url.parsed.port) |port| port.end() else host.end()] else "",
+        .hostname => if (url.parsed.host) |host| url.sliceC(host) else "",
+        .port => if (url.parsed.port) |port| url.sliceC(port) else "",
+        .pathname => url.path(),
+        .search => componentWithDelimiter(url, url.parsed.query),
+        .hash => componentWithDelimiter(url, url.parsed.fragment),
+        .origin => return error.MissingOrigin,
+        .searchParams => return error.MissingSearchParams,
+    };
+    if (!std.mem.eql(u8, expected, actual)) {
+        std.debug.print("  {s}: expected {s}, got {s}\n", .{ @tagName(property), expected, actual });
+        return error.UnexpectedUrl;
+    }
+}
+
+fn componentWithDelimiter(url: *const Url, component: ?Url.Component) []const u8 {
+    const range = component orelse return "";
+    if (range.len == 0) return "";
+    return url.source[range.begin - 1 .. range.end()];
+}
+
+/// WPT uses JavaScript strings. URL input replaces lone surrogates with U+FFFD.
+fn replaceSurrogates(text: []u8) void {
+    var i: usize = 0;
+    while (i < text.len) {
+        if (text[i] != '\\') {
+            i += 1;
+            continue;
+        }
+        const cp = escapedCodeUnit(text[i..]) orelse {
+            i += 2;
+            continue;
+        };
+        if (cp >= 0xD800 and cp <= 0xDBFF) {
+            if (escapedCodeUnit(text[i + 6 ..])) |low| {
+                if (low >= 0xDC00 and low <= 0xDFFF) {
+                    i += 12;
+                    continue;
+                }
+            }
+        }
+        if (cp >= 0xD800 and cp <= 0xDFFF) @memcpy(text[i + 2 ..][0..4], "FFFD");
+        i += 6;
+    }
+}
+
+fn escapedCodeUnit(text: []const u8) ?u16 {
+    if (text.len < 6 or text[0] != '\\' or text[1] != 'u') return null;
+    return std.fmt.parseInt(u16, text[2..6], 16) catch null;
+}

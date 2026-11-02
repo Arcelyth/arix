@@ -7,6 +7,12 @@ pub fn isWindowsDriveLetter(text: []const u8) bool {
     return text.len == 2 and ascii.isAsciiAlpha(text[0]) and (text[1] == ':' or text[1] == '|');
 }
 
+/// A Windows drive letter followed by `:`.
+/// https://url.spec.whatwg.org/#normalized-windows-drive-letter
+pub fn isNormalizedWindowsDriveLetter(text: []const u8) bool {
+    return isWindowsDriveLetter(text) and text[1] == ':';
+}
+
 pub fn isSingleDot(text: []const u8) bool {
     return std.mem.eql(u8, text, ".") or std.ascii.eqlIgnoreCase(text, "%2e");
 }

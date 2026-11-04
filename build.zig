@@ -29,7 +29,13 @@ pub fn build(b: *std.Build) !void {
         .target = target,
         .optimize = optimize,
     });
+    const icu4z = b.dependency("icu4z", .{
+        .target = target,
+        .optimize = optimize,
+    });
+
     try depends.append(b.allocator, .{ .name = "strale", .dep = strale, .module = "strale" });
+    try depends.append(b.allocator, .{ .name = "icu4z", .dep = icu4z, .module = "icu4z" });
 
     // generate
     const named_ref_module = Generator.generate(

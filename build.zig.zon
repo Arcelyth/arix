@@ -9,7 +9,7 @@
         },
         .core_foundation_zig = .{
             .url = "https://codeberg.org/Arcelyth/core-foundation-zig/archive/main.tar.gz",
-            .hash = "core_foundation_zig-0.0.1-4nhKwrnjAAAC-H1rQ-4gZurp-jL_FBrj0s4KwynC6wVj",
+            .hash = "core_foundation_zig-0.0.1-4nhKwqTjAAATKNJtZN6GPocHGZi4XYTLNrDtOmkAllM9",
         },
         .dwrite_zig = .{
             .url = "https://github.com/Arcelyth/dwrite-zig/archive/main.tar.gz",
@@ -30,6 +30,10 @@
         .unibreak_zig = .{
             .url = "https://codeberg.org/Arcelyth/unibreak-zig/archive/main.tar.gz",
             .hash = "unibreak_zig-0.0.1-lSZ0Um8XAACNoA9lqF3VkN_F_HaiZzXjR8dMlUK1QDFf",
+        },
+        .icu4z = .{
+            .url = "https://github.com/Arcelyth/icu4z/archive/main.tar.gz",
+            .hash = "icu4z-0.0.1-AvwIT1WVAAAUtUjvxa-1q_UOCGUsreM22GHFgboVVXVe",
         },
     },
     .paths = .{""},

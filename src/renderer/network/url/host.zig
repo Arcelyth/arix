@@ -7,7 +7,7 @@ const ipv4 = @import("ipv4.zig");
 const Ipv6Parser = @import("Ipv6Parser.zig");
 const ErrorAdapter = @import("ErrorAdapter.zig");
 
-/// Parses and serializes a host. Unicode IDNA processing is not implemented yet.
+/// Parses and serializes a host.
 /// https://url.spec.whatwg.org/#concept-host-parser
 pub fn parse(
     allocator: std.mem.Allocator,
@@ -20,19 +20,30 @@ pub fn parse(
             if (adapter) |value| value.handleError(.IPv6Unclosed);
             return error.IPv6Unclosed;
         }
-        var parser: Ipv6Parser = .{ .input = input[1 .. input.len - 1], .adapter = adapter };
+        var parser: Ipv6Parser = .{
+            .input = input[1 .. input.len - 1],
+            .adapter = adapter,
+        };
         _ = try parser.parse();
         return parser.serialize(allocator);
     }
     if (is_opaque) return parseOpaque(allocator, input, adapter);
+    if (std.mem.indexOfScalar(u8, input, '%') != null)
+        ErrorAdapter.report(adapter, .DomainPercentEncoded);
     const bytes = try percent.decode(allocator, input);
     defer allocator.free(bytes);
     const codepoints = try encoding.utf8DecodeWithoutBom(allocator, bytes);
     defer allocator.free(codepoints);
-    const domain = try domains.parse(allocator, codepoints);
+    const domain = try domains.parse(allocator, codepoints, .{ .adapter = adapter });
     errdefer allocator.free(domain);
 
     if (endsInNumber(domain)) {
+        for (codepoints) |cp| {
+            if (cp >= 0x80) {
+                ErrorAdapter.report(adapter, .IPv4NonAsciiInput);
+                break;
+            }
+        }
         const address = try ipv4.parse(domain, adapter);
         const output = try ipv4.serialize(allocator, address);
         allocator.free(domain);

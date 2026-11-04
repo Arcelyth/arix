@@ -476,6 +476,18 @@ pub fn utf8DecodeWithoutBom(allocator: std.mem.Allocator, input: []const u8) ![]
     return decodeBytes(allocator, input, .utf8);
 }
 
+/// https://encoding.spec.whatwg.org/#utf-8-encode
+pub fn utf8Encode(allocator: std.mem.Allocator, input: []const u21) ![]u8 {
+    var output: std.ArrayList(u8) = .empty;
+    errdefer output.deinit(allocator);
+    for (input) |cp| {
+        var bytes: [4]u8 = undefined;
+        const length = try std.unicode.utf8Encode(cp, &bytes);
+        try output.appendSlice(allocator, bytes[0..length]);
+    }
+    return output.toOwnedSlice(allocator);
+}
+
 fn decodeBytes(allocator: std.mem.Allocator, bytes: []const u8, encoding: Encoding) ![]u21 {
     var decoder = Decoder.init(encoding);
     var input_queue = try IoQueue(u8).fromSlice(allocator, bytes);

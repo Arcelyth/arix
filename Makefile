@@ -12,6 +12,7 @@ fetch:
 	zig fetch --save=harfbuzz_zig "https://codeberg.org/Arcelyth/harfbuzz-zig/archive/main.tar.gz"
 	zig fetch --save=fontconfig_zig "https://codeberg.org/Arcelyth/fontconfig-zig/archive/main.tar.gz"
 	zig fetch --save=unibreak_zig "https://codeberg.org/Arcelyth/unibreak-zig/archive/main.tar.gz"
+	zig fetch --save=icu4z "https://github.com/Arcelyth/icu4z/archive/main.tar.gz"
 
 test_token: 
 	zig build test --summary all -Dtest-filter=tokenizer

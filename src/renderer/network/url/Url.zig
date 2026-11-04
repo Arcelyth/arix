@@ -2,6 +2,8 @@
 const Url = @This();
 const std = @import("std");
 const Host = @import("host.zig").Host;
+const Parser = @import("Parser.zig");
+const form = @import("form_urlencoded.zig");
 
 pub const Component = struct {
     begin: usize = 0,
@@ -83,6 +85,49 @@ pub fn query(self: *const Url) ?[]const u8 {
 
 pub fn fragment(self: *const Url) ?[]const u8 {
     return self.sliceC(self.parsed.fragment orelse return null);
+}
+
+/// Returns the serialized origin, or "null" for an opaque origin.
+/// https://url.spec.whatwg.org/#concept-url-origin
+pub fn serializeOrigin(self: *const Url, allocator: std.mem.Allocator) std.mem.Allocator.Error![]u8 {
+    const protocol = self.scheme();
+    if (std.mem.eql(u8, protocol, "blob")) {
+        var parser = Parser.init(allocator, self.path());
+        defer parser.deinit();
+        const nested = parser.parseUrl(.{}) catch |err| {
+            if (err == error.OutOfMemory) return error.OutOfMemory;
+            return allocator.dupe(u8, "null");
+        };
+        defer nested.deinit(allocator);
+        if (std.mem.eql(u8, nested.scheme(), "http") or
+            std.mem.eql(u8, nested.scheme(), "https") or
+            std.mem.eql(u8, nested.scheme(), "file"))
+            return nested.serializeOrigin(allocator);
+        return allocator.dupe(u8, "null");
+    }
+    // ftp, http, https, ws, wss and file.
+    if (self.isSpecial() and !std.mem.eql(u8, protocol, "file")) {
+        const hostname = self.parsed.host.?;
+        const end = if (self.parsed.port) |value| value.end() else hostname.end();
+        return std.fmt.allocPrint(
+            allocator,
+            "{s}://{s}",
+            .{ protocol, self.source[hostname.begin..end] },
+        );
+    }
+    return allocator.dupe(u8, "null");
+}
+
+/// Returns the query as serialized form data.
+/// https://url.spec.whatwg.org/#urlsearchparams-stringification-behavior
+pub fn serializeSearchParams(self: *const Url, allocator: std.mem.Allocator) ![]u8 {
+    const pairs = try form.parse(allocator, self.query() orelse "");
+    defer {
+        for (pairs) |pair| pair.deinit(allocator);
+        allocator.free(pairs);
+    }
+
+    return form.serialize(allocator, pairs, .utf8);
 }
 
 /// https://url.spec.whatwg.org/#special-scheme

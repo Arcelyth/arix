@@ -46,7 +46,7 @@ fn checkCase(allocator: std.mem.Allocator, item: std.json.Value) !void {
     var failure_error: ?anyerror = null;
     for (std.meta.tags(Property)) |property| {
         const expected = item.object.get(@tagName(property)) orelse continue;
-        expectProperty(&url, property, expected.string) catch |err| {
+        expectProperty(allocator, &url, property, expected.string) catch |err| {
             std.debug.print("  {s}: {s}\n", .{ @tagName(property), @errorName(err) });
             failure_error = err;
         };
@@ -83,8 +83,7 @@ fn parseCase(allocator: std.mem.Allocator, item: std.json.Value) !Url {
 
 /// Only URL failures satisfy an upstream failure expectation.
 fn isUrlFailure(err: anyerror) bool {
-    return err == error.InvalidUrl or err == error.InvalidHost or
-        std.meta.stringToEnum(ParserError, @errorName(err)) != null;
+    return std.meta.stringToEnum(ParserError, @errorName(err)) != null;
 }
 
 const Property = enum {
@@ -103,7 +102,13 @@ const Property = enum {
 };
 
 /// Reads the string properties asserted by WPT's URL constructor tests.
-fn expectProperty(url: *const Url, property: Property, expected: []const u8) !void {
+fn expectProperty(allocator: std.mem.Allocator, url: *const Url, property: Property, expected: []const u8) !void {
+    const serialized: ?[]u8 = switch (property) {
+        .origin => try url.serializeOrigin(allocator),
+        .searchParams => try url.serializeSearchParams(allocator),
+        else => null,
+    };
+    defer if (serialized) |text| allocator.free(text);
     const actual = switch (property) {
         .href => url.source,
         .protocol => url.source[0 .. url.parsed.scheme.end() + 1],
@@ -115,8 +120,7 @@ fn expectProperty(url: *const Url, property: Property, expected: []const u8) !vo
         .pathname => url.path(),
         .search => componentWithDelimiter(url, url.parsed.query),
         .hash => componentWithDelimiter(url, url.parsed.fragment),
-        .origin => return error.MissingOrigin,
-        .searchParams => return error.MissingSearchParams,
+        .origin, .searchParams => serialized.?,
     };
     if (!std.mem.eql(u8, expected, actual)) {
         std.debug.print("  {s}: expected {s}, got {s}\n", .{ @tagName(property), expected, actual });

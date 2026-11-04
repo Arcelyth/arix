@@ -764,10 +764,9 @@ pub fn handleError(self: *const Parser, err: ParserError) void {
     if (self.adapter) |adapter| adapter.handleError(err);
 }
 
-/// Return failure during parsing.
-pub fn fail(self: *const Parser, err: ParserError) error{InvalidUrl} {
-    self.handleError(err);
-    return error.InvalidUrl;
+/// Reports a fatal validation error and returns its matching Zig error.
+pub fn fail(self: *const Parser, comptime err: ParserError) anyerror {
+    return ErrorAdapter.fail(self.adapter, err);
 }
 
 test "network url parser: replace components" {

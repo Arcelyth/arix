@@ -33,7 +33,7 @@
         },
         .icu4z = .{
             .url = "https://github.com/Arcelyth/icu4z/archive/main.tar.gz",
-            .hash = "icu4z-0.0.1-AvwIT1WVAAAUtUjvxa-1q_UOCGUsreM22GHFgboVVXVe",
+            .hash = "icu4z-0.0.1-AvwIT1SVAABMi7QuaLSBW1fpsUd5MBB3Ca6_zHXM4Vib",
         },
     },
     .paths = .{""},

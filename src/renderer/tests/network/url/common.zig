@@ -111,3 +111,23 @@ fn escapedCodeUnit(text: []const u8) ?u16 {
     if (text.len < 6 or text[0] != '\\' or text[1] != 'u') return null;
     return std.fmt.parseInt(u16, text[2..6], 16) catch null;
 }
+
+pub fn expectHostCase(allocator: std.mem.Allocator, item: std.json.Value) !void {
+    const input = item.object.get("input").?.string;
+    const expected = item.object.get("output").?;
+    const text = try std.fmt.allocPrint(allocator, "https://{s}/x", .{input});
+    defer allocator.free(text);
+    const url = parse(allocator, text, .{}) catch |err| {
+        if (expected == .null and isUrlFailure(err)) return;
+        return err;
+    };
+    defer url.deinit(allocator);
+    if (expected == .null) return error.ExpectedFailure;
+
+    try expectProperty(allocator, &url, .host, expected.string);
+    try expectProperty(allocator, &url, .hostname, expected.string);
+    try expectProperty(allocator, &url, .pathname, "/x");
+    const href = try std.fmt.allocPrint(allocator, "https://{s}/x", .{expected.string});
+    defer allocator.free(href);
+    try expectProperty(allocator, &url, .href, href);
+}

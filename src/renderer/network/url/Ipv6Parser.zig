@@ -16,6 +16,10 @@ pointer: usize = 0,
 /// Returns the address as 16 bytes in network order.
 /// https://url.spec.whatwg.org/#concept-ipv6-parser
 pub fn parse(self: *Ipv6Parser) ![16]u8 {
+    self.address = @splat(0);
+    self.piece_index = 0;
+    self.compress = null;
+    self.pointer = 0;
     if (std.mem.startsWith(u8, self.input, ":")) {
         if (!std.mem.startsWith(u8, self.input, "::"))
             return ErrorAdapter.fail(self.adapter, .IPv6InvalidCompression);

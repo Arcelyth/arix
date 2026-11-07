@@ -37,11 +37,14 @@ pub const State = enum {
 
 allocator: std.mem.Allocator,
 adapter: ?ErrorAdapter = null,
-input: Input,
 url: Url = .empty,
 buffer: std.ArrayList(u8) = .empty,
 /// Output source of Url.
 output: std.ArrayList(u8) = .empty,
+// Query and fragment bytes saved while a preceding component is appended.
+suffix: std.ArrayList(u8) = .empty,
+suffix_query: ?Url.Component = null,
+suffix_fragment: ?Url.Component = null,
 /// Component ranges of output as parsing progresses.
 parsed: Url.Parsed = .{},
 /// For output url's opaque_path.
@@ -50,26 +53,103 @@ opaque_path: bool = false,
 pub const ParseOpts = struct {
     base: ?*const Url = null,
     encoding: ?Encoding = .utf8,
+    state_override: ?State = null,
 };
 
-pub fn init(allocator: std.mem.Allocator, input: []const u8) Parser {
+pub fn init(allocator: std.mem.Allocator) Parser {
     return .{
         .allocator = allocator,
-        .input = Input.initTrimC0ControlAndSpace(input),
     };
 }
 
 pub fn deinit(self: *Parser) void {
     self.buffer.deinit(self.allocator);
+    self.suffix.deinit(self.allocator);
     self.output.deinit(self.allocator);
 }
 
+/// Parses a new URL. Free the result with Url.deinit.
+pub fn parse(self: *Parser, text: []const u8, opts: ParseOpts) !Url {
+    self.output.clearRetainingCapacity();
+    self.parsed = .{};
+    self.opaque_path = false;
+    try self.parseUrl(text, opts, true);
+    return self.finish();
+}
+
+/// Parses into an existing URL.
+/// Without an override, parsing starts at scheme_start. Overrides use the chosen state's preconditions.
+pub fn parseExisting(
+    self: *Parser,
+    text: []const u8,
+    opts: ParseOpts,
+    url: *Url,
+) !void {
+    const saved = if (overlaps(text, url.source))
+        try self.allocator.dupe(u8, text)
+    else
+        null;
+    defer if (saved) |bytes| self.allocator.free(bytes);
+
+    var options = opts;
+    var base: ?Url = null;
+    defer if (base) |value| value.deinit(self.allocator);
+    if (opts.base) |value| {
+        if (overlaps(value.source, url.source)) {
+            base = .{
+                .source = try self.allocator.dupe(u8, value.source),
+                .parsed = value.parsed,
+                .opaque_path = value.opaque_path,
+            };
+            options.base = &base.?;
+        }
+    }
+
+    self.output.deinit(self.allocator);
+    self.output = std.ArrayList(u8).fromOwnedSlice(url.source);
+    self.parsed = url.parsed;
+    self.opaque_path = url.opaque_path;
+    url.* = .empty;
+    const result = self.parseUrl(saved orelse text, options, false);
+    const restored = self.restoreSuffix();
+    url.* = try self.finish();
+    try restored;
+    try result;
+}
+
+// Transfers an exact-sized output allocation to the URL.
+fn finish(self: *Parser) !Url {
+    self.url = .{
+        .source = try self.output.toOwnedSlice(self.allocator),
+        .parsed = self.parsed,
+        .opaque_path = self.opaque_path,
+    };
+    return self.url;
+}
+
 /// https://url.spec.whatwg.org/#concept-basic-url-parser
-pub fn parseUrl(self: *Parser, opts: ParseOpts) !Url {
-    if (std.mem.indexOfAny(u8, self.input.asSlice(), "\t\n\r") != null)
+/// If `new` is true, means parsing a new url; otherwise, modifies the existing url.
+pub fn parseUrl(
+    self: *Parser,
+    text: []const u8,
+    opts: ParseOpts,
+    comptime new: bool,
+) !void {
+    var input = if (new)
+        Input.initTrimC0ControlAndSpace(text)
+    else
+        Input.initNoTrim(text);
+
+    // Detect whether new URL’s input has leading or trailing C0 controls or spaces.
+    if (new and text.len != input.chars.bytes.len) self.handleError(.InvalidUrlUnit);
+    if (std.mem.indexOfAny(u8, input.asSlice(), "\t\n\r") != null)
         self.handleError(.InvalidUrlUnit);
 
-    var state: State = .scheme_start;
+    var state: State = if (new)
+        .scheme_start
+    else
+        opts.state_override orelse .scheme_start;
+
     var encoding = encodings.getOutputEncoding(opts.encoding orelse .utf8);
     self.buffer.clearRetainingCapacity();
     var at_sign_seen = false;
@@ -77,24 +157,33 @@ pub fn parseUrl(self: *Parser, opts: ParseOpts) !Url {
     var password_token_seen = false;
     // The host start position in input's bytes.
     var host_start: usize = 0;
-    self.input.startOver();
+
+    if (!new) {
+        self.suffix.clearRetainingCapacity();
+        self.suffix_query = null;
+        self.suffix_fragment = null;
+    }
+    const has_override = if (new) false else opts.state_override != null;
 
     parse: while (true) {
-        const before = self.input;
-        const cp = self.input.next();
+        const before = input;
+        const cp = input.next();
         switch (state) {
             // https://url.spec.whatwg.org/#scheme-start-state
             .scheme_start => {
                 if (cp != null and ascii.isAsciiAlpha(cp.?)) {
                     try self.appendBuffer(std.ascii.toLower(@intCast(cp.?)));
                     state = .scheme;
+                } else if (has_override) {
+                    return error.InvalidScheme;
                 } else {
                     state = .no_scheme;
-                    self.input = before;
+                    input = before;
                 }
             },
 
             // https://url.spec.whatwg.org/#scheme-state
+            //
             .scheme => {
                 if (cp != null and
                     (ascii.isAsciiAlphanum(cp.?) or
@@ -104,11 +193,27 @@ pub fn parseUrl(self: *Parser, opts: ParseOpts) !Url {
                 {
                     try self.appendBuffer(std.ascii.toLower(@intCast(cp.?)));
                 } else if (cp == ':') {
+                    if (has_override) {
+                        if (self.isSpecial() != Url.special_scheme.has(self.buffer.items)) break :parse;
+                        if (std.mem.eql(u8, self.buffer.items, "file") and
+                            (self.hasCredentials() or self.parsed.port != null)) break :parse;
+                        if (std.mem.eql(u8, self.scheme(), "file") and self.parsed.host != null and self.parsed.host.?.len == 0) break :parse;
+                    }
+
                     try self.setScheme(self.buffer.items);
+                    if (has_override) {
+                        if (self.parsed.port) |port| {
+                            const number = std.fmt.parseInt(u16, port.slice(self.output.items), 10) catch unreachable;
+                            if (Url.special_scheme.get(self.scheme())) |default| {
+                                if (default == number) try self.setPort(null);
+                            }
+                        }
+                        break :parse;
+                    }
                     self.buffer.clearRetainingCapacity();
 
                     if (std.mem.eql(u8, self.scheme(), "file")) {
-                        if (!self.input.startsWith("//"))
+                        if (!input.startsWith("//"))
                             self.handleError(.SpecialSchemeMissingFollowingSolidus);
                         state = .file;
                     } else if (self.isSpecial()) {
@@ -116,16 +221,19 @@ pub fn parseUrl(self: *Parser, opts: ParseOpts) !Url {
                             .special_relative_or_authority
                         else
                             .special_authority_slashes;
-                    } else if (self.input.splitPrefix("/")) |remaining| {
-                        self.input = remaining;
+                    } else if (input.splitPrefix("/")) |remaining| {
+                        input = remaining;
                         state = .path_or_authority;
                     } else {
                         self.opaque_path = true;
+                        try self.setPath("");
                         state = .opaque_path;
                     }
+                } else if (has_override) {
+                    return error.InvalidScheme;
                 } else {
                     self.buffer.clearRetainingCapacity();
-                    self.input.startOver();
+                    input.startOver();
                     state = .no_scheme;
                 }
             },
@@ -136,24 +244,26 @@ pub fn parseUrl(self: *Parser, opts: ParseOpts) !Url {
                 if (base_url.opaque_path) {
                     if (cp != '#') return self.fail(.MissingSchemeNonRelativeUrl);
                     try self.setScheme(base_url.scheme());
-                    try self.copyBase(base_url);
+                    try self.setPath(base_url.path());
+                    self.opaque_path = true;
+                    if (base_url.query()) |query| try self.setQuery(query) else try self.removeQuery();
                     try self.beginFragment();
                     state = .fragment;
                 } else {
                     state = if (std.mem.eql(u8, base_url.scheme(), "file")) .file else .relative;
-                    self.input = before;
+                    input = before;
                 }
             },
 
             // https://url.spec.whatwg.org/#special-relative-or-authority-state
             .special_relative_or_authority => {
-                if (cp == '/' and self.input.startsWith("/")) {
-                    _ = self.input.next();
+                if (cp == '/' and input.startsWith("/")) {
+                    _ = input.next();
                     state = .special_authority_ignore_slashes;
                 } else {
                     self.handleError(.SpecialSchemeMissingFollowingSolidus);
                     state = .relative;
-                    self.input = before;
+                    input = before;
                 }
             },
 
@@ -164,7 +274,7 @@ pub fn parseUrl(self: *Parser, opts: ParseOpts) !Url {
                     state = .authority;
                 } else {
                     state = .path;
-                    self.input = before;
+                    input = before;
                 }
             },
 
@@ -188,7 +298,7 @@ pub fn parseUrl(self: *Parser, opts: ParseOpts) !Url {
                     try self.removeQuery();
                     paths.shorten(&self.output, &self.parsed, self.opaque_path);
                     state = .path;
-                    self.input = before;
+                    input = before;
                 } else break :parse;
             },
 
@@ -203,19 +313,19 @@ pub fn parseUrl(self: *Parser, opts: ParseOpts) !Url {
                 } else {
                     try self.copyAuthority(opts.base.?);
                     state = .path;
-                    self.input = before;
+                    input = before;
                 }
             },
 
             // https://url.spec.whatwg.org/#special-authority-slashes-state
             .special_authority_slashes => {
-                if (cp == '/' and self.input.startsWith("/")) {
-                    _ = self.input.next();
+                if (cp == '/' and input.startsWith("/")) {
+                    _ = input.next();
                     state = .special_authority_ignore_slashes;
                 } else {
                     self.handleError(.SpecialSchemeMissingFollowingSolidus);
                     state = .special_authority_ignore_slashes;
-                    self.input = before;
+                    input = before;
                 }
             },
 
@@ -226,7 +336,7 @@ pub fn parseUrl(self: *Parser, opts: ParseOpts) !Url {
                 } else {
                     try self.beginAuthority();
                     state = .authority;
-                    self.input = before;
+                    input = before;
                 }
             },
 
@@ -246,9 +356,11 @@ pub fn parseUrl(self: *Parser, opts: ParseOpts) !Url {
                         }
                     }
                     self.buffer.clearRetainingCapacity();
+                    // Preserves partial modifications to the existing URL even if parsing fails.
+                    if (!new) try self.finishCredentials();
                 } else if (self.isAuthorityEnd(cp)) {
                     if (at_sign_seen and self.buffer.items.len == 0) return self.fail(.HostMissing);
-                    self.input.chars.i = host_start;
+                    input.chars.i = host_start;
                     self.buffer.clearRetainingCapacity();
                     try self.finishCredentials();
                     state = .host;
@@ -258,17 +370,24 @@ pub fn parseUrl(self: *Parser, opts: ParseOpts) !Url {
             // https://url.spec.whatwg.org/#host-state
             // https://url.spec.whatwg.org/#hostname-state
             .host, .hostname => {
-                if (cp == ':' and !inside_brackets) {
+                if (has_override and std.mem.eql(u8, self.scheme(), "file")) {
+                    state = .file_host;
+                    input = before;
+                } else if (cp == ':' and !inside_brackets) {
                     if (self.buffer.items.len == 0) return self.fail(.HostMissing);
+                    if (has_override and opts.state_override == .hostname) return error.HostnameContainsPort;
                     try self.parseHost(self.buffer.items);
                     self.buffer.clearRetainingCapacity();
                     state = .port;
                 } else if (self.isAuthorityEnd(cp)) {
                     if (self.isSpecial() and self.buffer.items.len == 0) return self.fail(.HostMissing);
+                    if (has_override and self.buffer.items.len == 0 and
+                        (self.hasCredentials() or self.parsed.port != null)) return error.HostMissing;
                     try self.parseHost(self.buffer.items);
                     self.buffer.clearRetainingCapacity();
+                    if (has_override) break :parse;
                     state = .path_start;
-                    self.input = before;
+                    input = before;
                 } else {
                     if (cp == '[') inside_brackets = true;
                     if (cp == ']') inside_brackets = false;
@@ -280,23 +399,23 @@ pub fn parseUrl(self: *Parser, opts: ParseOpts) !Url {
             .port => {
                 if (cp != null and ascii.isAsciiDigit(cp.?)) {
                     try self.appendBuffer(@intCast(cp.?));
-                } else if (self.isAuthorityEnd(cp)) {
+                } else if (self.isAuthorityEnd(cp) or has_override) {
                     if (self.buffer.items.len != 0) {
                         const value = std.fmt.parseInt(u16, self.buffer.items, 10) catch return self.fail(.PortOutOfRange);
                         const default = Url.special_scheme.get(self.scheme()) orelse null;
-                        if (default == null or default.? != value)
-                            try self.appendPort(value);
-                    }
+                        try self.setPort(if (default == value) null else value);
+                        self.buffer.clearRetainingCapacity();
+                        if (has_override) break :parse;
+                    } else if (has_override) return error.PortInvalid;
                     self.buffer.clearRetainingCapacity();
                     state = .path_start;
-                    self.input = before;
+                    input = before;
                 } else return self.fail(.PortInvalid);
             },
 
             // https://url.spec.whatwg.org/#file-state
             .file => {
                 try self.setScheme("file");
-                try self.beginAuthority();
                 try self.setHost("");
                 const file_base = if (opts.base) |base|
                     if (std.mem.eql(u8, base.scheme(), "file")) base else null
@@ -307,11 +426,8 @@ pub fn parseUrl(self: *Parser, opts: ParseOpts) !Url {
                     state = .file_slash;
                 } else if (file_base) |base| {
                     try self.setHost(base.parsed.host.?.slice(base.source));
-                    self.parsed.path = .{
-                        .begin = self.output.items.len,
-                    };
                     try self.setPath(base.path());
-                    if (base.query()) |query| try self.setQuery(query);
+                    if (base.query()) |query| try self.setQuery(query) else try self.removeQuery();
                     if (cp == '?') {
                         try self.setQuery("");
                         state = .query;
@@ -327,11 +443,11 @@ pub fn parseUrl(self: *Parser, opts: ParseOpts) !Url {
                             try self.setPath("");
                         }
                         state = .path;
-                        self.input = before;
+                        input = before;
                     } else break :parse;
                 } else {
                     state = .path;
-                    self.input = before;
+                    input = before;
                 }
             },
 
@@ -344,12 +460,13 @@ pub fn parseUrl(self: *Parser, opts: ParseOpts) !Url {
                     if (opts.base) |base| {
                         if (std.mem.eql(u8, base.scheme(), "file")) {
                             try self.setHost(base.parsed.host.?.slice(base.source));
-                            self.parsed.path = .{ .begin = self.output.items.len };
+                            if (self.parsed.path.begin == 0) self.parsed.path.begin = self.output.items.len;
                             const path = base.path();
                             const first_start = @min(1, path.len);
                             const first_end = std.mem.indexOfScalarPos(u8, path, first_start, '/') orelse path.len;
                             const first = path[first_start..first_end];
                             if (!paths.startsWithWindowsDriveLetter(&before) and paths.isNormalizedWindowsDriveLetter(first)) {
+                                if (!new) try self.saveSuffix(.path);
                                 try self.appendOutput('/');
                                 try self.output.appendSlice(self.allocator, first);
                                 self.parsed.path.len = self.output.items.len - self.parsed.path.begin;
@@ -357,24 +474,26 @@ pub fn parseUrl(self: *Parser, opts: ParseOpts) !Url {
                         }
                     }
                     state = .path;
-                    self.input = before;
+                    input = before;
                 }
             },
 
             // https://url.spec.whatwg.org/#file-host-state
             .file_host => {
                 if (cp == null or cp == '/' or cp == '\\' or cp == '?' or cp == '#') {
-                    self.input = before;
-                    if (paths.isWindowsDriveLetter(self.buffer.items)) {
+                    input = before;
+                    if (!has_override and paths.isWindowsDriveLetter(self.buffer.items)) {
                         self.handleError(.FileInvalidWindowsDriveLetterHost);
                         state = .path;
                     } else if (self.buffer.items.len == 0) {
                         try self.setHost("");
+                        if (has_override) break :parse;
                         state = .path_start;
                     } else {
                         try self.parseHost(self.buffer.items);
                         if (std.mem.eql(u8, self.parsed.host.?.slice(self.output.items), "localhost"))
                             try self.setHost("");
+                        if (has_override) break :parse;
                         self.buffer.clearRetainingCapacity();
                         state = .path_start;
                     }
@@ -383,31 +502,37 @@ pub fn parseUrl(self: *Parser, opts: ParseOpts) !Url {
 
             // https://url.spec.whatwg.org/#path-start-state
             .path_start => {
-                self.parsed.path = .{
-                    .begin = self.output.items.len,
-                };
+                if (self.parsed.path.begin == 0) self.parsed.path.begin = self.output.items.len;
+                if (!new) try self.saveSuffix(.path);
                 if (self.isSpecial()) {
                     if (cp == '\\') self.handleError(.InvalidReverseSolidus);
                     state = .path;
-                    if (cp != '/' and cp != '\\') self.input = before;
-                } else if (cp == '?') {
+                    if (cp != '/' and cp != '\\') input = before;
+                } else if (!has_override and cp == '?') {
                     try self.setQuery("");
                     state = .query;
-                } else if (cp == '#') {
+                } else if (!has_override and cp == '#') {
                     try self.beginFragment();
                     state = .fragment;
                 } else if (cp != null) {
                     state = .path;
-                    if (cp != '/') self.input = before;
-                } else break :parse;
+                    if (cp != '/') input = before;
+                } else {
+                    if (has_override and self.parsed.host == null) {
+                        try self.appendOutput('/');
+                        self.parsed.path.len += 1;
+                    }
+                    break :parse;
+                }
             },
 
             // https://url.spec.whatwg.org/#path-state
             .path => {
                 if (self.parsed.path.begin == 0)
                     self.parsed.path.begin = self.output.items.len;
+                if (!new) try self.saveSuffix(.path);
                 const separator = cp == '/' or (self.isSpecial() and cp == '\\');
-                if (cp == null or separator or cp == '?' or cp == '#') {
+                if (cp == null or separator or (!has_override and (cp == '?' or cp == '#'))) {
                     if (cp == '\\' and self.isSpecial()) self.handleError(.InvalidReverseSolidus);
                     try self.appendPathSegment(separator);
                     self.buffer.clearRetainingCapacity();
@@ -421,7 +546,7 @@ pub fn parseUrl(self: *Parser, opts: ParseOpts) !Url {
                     }
                     if (cp == null) break :parse;
                 } else {
-                    self.validateUnit(cp.?);
+                    self.validateUnit(cp.?, &input);
                     try percent.append(self.allocator, &self.buffer, cp.?, .path);
                 }
             },
@@ -430,6 +555,7 @@ pub fn parseUrl(self: *Parser, opts: ParseOpts) !Url {
             .opaque_path => {
                 if (self.parsed.path.begin == 0)
                     self.parsed.path.begin = self.output.items.len;
+                if (!new) try self.saveSuffix(.path);
                 if (cp == '?') {
                     try self.setQuery("");
                     state = .query;
@@ -438,13 +564,13 @@ pub fn parseUrl(self: *Parser, opts: ParseOpts) !Url {
                     state = .fragment;
                 } else if (cp == ' ') {
                     self.handleError(.InvalidUrlUnit);
-                    if (self.input.startsWith("?") or self.input.startsWith("#"))
+                    if (input.startsWith("?") or input.startsWith("#"))
                         try self.output.appendSlice(self.allocator, "%20")
                     else
                         try self.appendOutput(' ');
                     self.parsed.path.len = self.output.items.len - self.parsed.path.begin;
                 } else if (cp) |char| {
-                    self.validateUnit(char);
+                    self.validateUnit(char, &input);
                     try percent.append(self.allocator, &self.output, char, .c0_control);
                     self.parsed.path.len = self.output.items.len - self.parsed.path.begin;
                 } else break :parse;
@@ -452,10 +578,12 @@ pub fn parseUrl(self: *Parser, opts: ParseOpts) !Url {
 
             // https://url.spec.whatwg.org/#query-state
             .query => {
+                std.debug.assert(self.parsed.query != null);
+                if (!new) try self.saveSuffix(.query);
                 if (encoding != .utf8 and (!self.isSpecial() or
                     std.mem.eql(u8, self.scheme(), "ws") or std.mem.eql(u8, self.scheme(), "wss")))
                     encoding = .utf8;
-                if (cp == null or cp == '#') {
+                if (cp == null or (!has_override and cp == '#')) {
                     try percent.percentEncodeAfterEncoding(
                         self.allocator,
                         &self.output,
@@ -470,15 +598,16 @@ pub fn parseUrl(self: *Parser, opts: ParseOpts) !Url {
                         state = .fragment;
                     } else break :parse;
                 } else {
-                    self.validateUnit(cp.?);
+                    self.validateUnit(cp.?, &input);
                     try self.appendRaw(cp.?);
                 }
             },
 
             // https://url.spec.whatwg.org/#fragment-state
             .fragment => {
+                std.debug.assert(self.parsed.fragment != null);
                 if (cp) |char| {
-                    self.validateUnit(char);
+                    self.validateUnit(char, &input);
                     try percent.append(self.allocator, &self.output, char, .fragment);
                 } else break :parse;
             },
@@ -487,12 +616,14 @@ pub fn parseUrl(self: *Parser, opts: ParseOpts) !Url {
     if (self.parsed.fragment) |*fragment|
         fragment.len = self.output.items.len - fragment.begin;
     try self.normalizePathPrefix();
-    self.url = .{
-        .source = try self.output.toOwnedSlice(self.allocator),
-        .parsed = self.parsed,
-        .opaque_path = self.opaque_path,
-    };
-    return self.url;
+}
+
+// Inserts bytes at a component's end and shifts only the following ranges.
+fn appendToComponent(self: *Parser, comptime name: []const u8, text: []const u8) !void {
+    const field = &@field(self.parsed, name);
+    const component = if (comptime @typeInfo(@TypeOf(field.*)) == .optional) &field.*.? else field;
+    _ = try self.replaceComponent(name, .{ .begin = component.end() }, "", text);
+    component.len += text.len;
 }
 
 pub fn appendBuffer(self: *Parser, ch: u8) !void {
@@ -522,17 +653,17 @@ pub fn appendRaw(self: *Parser, cp: u21) !void {
 /// The code point is percent-encoded using the userinfo percent-encode set.
 pub fn appendCredential(self: *Parser, cp: u21, password: bool) !void {
     if (password and self.parsed.password == null) {
-        try self.appendOutput(':');
-        self.parsed.password = .{
-            .begin = self.output.items.len,
-        };
+        const end = self.parsed.username.?.end();
+        _ = try self.replaceComponent("username", .{ .begin = end }, "", ":");
+        self.parsed.password = .{ .begin = end + 1 };
     }
-    try percent.append(self.allocator, &self.output, cp, .userinfo);
-    const component = if (password)
-        &self.parsed.password.?
+    // A UTF-8 code point has at most four bytes, each encoded as %HH.
+    var bytes: [12]u8 = undefined;
+    const encoded = try percent.encodeCodepoint(cp, .userinfo, &bytes);
+    if (password)
+        try self.appendToComponent("password", encoded)
     else
-        &self.parsed.username.?;
-    component.len = self.output.items.len - component.begin;
+        try self.appendToComponent("username", encoded);
 }
 
 pub fn appendPort(self: *Parser, value: u16) !void {
@@ -559,8 +690,10 @@ fn appendPathSegment(self: *Parser, separator: bool) !void {
 }
 
 pub fn finishCredentials(self: *Parser) !void {
-    if (self.parsed.username.?.len != 0 or self.parsed.password != null)
-        try self.appendOutput('@');
+    if (!self.hasCredentials()) return;
+    const end = if (self.parsed.password) |password| password.end() else self.parsed.username.?.end();
+    if (end < self.output.items.len and self.output.items[end] == '@') return;
+    _ = try self.replaceComponent("password", .{ .begin = end }, "", "@");
 }
 
 pub fn setScheme(self: *Parser, text: []const u8) !void {
@@ -573,12 +706,18 @@ pub fn setScheme(self: *Parser, text: []const u8) !void {
 }
 
 pub fn setHost(self: *Parser, text: []const u8) !void {
-    const span = self.parsed.host orelse Url.Component{ .begin = self.output.items.len };
+    const span = self.parsed.host orelse span: {
+        try self.beginAuthority();
+        try self.finishCredentials();
+        const end = if (self.parsed.password) |password| password.end() else self.parsed.username.?.end();
+        break :span Url.Component{ .begin = end + @as(usize, @intFromBool(self.hasCredentials())) };
+    };
     self.parsed.host = try self.replaceComponent("host", span, "", text);
 }
 
 /// Replaces the serialized query, keeping the fragment.
 pub fn setQuery(self: *Parser, text: []const u8) !void {
+    self.suffix_query = null;
     const span: Url.Component = if (self.parsed.query) |query|
         .{
             .begin = query.begin - 1,
@@ -594,7 +733,9 @@ pub fn setQuery(self: *Parser, text: []const u8) !void {
     self.parsed.query = try self.replaceComponent("query", span, "?", text);
 }
 
-fn removeQuery(self: *Parser) !void {
+/// Removes the query and its '?' separator.
+pub fn removeQuery(self: *Parser) !void {
+    self.suffix_query = null;
     const query = self.parsed.query orelse return;
     const span: Url.Component = .{
         .begin = query.begin - 1,
@@ -607,7 +748,39 @@ fn removeQuery(self: *Parser) !void {
 
 /// Replaces the serialized path, keeping the query and fragment.
 pub fn setPath(self: *Parser, text: []const u8) !void {
+    if (self.parsed.path.begin == 0) self.parsed.path.begin = self.output.items.len;
     self.parsed.path = try self.replaceComponent("path", self.parsed.path, "", text);
+}
+
+/// Replaces the serialized fragment.
+pub fn setFragment(self: *Parser, text: []const u8) !void {
+    self.suffix_fragment = null;
+    const span: Url.Component = if (self.parsed.fragment) |fragment|
+        .{
+            .begin = fragment.begin - 1,
+            .len = fragment.len + 1,
+        }
+    else
+        .{
+            .begin = self.output.items.len,
+        };
+    self.parsed.fragment = try self.replaceComponent("fragment", span, "#", text);
+}
+
+/// Removes the fragment and its '#' separator.
+pub fn removeFragment(self: *Parser) !void {
+    self.suffix_fragment = null;
+    const fragment = self.parsed.fragment orelse return;
+    _ = try self.replaceComponent(
+        "fragment",
+        .{
+            .begin = fragment.begin - 1,
+            .len = fragment.len + 1,
+        },
+        "",
+        "",
+    );
+    self.parsed.fragment = null;
 }
 
 pub fn scheme(self: *const Parser) []const u8 {
@@ -628,12 +801,8 @@ fn replaceComponent(
 ) !Url.Component {
     const output = &self.output;
     const alloc = self.allocator;
-    // Text inside output must stay valid when the buffer grows or moves.
-    const overlaps = text.len != 0 and output.items.len != 0 and
-        @intFromPtr(text.ptr) < @intFromPtr(output.items.ptr) + output.items.len and
-        @intFromPtr(output.items.ptr) < @intFromPtr(text.ptr) + text.len;
     // Copy when text and output overlap.
-    const saved = if (overlaps) try alloc.dupe(u8, text) else null;
+    const saved = if (overlaps(text, output.items)) try alloc.dupe(u8, text) else null;
     defer if (saved) |bytes| alloc.free(bytes);
 
     const value = saved orelse text;
@@ -642,7 +811,10 @@ fn replaceComponent(
     @memcpy(output.items[old.begin..][0..prefix.len], prefix);
     @memcpy(output.items[old.begin + prefix.len ..][0..value.len], value);
     self.shiftComponents(name, old.len, length);
-    return .{ .begin = old.begin + prefix.len, .len = value.len };
+    return .{
+        .begin = old.begin + prefix.len,
+        .len = value.len,
+    };
 }
 
 /// Moves the text after a component once. The buffer must have enough space.
@@ -677,26 +849,25 @@ fn shiftComponents(self: *Parser, comptime name: []const u8, old_length: usize, 
     }
 }
 
-/// Sets output and ranges to the base URL without its fragment
-/// and whether the path is opaque.
+/// Sets the scheme, authority, path, and query from the base URL.
+/// Keeps the current fragment.
 pub fn copyBase(self: *Parser, base: *const Url) !void {
-    const end = if (base.parsed.fragment) |fragment|
-        fragment.begin - 1
-    else
-        base.source.len;
-    self.output.clearRetainingCapacity();
-    try self.output.appendSlice(self.allocator, base.source[0..end]);
-    self.parsed = base.parsed;
-    self.parsed.fragment = null;
+    try self.copyAuthority(base);
+    try self.setPath(base.path());
+    if (base.query()) |query| try self.setQuery(query) else try self.removeQuery();
     self.opaque_path = base.opaque_path;
 }
 
 /// Sets output to the base scheme, credentials, host, and port.
-/// Updates those ranges before parsing a new path.
+/// Keeps the current path, query, and fragment.
 pub fn copyAuthority(self: *Parser, base: *const Url) !void {
     const end = if (base.parsed.port) |port| port.end() else if (base.parsed.host) |host| host.end() else base.parsed.scheme.end() + 1;
-    self.output.clearRetainingCapacity();
-    try self.output.appendSlice(self.allocator, base.source[0..end]);
+    var old_end = if (self.parsed.port) |port| port.end() else if (self.parsed.host) |host| host.end() else @min(self.output.items.len, self.parsed.scheme.end() + 1);
+    if (self.parsed.host == null and self.parsed.path.begin == old_end + 2) old_end += 2;
+    try self.replaceOldComponent(.{ .len = old_end }, end);
+    @memcpy(self.output.items[0..end], base.source[0..end]);
+    self.shiftComponents("port", old_end, end);
+    if (self.parsed.path.begin == 0) self.parsed.path.begin = end;
     self.parsed.scheme = base.parsed.scheme;
     self.parsed.username = base.parsed.username;
     self.parsed.password = base.parsed.password;
@@ -705,19 +876,44 @@ pub fn copyAuthority(self: *Parser, base: *const Url) !void {
 }
 
 fn beginFragment(self: *Parser) !void {
-    try self.appendOutput('#');
-    self.parsed.fragment = .{ .begin = self.output.items.len };
+    try self.setFragment("");
 }
 
 fn beginAuthority(self: *Parser) !void {
-    self.output.shrinkRetainingCapacity(self.parsed.scheme.end() + 1);
-    try self.output.appendSlice(self.allocator, "//");
-    self.parsed.username = .{ .begin = self.output.items.len };
-    self.parsed.password = null;
-    self.parsed.host = null;
-    self.parsed.port = null;
-    self.parsed.query = null;
-    self.parsed.fragment = null;
+    if (self.parsed.username != null) return;
+    const start = self.parsed.scheme.end() + 1;
+    if (self.parsed.host == null) {
+        const prefix: usize = if (self.parsed.path.begin == start + 2) 2 else 0;
+        try self.replaceOldComponent(.{ .begin = start, .len = prefix }, 2);
+        @memcpy(self.output.items[start..][0..2], "//");
+        self.shiftComponents("scheme", prefix, 2);
+    }
+    self.parsed.username = .{ .begin = start + 2 };
+}
+
+/// Replaces or removes the port, keeping later components.
+pub fn setPort(self: *Parser, value: ?u16) !void {
+    const span: Url.Component = if (self.parsed.port) |port|
+        .{
+            .begin = port.begin - 1,
+            .len = port.len + 1,
+        }
+    else
+        .{
+            .begin = self.parsed.host.?.end(),
+        };
+    if (value) |number| {
+        var bytes: [5]u8 = undefined;
+        self.parsed.port = try self.replaceComponent(
+            "port",
+            span,
+            ":",
+            try std.fmt.bufPrint(&bytes, "{d}", .{number}),
+        );
+    } else {
+        _ = try self.replaceComponent("port", span, "", "");
+        self.parsed.port = null;
+    }
 }
 
 inline fn isAuthorityEnd(self: *Parser, cp: ?u21) bool {
@@ -731,9 +927,9 @@ pub fn parseHost(self: *Parser, text: []const u8) !void {
 }
 
 /// Reports invalid URL code points and malformed percent escapes.
-pub fn validateUnit(self: *const Parser, cp: u21) void {
+pub fn validateUnit(self: *const Parser, cp: u21, input: *const Input) void {
     if (cp == '%') {
-        var remaining = self.input;
+        var remaining = input.*;
         const first = remaining.next();
         const second = remaining.next();
         if (first == null or second == null or
@@ -744,9 +940,9 @@ pub fn validateUnit(self: *const Parser, cp: u21) void {
 
 /// Adds or removes the `/.` prefix used when a path could look like an authority.
 fn normalizePathPrefix(self: *Parser) !void {
-    if (self.opaque_path or self.parsed.host != null) return;
+    if (self.parsed.host != null) return;
     const start = self.parsed.scheme.end() + 1;
-    const needed = std.mem.startsWith(u8, self.parsed.path.slice(self.output.items), "//");
+    const needed = !self.opaque_path and std.mem.startsWith(u8, self.parsed.path.slice(self.output.items), "//");
     const present = self.parsed.path.begin == start + 2;
     if (needed == present) return;
     const old_length: usize = if (present) 2 else 0;
@@ -769,9 +965,52 @@ pub fn fail(self: *const Parser, comptime err: ParserError) anyerror {
     return ErrorAdapter.fail(self.adapter, err);
 }
 
+fn overlaps(a: []const u8, b: []const u8) bool {
+    return a.len != 0 and
+        b.len != 0 and
+        @intFromPtr(a.ptr) < @intFromPtr(b.ptr) + b.len and
+        @intFromPtr(b.ptr) < @intFromPtr(a.ptr) + a.len;
+}
+
+fn hasCredentials(self: *const Parser) bool {
+    return (if (self.parsed.username) |value| value.len != 0 else false) or
+        (if (self.parsed.password) |value| value.len != 0 else false);
+}
+
+// Saves later components once, so path and query loops only append to output.
+fn saveSuffix(self: *Parser, comptime after: enum { path, query }) !void {
+    const end = if (after == .path) self.parsed.path.end() else self.parsed.query.?.end();
+    if (end == self.output.items.len) return;
+    const start = self.suffix.items.len;
+    try self.suffix.appendSlice(self.allocator, self.output.items[end..]);
+    if (after == .path) {
+        if (self.parsed.query) |query| {
+            self.suffix_query = .{
+                .begin = query.begin - end + start,
+                .len = query.len,
+            };
+            self.parsed.query = null;
+        }
+    }
+    if (self.parsed.fragment) |fragment| {
+        self.suffix_fragment = .{
+            .begin = fragment.begin - end + start,
+            .len = fragment.len,
+        };
+        self.parsed.fragment = null;
+    }
+    self.output.shrinkRetainingCapacity(end);
+}
+
+// Restores components that the state machine did not replace or remove.
+fn restoreSuffix(self: *Parser) !void {
+    if (self.suffix_query) |query| try self.setQuery(query.slice(self.suffix.items));
+    if (self.suffix_fragment) |fragment| try self.setFragment(fragment.slice(self.suffix.items));
+}
+
 test "network url parser: replace components" {
     const allocator = std.testing.allocator;
-    var parser = Parser.init(allocator, "");
+    var parser = Parser.init(allocator);
     defer parser.deinit();
 
     const output = &parser.output;

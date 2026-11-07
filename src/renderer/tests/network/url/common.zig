@@ -14,9 +14,9 @@ pub fn loadFixture(allocator: std.mem.Allocator, comptime name: []const u8) !std
 }
 
 pub fn parse(allocator: std.mem.Allocator, input: []const u8, opts: Parser.ParseOpts) !Url {
-    var parser = Parser.init(allocator, input);
+    var parser = Parser.init(allocator);
     defer parser.deinit();
-    return parser.parseUrl(opts);
+    return parser.parse(input, opts);
 }
 
 pub fn isUrlFailure(err: anyerror) bool {

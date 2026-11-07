@@ -92,9 +92,9 @@ pub fn fragment(self: *const Url) ?[]const u8 {
 pub fn serializeOrigin(self: *const Url, allocator: std.mem.Allocator) std.mem.Allocator.Error![]u8 {
     const protocol = self.scheme();
     if (std.mem.eql(u8, protocol, "blob")) {
-        var parser = Parser.init(allocator, self.path());
+        var parser = Parser.init(allocator);
         defer parser.deinit();
-        const nested = parser.parseUrl(.{}) catch |err| {
+        const nested = parser.parse(self.path(), .{}) catch |err| {
             if (err == error.OutOfMemory) return error.OutOfMemory;
             return allocator.dupe(u8, "null");
         };

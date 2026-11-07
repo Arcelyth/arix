@@ -62,9 +62,20 @@ pub fn appendByte(
     byte: u8,
     set: Set,
 ) !void {
-    if (!set.contains(byte)) return output.append(allocator, byte);
+    var bytes: [3]u8 = undefined;
+    const length = encodeByte(byte, set, &bytes);
+    try output.appendSlice(allocator, bytes[0..length]);
+}
+
+// One byte becomes either itself or a three-byte %HH escape.
+fn encodeByte(byte: u8, set: Set, output: *[3]u8) usize {
+    if (!set.contains(byte)) {
+        output[0] = byte;
+        return 1;
+    }
     const hex = "0123456789ABCDEF";
-    try output.appendSlice(allocator, &.{ '%', hex[byte >> 4], hex[byte & 15] });
+    output.* = .{ '%', hex[byte >> 4], hex[byte & 15] };
+    return 3;
 }
 
 pub fn append(
@@ -73,9 +84,17 @@ pub fn append(
     cp: u21,
     set: Set,
 ) !void {
+    var bytes: [12]u8 = undefined;
+    try output.appendSlice(allocator, try encodeCodepoint(cp, set, &bytes));
+}
+
+/// Writes one UTF-8 percent-encoded code point to buffer.
+pub fn encodeCodepoint(cp: u21, set: Set, buffer: *[12]u8) ![]const u8 {
     var bytes: [4]u8 = undefined;
     const length = try std.unicode.utf8Encode(cp, &bytes);
-    for (bytes[0..length]) |byte| try appendByte(allocator, output, byte, set);
+    var end: usize = 0;
+    for (bytes[0..length]) |byte| end += encodeByte(byte, set, buffer[end..][0..3]);
+    return buffer[0..end];
 }
 
 /// Converts % followed by two hex digits into a byte in `input`.
@@ -87,17 +106,19 @@ pub fn decode(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
     var length: usize = 0;
     var i: usize = 0;
     while (i < input.len) : (i += 1) {
-        if (input[i] == '%' and
-            i + 2 < input.len and
-            ascii.isAsciiHexDigit(input[i + 1]) and
-            ascii.isAsciiHexDigit(input[i + 2]))
-        {
+        if (isEncodedByte(input[i..])) {
             output[length] = @as(u8, ascii.toHexDigit(u8, input[i + 1])) * 16 + ascii.toHexDigit(u8, input[i + 2]);
             i += 2;
         } else output[length] = input[i];
         length += 1;
     }
     return allocator.realloc(output, length);
+}
+
+/// Returns whether input starts with a percent-encoded byte, such as "%2F".
+pub fn isEncodedByte(input: []const u8) bool {
+    return input.len >= 3 and input[0] == '%' and
+        ascii.isAsciiHexDigit(input[1]) and ascii.isAsciiHexDigit(input[2]);
 }
 
 /// Encodes text with one encoder instance and appends percent-encoded bytes.

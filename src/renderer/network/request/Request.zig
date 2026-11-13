@@ -3,7 +3,7 @@ const Request = @This();
 const std = @import("std");
 const Url = @import("../url/Url.zig");
 const HeaderList = @import("../header/HeaderList.zig");
-pub const types = @import("types.zig");
+const types = @import("types.zig");
 
 allocator: std.mem.Allocator,
 method: []const u8 = "GET",

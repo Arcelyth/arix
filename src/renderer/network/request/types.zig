@@ -1,4 +1,5 @@
 const Url = @import("../url/Url.zig");
+const Body = @import("../Body.zig");
 
 // FIXME: Not implemented yet.
 pub const EnvironmentSettingsObject = opaque {};
@@ -6,7 +7,6 @@ pub const Environment = opaque {};
 pub const TraversableNavigable = opaque {};
 pub const PolicyContainer = opaque {};
 pub const Origin = opaque {};
-pub const Body = opaque {};
 pub const InternalPriority = opaque {};
 
 pub const RequestBody = union(enum) {

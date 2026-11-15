@@ -9,6 +9,7 @@ pub const paint = @import("renderer/paint.zig");
 pub const geometry = @import("renderer/geometry.zig");
 pub const font = @import("renderer/font.zig");
 pub const network = @import("renderer/network.zig");
+pub const streams = @import("renderer/streams.zig");
 
 test {
     @import("std").testing.refAllDecls(@This());

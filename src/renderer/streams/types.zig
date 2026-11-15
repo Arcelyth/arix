@@ -34,3 +34,42 @@ pub fn UnderlyingSource(comptime Controller: type) type {
         deinit: ?*const fn (*anyopaque) void = null,
     };
 }
+
+/// https://streams.spec.whatwg.org/#pull-into-descriptor
+pub const PullIntoDescriptor = struct {
+    buffer: *ArrayBuffer,
+    buffer_byte_length: usize,
+    byte_offset: usize,
+    byte_length: usize,
+    bytes_filled: usize,
+    minimum_fill: usize,
+    element_size: usize,
+    // FIXME: need ECMAScript's TypedArray constructor.
+    //    view_constructor: ,
+    reader_type: enum { default, byob, none },
+};
+
+/// https://streams.spec.whatwg.org/#readable-byte-stream-queue-entry
+pub const ByteQueueEntry = struct {
+    buffer: *ArrayBuffer,
+    byte_offset: usize,
+    byte_length: usize,
+};
+
+/// https://streams.spec.whatwg.org/#read-into-request
+// FIXME: Not implemented.
+pub const ReadIntoRequest = struct {
+    context: *anyopaque,
+    chunk_steps: *const fn (*anyopaque) void,
+    close_steps: *const fn (*anyopaque) void,
+    error_steps: *const fn (*anyopaque) void,
+};
+
+/// https://streams.spec.whatwg.org/#read-request
+// FIXME: Not implemented.
+pub const ReadRequest = struct {
+    context: *anyopaque,
+    chunk_steps: *const fn (*anyopaque) void,
+    close_steps: *const fn (*anyopaque) void,
+    error_steps: *const fn (*anyopaque) void,
+};

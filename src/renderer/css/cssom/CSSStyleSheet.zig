@@ -6,7 +6,7 @@ const std = @import("std");
 const Node = @import("../../dom/Node.zig");
 const Document = @import("../../dom/Document.zig");
 const CSSRuleList = @import("CSSRuleList.zig");
-const MediaList = @import("MediaList.zig");
+const MediaList = @import("media/MediaList.zig");
 
 allocator: std.mem.Allocator,
 

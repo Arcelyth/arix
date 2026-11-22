@@ -9,6 +9,11 @@ pub fn identifier(writer: *Writer, text: []const u8) !void {
     try writeIdentifier(writer, text, false);
 }
 
+/// Writes an ASCII-lowercased CSS identifier.
+pub fn lowercaseIdentifier(writer: *Writer, text: []const u8) !void {
+    try writeIdentifier(writer, text, true);
+}
+
 fn writeIdentifier(writer: *Writer, text: []const u8, lowercase: bool) !void {
     var chars = (try std.unicode.Utf8View.init(text)).iterator();
     var index: usize = 0;

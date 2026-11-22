@@ -38,6 +38,12 @@ pub fn append(self: *Parser, component: Component) !void {
 }
 
 pub fn consumeSelector(self: *Parser, comptime mode: Mode) !void {
+    if (mode.relative) {
+        if (self.consumeCombinator()) |leading| {
+            try self.append(.{ .combinator = leading });
+            self.input.discardWhitespace();
+        }
+    }
     while (true) {
         try self.consumeUnit(mode);
         const end = self.input.index;

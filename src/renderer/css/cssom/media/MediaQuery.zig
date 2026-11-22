@@ -150,3 +150,14 @@ pub fn toString(self: *const MediaQuery, allocator: std.mem.Allocator) ![]u8 {
     try self.serialize(&output.writer);
     return output.toOwnedSlice();
 }
+
+/// Compares the two CSSOM serializations byte for byte.
+/// https://drafts.csswg.org/cssom/#compare-media-queries
+pub fn matches(self: *const MediaQuery, other: *const MediaQuery) !bool {
+    const allocator = self.arena.child_allocator;
+    const left = try self.toString(allocator);
+    defer allocator.free(left);
+    const right = try other.toString(allocator);
+    defer allocator.free(right);
+    return std.mem.eql(u8, left, right);
+}
